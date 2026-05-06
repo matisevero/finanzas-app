@@ -58,7 +58,7 @@ export default function ComparadorPage() {
   const [chartType, setChartType] = useState<'bar'|'line'>('bar')
   const [activeMeses, setActiveMeses] = useState<Set<number>>(new Set([0,1,2,3,4,5,6,7,8,9,10,11]))
 
-  const mesesDisp = MESES_CORTOS.map((l,i)=>({label:l,idx:i})).filter(m=>activeMeses.has(m.idx))
+  const mesesDisp = MESES_CORTOS.map((l,i)=>({label:l,idx:i})).filter(mes=>activeMeses.has(mes.idx))
 
   const toggleItem  = (id:string) => setActive(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
   const toggleMes   = (i:number)  => setActiveMeses(p=>{ if(p.size===1&&p.has(i)) return p; const n=new Set(p); n.has(i)?n.delete(i):n.add(i); return n })
@@ -97,7 +97,7 @@ export default function ComparadorPage() {
     return map
   }, [ingresos, egresos, deudas, pagos, tarjetas])
 
-  const activeItems = [...active].map(id=>ALL_ITEMS.find(i=>i.id===id)).filter(Boolean) as typeof ALL_ITEMS
+  const activeItems = Array.from(active].map(id=>ALL_ITEMS.find(i=>i.id===id)).filter(Boolean) as typeof ALL_ITEMS
 
   const chartData = useMemo(()=>mesesDisp.map(mes=>({
     month: mes.label,
