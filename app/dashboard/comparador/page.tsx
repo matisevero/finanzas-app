@@ -11,27 +11,27 @@ const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, col
 
 const GRUPOS = [
   { id:'ingresos', label:'Ingresos', icon:'↑', items:[
-    {id:'i_sal',  label:'Salarios',      color:'#2D7D2D'},
-    {id:'i_fre',  label:'Freelance',     color:'#52A852'},
-    {id:'i_alq',  label:'Alquiler',      color:'#85C985'},
-    {id:'i_otr',  label:'Otros ingresos',color:'#B8E0B8'},
+    {id:'i_sal',label:'Salarios',color:'#2D7D2D'},
+    {id:'i_fre',label:'Freelance',color:'#52A852'},
+    {id:'i_alq',label:'Alquiler',color:'#85C985'},
+    {id:'i_otr',label:'Otros',color:'#B8E0B8'},
   ]},
   { id:'egresos', label:'Egresos', icon:'↓', items:[
-    {id:'e_tar',  label:'Tarjetas',      color:'#C0392B'},
-    {id:'e_usd',  label:'Inv. USD',      color:'#E05A22'},
-    {id:'e_ser',  label:'Servicios',     color:'#F28B30'},
-    {id:'e_oli',  label:'Oli',           color:'#F5B042'},
-    {id:'e_cas',  label:'Casa',          color:'#F7C96A'},
-    {id:'e_soc',  label:'Social',        color:'#F9DC95'},
-    {id:'e_exp',  label:'Expensas',      color:'#E8A598'},
-    {id:'e_sal',  label:'Salud',         color:'#D9776C'},
-    {id:'e_sup',  label:'Supermercado',  color:'#C94E42'},
+    {id:'e_tar',label:'Tarjetas',color:'#C0392B'},
+    {id:'e_usd',label:'Inv. USD',color:'#E05A22'},
+    {id:'e_ser',label:'Servicios',color:'#F28B30'},
+    {id:'e_oli',label:'Oli',color:'#F5B042'},
+    {id:'e_cas',label:'Casa',color:'#F7C96A'},
+    {id:'e_soc',label:'Social',color:'#F9DC95'},
+    {id:'e_exp',label:'Expensas',color:'#E8A598'},
+    {id:'e_sal',label:'Salud',color:'#D9776C'},
+    {id:'e_sup',label:'Supermercado',color:'#C94E42'},
   ]},
   { id:'deudas', label:'Deudas', icon:'⬡', items:[
-    {id:'d_lil',  label:'Artefactos Lili',color:'#5B3FA6'},
-    {id:'d_tcr',  label:'Patente T-Cross',color:'#8462CC'},
-    {id:'d_ven',  label:'Ventiladores',   color:'#A988D8'},
-    {id:'d_nes',  label:'ML Nestor',      color:'#CBAFE6'},
+    {id:'d_lil',label:'Artefactos Lili',color:'#5B3FA6'},
+    {id:'d_tcr',label:'Patente T-Cross',color:'#8462CC'},
+    {id:'d_ven',label:'Ventiladores',color:'#A988D8'},
+    {id:'d_nes',label:'ML Nestor',color:'#CBAFE6'},
   ]},
   { id:'tarjetas', label:'Tarjetas', icon:'▣', items:[
     {id:'t_0',label:'TC 1',color:'#1A5E9E'},
@@ -54,50 +54,48 @@ export default function ComparadorPage() {
   const { data: pagos,    loading: lp } = usePagosTarjeta()
   const { data: tarjetas, loading: lt } = useTarjetas()
 
-  const [active, setActive]   = useState<Set<string>>(new Set(['i_sal','e_tar']))
+  const [active, setActive] = useState<Set<string>>(new Set(['i_sal','e_tar']))
   const [chartType, setChartType] = useState<'bar'|'line'>('bar')
   const [activeMeses, setActiveMeses] = useState<Set<number>>(new Set([0,1,2,3,4,5,6,7,8,9,10,11]))
 
-  const mesesDisp = MESES_CORTOS.map((l,i)=>({label:l,idx:i})).filter(mes=>activeMeses.has(mes.idx))
+  const mesesDisp = MESES_CORTOS.map((l,i)=>({label:l,idx:i})).filter(item=>activeMeses.has(item.idx))
 
-  const toggleItem  = (id:string) => setActive(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
-  const toggleMes   = (i:number)  => setActiveMeses(p=>{ if(p.size===1&&p.has(i)) return p; const n=new Set(p); n.has(i)?n.delete(i):n.add(i); return n })
-  const clearAll    = () => setActive(new Set())
+  const toggleItem = (id:string) => setActive(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
-  // Calcular datos por métrica y mes
+  const toggleMes = (i:number) => setActiveMeses(prev => {
+    if (prev.size===1 && prev.has(i)) return prev
+    const next = new Set(prev)
+    next.has(i) ? next.delete(i) : next.add(i)
+    return next
+  })
+
+  const clearAll = () => setActive(new Set())
+
   const metricData = useMemo(()=>{
     const map: Record<string,number[]> = {}
-    const mes = (i:number) => i+1
-
-    // Ingresos
-    map['i_sal'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===mes(i)&&x.tipo==='salario').reduce((s,x)=>s+x.monto,0))
-    map['i_fre'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===mes(i)&&x.tipo==='freelance').reduce((s,x)=>s+x.monto,0))
-    map['i_alq'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===mes(i)&&x.tipo==='alquiler').reduce((s,x)=>s+x.monto,0))
-    map['i_otr'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===mes(i)&&x.tipo==='otro').reduce((s,x)=>s+x.monto,0))
-
-    // Egresos
+    map['i_sal'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===i+1&&x.tipo==='salario').reduce((s,x)=>s+x.monto,0))
+    map['i_fre'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===i+1&&x.tipo==='freelance').reduce((s,x)=>s+x.monto,0))
+    map['i_alq'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===i+1&&x.tipo==='alquiler').reduce((s,x)=>s+x.monto,0))
+    map['i_otr'] = MESES_CORTOS.map((_,i)=>(ingresos??[]).filter(x=>x.mes===i+1&&x.tipo==='otro').reduce((s,x)=>s+x.monto,0))
     const eCats: Record<string,string> = {e_tar:'tarjeta',e_usd:'usd',e_ser:'servicios',e_oli:'oli',e_cas:'casa',e_soc:'social',e_exp:'expensas',e_sal:'salud',e_sup:'super'}
     Object.entries(eCats).forEach(([key,cat])=>{
-      map[key] = MESES_CORTOS.map((_,i)=>(egresos??[]).filter(x=>x.mes===mes(i)&&x.categoria===cat).reduce((s,x)=>s+x.monto,0))
+      map[key] = MESES_CORTOS.map((_,i)=>(egresos??[]).filter(x=>x.mes===i+1&&x.categoria===cat).reduce((s,x)=>s+x.monto,0))
     })
-
-    // Deudas (cuotas mensuales fijas)
-    const deudasMap: Record<string,number> = {}
-    ;(deudas??[]).forEach((d,i)=>{ deudasMap[`d_${i}`]=d.cuota_mensual })
     ;['d_lil','d_tcr','d_ven','d_nes'].forEach((key,i)=>{
       const d = (deudas??[])[i]
       map[key] = MESES_CORTOS.map(()=>d?.cuota_mensual??0)
     })
-
-    // Tarjetas (pagos mensuales)
     ;(tarjetas??[]).forEach((t,i)=>{
-      map[`t_${i}`] = MESES_CORTOS.map((_,mi)=>(pagos??[]).find(p=>p.tarjeta_id===t.id&&p.mes===mes(mi))?.monto??0)
+      map[`t_${i}`] = MESES_CORTOS.map((_,mi)=>(pagos??[]).find(p=>p.tarjeta_id===t.id&&p.mes===mi+1)?.monto??0)
     })
-
     return map
   }, [ingresos, egresos, deudas, pagos, tarjetas])
 
-  const activeItems = Array.from(active].map(id=>ALL_ITEMS.find(i=>i.id===id)).filter(Boolean) as typeof ALL_ITEMS
+  const activeItems = ALL_ITEMS.filter(i=>active.has(i.id))
 
   const chartData = useMemo(()=>mesesDisp.map(mes=>({
     month: mes.label,
@@ -110,7 +108,6 @@ export default function ComparadorPage() {
     <div>
       <PageHeader title="Comparador" subtitle={`Compará métricas financieras mes a mes — ${añoActivo}`} />
 
-      {/* Selector */}
       <div className="grid grid-cols-4 gap-4 mb-5">
         {GRUPOS.map(g=>(
           <div key={g.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
@@ -123,9 +120,9 @@ export default function ComparadorPage() {
                 const on = active.has(item.id)
                 return (
                   <div key={item.id} onClick={()=>toggleItem(item.id)}
-                    className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all ${on?'':'hover:bg-slate-50'}`}
+                    className="flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all"
                     style={on?{background:item.color+'12',border:`1px solid ${item.color}33`}:{border:'1px solid transparent'}}>
-                    <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all`}
+                    <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
                       style={on?{background:item.color,borderColor:item.color}:{borderColor:'#cbd5e1'}}>
                       {on&&<span className="text-white text-[9px] font-bold">✓</span>}
                     </div>
@@ -139,19 +136,17 @@ export default function ComparadorPage() {
         ))}
       </div>
 
-      {/* Tags activos + controles */}
       <div className="flex items-center gap-3 flex-wrap mb-4">
         <span className="text-slate-400 text-xs">Comparando:</span>
         {activeItems.map(i=>(
           <button key={i.id} onClick={()=>toggleItem(i.id)}
             className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium cursor-pointer border-none"
             style={{background:i.color+'15',color:i.color}}>
-            {i.label} <span className="opacity-60">✕</span>
+            {i.label} <span className="opacity-60 ml-1">✕</span>
           </button>
         ))}
-        {active.size>0 && <button onClick={clearAll} className="text-xs text-slate-400 hover:text-slate-600 underline border-none bg-transparent cursor-pointer">Limpiar todo</button>}
+        {active.size>0&&<button onClick={clearAll} className="text-xs text-slate-400 hover:text-slate-600 underline border-none bg-transparent cursor-pointer">Limpiar todo</button>}
         <div className="ml-auto flex items-center gap-3">
-          {/* Filtro meses */}
           <div className="flex gap-1">
             {MESES_CORTOS.map((l,i)=>(
               <button key={i} onClick={()=>toggleMes(i)}
@@ -160,29 +155,26 @@ export default function ComparadorPage() {
               </button>
             ))}
           </div>
-          {/* Toggle tipo */}
           <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-lg p-1">
-            {([['bar','▋ Barras'],['line','⟋ Líneas']] as const).map(([v,l])=>(
+            {(['bar','line'] as const).map(v=>(
               <button key={v} onClick={()=>setChartType(v)}
                 className={`px-3 py-1 rounded-md text-xs font-semibold transition-all border-none cursor-pointer ${chartType===v?'bg-white text-slate-900 shadow-sm':'bg-transparent text-slate-500'}`}>
-                {l}
+                {v==='bar'?'▋ Barras':'⟋ Líneas'}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Gráfico */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-card mb-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-slate-900 font-semibold text-[15px]">Comparativa mensual {añoActivo}</div>
           <span className="text-slate-400 text-xs">{activeItems.length} métricas · {mesesDisp.length} meses</span>
         </div>
-
         {activeItems.length===0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <span className="text-4xl mb-3">📊</span>
-            <span className="text-sm">Seleccioná al menos una métrica para ver el comparador</span>
+            <span className="text-sm">Seleccioná al menos una métrica</span>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
@@ -191,10 +183,9 @@ export default function ComparadorPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} />
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,m)} />
-                <Tooltip contentStyle={TT} formatter={(v:number,n:string)=>[fmt(v,m), ALL_ITEMS.find(i=>i.id===n)?.label||n]} />
+                <Tooltip contentStyle={TT} formatter={(v:number,n:string)=>[fmt(v,m),ALL_ITEMS.find(i=>i.id===n)?.label||n]} />
                 {activeItems.map(i=>(
-                  <Bar key={i.id} dataKey={i.id} name={i.id} fill={i.color+'dd'} radius={[3,3,0,0]} maxBarSize={40}
-                    stackId={getGrupo(i.id)?.id} />
+                  <Bar key={i.id} dataKey={i.id} name={i.id} fill={i.color+'dd'} radius={[3,3,0,0]} maxBarSize={40} stackId={getGrupo(i.id)?.id} />
                 ))}
               </BarChart>
             ) : (
@@ -202,7 +193,7 @@ export default function ComparadorPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} />
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,m)} />
-                <Tooltip contentStyle={TT} formatter={(v:number,n:string)=>[fmt(v,m), ALL_ITEMS.find(i=>i.id===n)?.label||n]} />
+                <Tooltip contentStyle={TT} formatter={(v:number,n:string)=>[fmt(v,m),ALL_ITEMS.find(i=>i.id===n)?.label||n]} />
                 {activeItems.map(i=>(
                   <Line key={i.id} dataKey={i.id} name={i.id} stroke={i.color} strokeWidth={2.5} dot={{r:3,fill:i.color}} type="monotone" />
                 ))}
@@ -212,8 +203,7 @@ export default function ComparadorPage() {
         )}
       </div>
 
-      {/* Tabla resumen */}
-      {activeItems.length>0 && (
+      {activeItems.length>0&&(
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-card">
           <div className="text-slate-900 font-semibold text-[15px] mb-4">Resumen de métricas seleccionadas</div>
           <div className="overflow-x-auto">
@@ -232,14 +222,12 @@ export default function ComparadorPage() {
                   if (gItems.length===0) return null
                   return [
                     <tr key={`h_${g.id}`}>
-                      <td colSpan={mesesDisp.length+3} className="py-1.5 px-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50">
-                        {g.icon} {g.label}
-                      </td>
+                      <td colSpan={mesesDisp.length+3} className="py-1.5 px-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50">{g.icon} {g.label}</td>
                     </tr>,
                     ...gItems.map(item=>{
                       const vals = mesesDisp.map(mes=>metricData[item.id]?.[mes.idx]??0)
                       const total = vals.reduce((a,b)=>a+b,0)
-                      const avg   = Math.round(total/vals.length)
+                      const avg = Math.round(total/vals.length)
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
                           <td className="py-2.5 px-2 border-b border-slate-50">
@@ -248,17 +236,13 @@ export default function ComparadorPage() {
                               <span className="text-sm text-slate-700">{item.label}</span>
                             </div>
                           </td>
-                          {vals.map((v,i)=>(
-                            <td key={i} className="py-2.5 px-2 text-right border-b border-slate-50 font-mono text-sm font-bold" style={{color:item.color}}>
-                              {v>0?fmt(v,m):'—'}
-                            </td>
-                          ))}
+                          {vals.map((v,i)=><td key={i} className="py-2.5 px-2 text-right border-b border-slate-50 font-mono text-sm font-bold" style={{color:item.color}}>{v>0?fmt(v,m):'—'}</td>)}
                           <td className="py-2.5 px-2 text-right border-b border-slate-50 font-mono text-xs text-slate-400">{fmt(avg,m)}</td>
                           <td className="py-2.5 px-2 text-right border-b border-slate-50 font-mono text-sm font-bold" style={{color:item.color}}>{fmt(total,m)}</td>
                         </tr>
                       )
                     }),
-                    gItems.length>1 && (
+                    gItems.length>1&&(
                       <tr key={`sub_${g.id}`} className="bg-slate-50/50">
                         <td className="py-2 px-2 border-b border-slate-100 text-xs font-bold text-slate-500">Total {g.label}</td>
                         {mesesDisp.map((mes,i)=>{
