@@ -184,7 +184,7 @@ export default function EgresosPage() {
           <EmptyState icon="💸" title={search||filterCat!=='todos'?'Sin resultados':'Sin egresos registrados'} description="Agregá tu primer egreso para empezar." />
         ) : (
           <Table>
-            <thead><tr><Th>Descripción</Th><Th>Categoría</Th><Th>Fecha</Th><Th>Quién</Th><Th right>Importe</Th><Th right></Th></tr></thead>
+            <thead><tr><Th>Descripción</Th><Th>Categoría</Th><Th>Fecha</Th><Th>Quién</Th><Th right>Importe</Th><Th right> </Th></tr></thead>
             <tbody>
               {filtered.map(e=>{ const cfg=TIPOS_EGRESO[e.categoria as TipoEgreso]||TIPOS_EGRESO.otro; return (
                 <tr key={e.id}>

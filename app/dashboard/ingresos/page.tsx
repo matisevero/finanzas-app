@@ -140,7 +140,7 @@ export default function IngresosPage() {
           <EmptyState icon="💸" title={search||filterTipo!=='todos'?'Sin resultados':'Sin ingresos registrados'} description="Agregá tu primer ingreso para empezar." />
         ) : (
           <Table>
-            <thead><tr><Th>Descripción</Th><Th>Tipo</Th><Th>Fecha</Th><Th>Quién</Th><Th right>Importe</Th><Th right></Th></tr></thead>
+            <thead><tr><Th>Descripción</Th><Th>Tipo</Th><Th>Fecha</Th><Th>Quién</Th><Th right>Importe</Th><Th right> </Th></tr></thead>
             <tbody>
               {filtered.map(i=>{ const cfg=TIPOS_INGRESO[i.tipo as TipoIngreso]||TIPOS_INGRESO.otro; return (
                 <tr key={i.id}>
