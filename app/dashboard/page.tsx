@@ -21,19 +21,18 @@ export default function DashboardPage() {
   const [distMode, setDistMode] = useState<'egresos'|'ingresos'>('egresos')
   const [distMes,  setDistMes]  = useState(-1)
 
-  if (li||le||ld||lp||lt) return <LoadingSpinner />
+  // Todos los useMemo ANTES del early return
+  const totalIngresos = useMemo(()=>(ingresos??[]).reduce((s,i)=>s+i.monto,0), [ingresos])
+  const totalEgresos  = useMemo(()=>(egresos??[]).reduce((s,e)=>s+e.monto,0),  [egresos])
+  const totalUSD      = useMemo(()=>(egresos??[]).filter(e=>e.categoria==='usd').reduce((s,e)=>s+e.monto,0), [egresos])
 
-  const totalIngresos = (ingresos??[]).reduce((s,i)=>s+i.monto,0)
-  const totalEgresos  = (egresos??[]).reduce((s,e)=>s+e.monto,0)
-  const totalUSD      = (egresos??[]).filter(e=>e.categoria==='usd').reduce((s,e)=>s+e.monto,0)
-
-  const flowData = MESES_CORTOS.map((month,i)=>({
+  const flowData = useMemo(()=>MESES_CORTOS.map((month,i)=>({
     month,
     Ingresos: (ingresos??[]).filter(x=>x.mes===i+1).reduce((s,x)=>s+x.monto,0),
     Gastos:   (egresos??[]).filter(x=>x.mes===i+1).reduce((s,x)=>s+x.monto,0),
-  }))
+  })), [ingresos, egresos])
 
-  const distData = (() => {
+  const distData = useMemo(()=>{
     if (distMode==='egresos') {
       const src = distMes===-1 ? (egresos??[]) : (egresos??[]).filter(x=>x.mes===distMes+1)
       return Object.entries(TIPOS_EGRESO).map(([key,cfg])=>({
@@ -47,9 +46,7 @@ export default function DashboardPage() {
         value: src.filter(i=>i.tipo===key).reduce((s,i)=>s+i.monto,0)
       })).filter(d=>d.value>0)
     }
-  })()
-
-  const distTotal = distData.reduce((s,d)=>s+d.value,0)
+  }, [egresos, ingresos, distMode, distMes])
 
   const ultimoPago = useMemo(()=>{
     const map: Record<string,number> = {}
@@ -61,6 +58,11 @@ export default function DashboardPage() {
     })
     return map
   }, [pagos])
+
+  const distTotal = distData.reduce((s,d)=>s+d.value,0)
+
+  // Early return DESPUÉS de todos los hooks
+  if (li||le||ld||lp||lt) return <LoadingSpinner />
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16,paddingBottom:24}}>
