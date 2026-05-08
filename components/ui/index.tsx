@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { usePageHeader } from '@/context/PageHeaderContext'
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 interface StatCardProps {
@@ -30,16 +31,17 @@ export function StatCard({ label, value, sub, trend, trendInvert = false, color 
 }
 
 // ─── PageHeader ───────────────────────────────────────────────────────────────
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between mb-8">
-      <div>
-        <h1 className="page-title">{title}</h1>
-        {subtitle && <p className="page-sub">{subtitle}</p>}
-      </div>
-      {action && <div>{action}</div>}
-    </div>
-  )
+export function PageHeader({ title, subtitle, action }: {
+  title: string; subtitle?: string; action?: React.ReactNode
+}) {
+  const { setHeader } = usePageHeader()
+  useEffect(() => {
+    setHeader(title, subtitle, action)
+    return () => setHeader('', '', null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, subtitle])
+
+  return null
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
