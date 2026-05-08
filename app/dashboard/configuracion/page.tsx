@@ -75,9 +75,7 @@ export default function ConfiguracionPage() {
   const [importResult, setImportResult] = useState<ImportResult|null>(null)
   const [importStep, setImportStep] = useState('')
   const [exporting, setExporting] = useState(false)
-  const fileIngRef = useRef<HTMLInputElement>(null)
-  const fileEgrRef = useRef<HTMLInputElement>(null)
-  const fileDeuRef = useRef<HTMLInputElement>(null)
+  const fileMultiRef = useRef<HTMLInputElement>(null)
 
   useEffect(()=>{
     sb.auth.getUser().then(({data:{user}})=>{
@@ -111,76 +109,81 @@ export default function ConfiguracionPage() {
     } catch(e){ setPassMsg({type:'err',text:e instanceof Error?e.message:'Error'}) }
   }
 
+  const detectarTipo = (header: string): 'ingresos'|'egresos'|'deudas'|null => {
+    if (header.includes('Ingreso')) return 'ingresos'
+    if (header.includes('Gasto'))   return 'egresos'
+    if (header.includes('Deuda') || header.includes('Vencimiento')) return 'deudas'
+    return null
+  }
+
   const handleImport = async () => {
-    const fIng = fileIngRef.current?.files?.[0]
-    const fEgr = fileEgrRef.current?.files?.[0]
-    const fDeu = fileDeuRef.current?.files?.[0]
-    if (!fIng && !fEgr && !fDeu) return
+    const files = fileMultiRef.current?.files
+    if (!files || files.length === 0) return
     setImporting(true); setImportResult(null)
     const result: ImportResult = { ingresos:0, egresos:0, eventos:0, errores:[] }
     try {
       const {data:{user}} = await sb.auth.getUser()
       if (!user) throw new Error('No autenticado')
 
-      if (fIng) {
-        setImportStep('Importando ingresos...')
-        const texto = await fIng.text()
-        const filas = parseCSV(texto).slice(1)
-        const rows = filas.map(f=>{
-          const fecha = parseFecha(f[0])
-          if (!fecha) return null
-          const fechaObj = new Date(fecha)
-          return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, tipo:MAPA_TIPO_INGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
-        }).filter(Boolean).filter((r:any)=>r.monto>0)
-        if (rows.length>0) {
-          const {error} = await sb.from('ingresos').insert(rows as any[])
-          if (error) result.errores.push('Ingresos: '+error.message)
-          else result.ingresos = rows.length
-        }
-      }
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const texto = await file.text()
+        const todas = parseCSV(texto)
+        if (todas.length === 0) continue
+        const header = todas[0].join(',')
+        const tipo = detectarTipo(header)
+        const filas = todas.slice(1)
 
-      if (fEgr) {
-        setImportStep('Importando egresos...')
-        const texto = await fEgr.text()
-        const filas = parseCSV(texto).slice(1)
-        const rows = filas.map(f=>{
-          const fecha = parseFecha(f[0])
-          if (!fecha) return null
-          const fechaObj = new Date(fecha)
-          return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, categoria:MAPA_CAT_EGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
-        }).filter(Boolean).filter((r:any)=>r.monto>0)
-        if (rows.length>0) {
-          const {error} = await sb.from('egresos').insert(rows as any[])
-          if (error) result.errores.push('Egresos: '+error.message)
-          else result.egresos = rows.length
-        }
-      }
-
-      if (fDeu) {
-        setImportStep('Importando vencimientos...')
-        const texto = await fDeu.text()
-        const filas = parseCSV(texto).slice(1)
-        const rows = filas.filter(f=>f[0]==='FALSE').map(f=>{
-          const fecha = parseFecha(f[1])
-          if (!fecha) return null
-          const fechaObj = new Date(fecha)
-          const cat = f[2]||''
-          const tipo = cat.includes('Tarjeta')?'tarjeta':cat==='Casa'?'casa':cat==='Servicios'?'servicio':cat==='Expensas'?'expensa':cat==='Educación'?'edu':'egreso'
-          return { user_id:user.id, dia:fechaObj.getDate(), mes:fechaObj.getMonth()+1, año:fechaObj.getFullYear(), tipo, descripcion:f[3]||'', monto:parseMonto(f[4])||null, moneda:'ARS', recurrente:false, pagado:false }
-        }).filter(Boolean).filter((r:any)=>r.descripcion)
-        if (rows.length>0) {
-          const {error} = await sb.from('eventos_calendario').insert(rows as any[])
-          if (error) result.errores.push('Eventos: '+error.message)
-          else result.eventos = rows.length
+        if (tipo === 'ingresos') {
+          setImportStep(`Importando ${file.name}...`)
+          const rows = filas.map(f=>{
+            const fecha = parseFecha(f[0])
+            if (!fecha) return null
+            const fechaObj = new Date(fecha)
+            return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, tipo:MAPA_TIPO_INGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
+          }).filter(Boolean).filter((r:any)=>r.monto>0)
+          if (rows.length>0) {
+            const {error} = await sb.from('ingresos').insert(rows as any[])
+            if (error) result.errores.push(file.name+': '+error.message)
+            else result.ingresos += rows.length
+          }
+        } else if (tipo === 'egresos') {
+          setImportStep(`Importando ${file.name}...`)
+          const rows = filas.map(f=>{
+            const fecha = parseFecha(f[0])
+            if (!fecha) return null
+            const fechaObj = new Date(fecha)
+            return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, categoria:MAPA_CAT_EGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
+          }).filter(Boolean).filter((r:any)=>r.monto>0)
+          if (rows.length>0) {
+            const {error} = await sb.from('egresos').insert(rows as any[])
+            if (error) result.errores.push(file.name+': '+error.message)
+            else result.egresos += rows.length
+          }
+        } else if (tipo === 'deudas') {
+          setImportStep(`Importando ${file.name}...`)
+          const rows = filas.filter(f=>f[0]==='FALSE').map(f=>{
+            const fecha = parseFecha(f[1])
+            if (!fecha) return null
+            const fechaObj = new Date(fecha)
+            const cat = f[2]||''
+            const tipoEv = cat.includes('Tarjeta')?'tarjeta':cat==='Casa'?'casa':cat==='Servicios'?'servicio':cat==='Expensas'?'expensa':cat==='Educación'?'edu':'egreso'
+            return { user_id:user.id, dia:fechaObj.getDate(), mes:fechaObj.getMonth()+1, año:fechaObj.getFullYear(), tipo:tipoEv, descripcion:f[3]||'', monto:parseMonto(f[4])||null, moneda:'ARS', recurrente:false, pagado:false }
+          }).filter(Boolean).filter((r:any)=>r.descripcion)
+          if (rows.length>0) {
+            const {error} = await sb.from('eventos_calendario').insert(rows as any[])
+            if (error) result.errores.push(file.name+': '+error.message)
+            else result.eventos += rows.length
+          }
+        } else {
+          result.errores.push(file.name+': no se pudo detectar el tipo de archivo')
         }
       }
     } catch(e) {
       result.errores.push(e instanceof Error?e.message:'Error inesperado')
     } finally {
       setImporting(false); setImportStep(''); setImportResult(result)
-      if (fileIngRef.current) fileIngRef.current.value=''
-      if (fileEgrRef.current) fileEgrRef.current.value=''
-      if (fileDeuRef.current) fileDeuRef.current.value=''
+      if (fileMultiRef.current) fileMultiRef.current.value=''
     }
   }
 
@@ -280,19 +283,15 @@ export default function ConfiguracionPage() {
         {/* IMPORTAR */}
         <Card className="col-span-2">
           <div className="text-slate-900 font-semibold text-[15px] mb-2">Importar datos desde CSV</div>
-          <p className="text-slate-400 text-sm mb-5">Subí los archivos exportados desde tu Google Sheet. Podés subir uno, dos o los tres a la vez. Los datos se agregan sin borrar lo existente.</p>
-          <div className="grid grid-cols-3 gap-4 mb-5">
-            {[
-              {label:'📥 Ingresos', sub:'..._Ingreso.csv',  ref:fileIngRef, color:'#2D7D2D'},
-              {label:'📤 Egresos',  sub:'..._Gasto.csv',    ref:fileEgrRef, color:'#C0392B'},
-              {label:'📋 Deudas',   sub:'..._Deudas.csv',   ref:fileDeuRef, color:'#5B3FA6'},
-            ].map(f=>(
-              <div key={f.label} className="border-2 border-dashed border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-colors">
-                <div className="text-sm font-semibold text-slate-700 mb-1">{f.label}</div>
-                <div className="text-slate-400 text-xs mb-3">{f.sub}</div>
-                <input ref={f.ref} type="file" accept=".csv" className="text-xs text-slate-500 w-full" />
-              </div>
-            ))}
+          <p className="text-slate-400 text-sm mb-4">
+            Seleccioná uno o varios archivos CSV exportados desde tu Google Sheet.
+            El sistema detecta automáticamente si es de Ingresos, Gastos o Deudas según el contenido.
+          </p>
+          <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors mb-5 text-center">
+            <div className="text-3xl mb-2">📂</div>
+            <div className="text-sm font-semibold text-slate-700 mb-1">Seleccioná tus archivos CSV</div>
+            <div className="text-slate-400 text-xs mb-4">Podés seleccionar varios a la vez — el sistema detecta el tipo de cada uno automáticamente</div>
+            <input ref={fileMultiRef} type="file" accept=".csv" multiple className="text-sm text-slate-500 cursor-pointer" />
           </div>
           <div className="flex items-center gap-4">
             <button onClick={handleImport} disabled={importing} className="btn-primary disabled:opacity-50">
@@ -302,7 +301,7 @@ export default function ConfiguracionPage() {
               <div className={`flex-1 text-sm px-4 py-3 rounded-xl ${importResult.errores.length>0?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700'}`}>
                 {importResult.errores.length>0
                   ? '⚠ '+importResult.errores.join(' · ')
-                  : `✓ Importado — ${[importResult.ingresos>0&&importResult.ingresos+' ingresos', importResult.egresos>0&&importResult.egresos+' egresos', importResult.eventos>0&&importResult.eventos+' eventos'].filter(Boolean).join(' · ')}`
+                  : '✓ Importado correctamente — '+[importResult.ingresos>0&&importResult.ingresos+' ingresos', importResult.egresos>0&&importResult.egresos+' egresos', importResult.eventos>0&&importResult.eventos+' eventos'].filter(Boolean).join(' · ')
                 }
               </div>
             )}
