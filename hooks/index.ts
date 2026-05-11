@@ -34,6 +34,7 @@ export function useDeudas()    { return useAsync(() => Q.getDeudas(), []) }
 export function useTarjetas()  { return useAsync(() => Q.getTarjetas(), []) }
 export function useMetas()     { return useAsync(() => Q.getMetas(), []) }
 export function usePrecioItems() { return useAsync(() => Q.getPrecioItems(), []) }
+export function useCategoriasCustom(modulo: string) { return useAsync(() => Q.getCategoriasCustom(modulo), [modulo]) }
 
 export function useEventosMes(año: number, mes: number) {
   return useAsync(() => Q.getEventosByMes(año, mes), [año, mes])
