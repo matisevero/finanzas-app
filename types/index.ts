@@ -1,12 +1,23 @@
 // ─── Primitivos ──────────────────────────────────────────────────────────────
 export type Moneda = 'ARS' | 'USD' | 'EUR' | 'BTC' | 'ETH' | 'USDT'
-export type TipoIngreso = 'salario' | 'freelance' | 'alquiler' | 'otro'
-export type TipoEgreso =
-  | 'tarjeta' | 'usd' | 'servicios' | 'oli' | 'casa'
-  | 'social' | 'expensas' | 'salud' | 'super' | 'impuestos'
-  | 'viajes' | 'auto' | 'educacion' | 'otro'
+export type TipoIngreso = string
+export type TipoEgreso = string
 export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa'
 export type Quien = 'Mati' | 'Dani' | 'ambos'
+
+// ─── Categoría custom ─────────────────────────────────────────────────────────
+export interface CategoriaCustom {
+  id: string
+  user_id: string
+  modulo: string
+  nombre: string
+  icono: string
+  color: string
+  parent_id: string | null
+  created_at: string
+  children?: CategoriaCustom[]
+}
+export type CategoriaCustomInsert = Omit<CategoriaCustom, 'id' | 'user_id' | 'created_at' | 'children'>
 
 // ─── Usuario ─────────────────────────────────────────────────────────────────
 export interface Usuario {
@@ -27,7 +38,7 @@ export interface Ingreso {
   user_id: string
   año: number
   mes: number
-  tipo: TipoIngreso
+  tipo: string
   monto: number
   moneda: Moneda
   descripcion: string
@@ -36,7 +47,6 @@ export interface Ingreso {
   recurrente: boolean
   created_at: string
 }
-
 export type IngresoInsert = Omit<Ingreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
 
 // ─── Egresos ─────────────────────────────────────────────────────────────────
@@ -45,7 +55,7 @@ export interface Egreso {
   user_id: string
   año: number
   mes: number
-  categoria: TipoEgreso
+  categoria: string
   monto: number
   moneda: Moneda
   descripcion: string
@@ -54,7 +64,6 @@ export interface Egreso {
   recurrente: boolean
   created_at: string
 }
-
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
 
 // ─── Deudas largo plazo ───────────────────────────────────────────────────────
@@ -76,7 +85,6 @@ export interface Deuda {
   activa: boolean
   created_at: string
 }
-
 export type DeudaInsert = Omit<Deuda, 'id' | 'user_id' | 'created_at'>
 
 export interface PagoDeuda {
@@ -147,7 +155,6 @@ export interface EventoCalendario {
   pagado: boolean
   created_at: string
 }
-
 export type EventoInsert = Omit<EventoCalendario, 'id' | 'user_id' | 'created_at'>
 
 // ─── Metas ───────────────────────────────────────────────────────────────────
@@ -165,7 +172,6 @@ export interface Meta {
   completada: boolean
   created_at: string
 }
-
 export type MetaInsert = Omit<Meta, 'id' | 'user_id' | 'created_at'>
 
 // ─── Precios recurrentes ──────────────────────────────────────────────────────
@@ -181,7 +187,7 @@ export interface PrecioItem {
 export interface PrecioHistorial {
   id: string
   item_id: string
-  mes: string       // 'YYYY-MM'
+  mes: string
   valor: number
   moneda: Moneda
   created_at: string
