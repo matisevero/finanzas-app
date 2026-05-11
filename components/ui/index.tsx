@@ -45,9 +45,9 @@ export function PageHeader({ title, subtitle, action }: {
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
-export function Card({ children, className = '', padding = 'md' }: { children: React.ReactNode; className?: string; padding?: 'sm'|'md'|'lg' }) {
+export function Card({ children, className = '', padding = 'md', onClick }: { children: React.ReactNode; className?: string; padding?: 'sm'|'md'|'lg'; onClick?: () => void }) {
   const p = { sm: 'p-4', md: 'p-6', lg: 'p-8' }[padding]
-  return <div className={`bg-white border border-slate-200 rounded-2xl ${p} shadow-card ${className}`}>{children}</div>
+  return <div className={`bg-white border border-slate-200 rounded-2xl ${p} shadow-card ${className}`} onClick={onClick}>{children}</div>
 }
 
 // ─── CardTitle ────────────────────────────────────────────────────────────────
