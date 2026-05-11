@@ -7,6 +7,7 @@ import type {
   Meta, MetaInsert,
   PrecioItem, PrecioHistorial,
   SaldoInicial,
+  CategoriaCustom, CategoriaCustomInsert,
 } from '@/types'
 
 const sb = () => createClient()
@@ -16,9 +17,47 @@ const uid = async () => {
   return user.id
 }
 
+// ─── CATEGORIAS CUSTOM ────────────────────────────────────────────────────────
+export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .select('*')
+    .eq('modulo', modulo)
+    .order('nombre')
+  if (error) throw error
+  const flat = data ?? []
+  const map: Record<string, CategoriaCustom> = {}
+  flat.forEach(c => { map[c.id] = { ...c, children: [] } })
+  const roots: CategoriaCustom[] = []
+  flat.forEach(c => {
+    if (c.parent_id && map[c.parent_id]) {
+      map[c.parent_id].children!.push(map[c.id])
+    } else {
+      roots.push(map[c.id])
+    }
+  })
+  return roots
+}
+
+export async function createCategoriaCustom(form: CategoriaCustomInsert): Promise<CategoriaCustom> {
+  const userId = await uid()
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .insert({ ...form, user_id: userId })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteCategoriaCustom(id: string) {
+  const { error } = await sb().from('categorias_custom').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ─── INGRESOS ─────────────────────────────────────────────────────────────────
 export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
-  const { data, error } = await sb().from('ingresos').select('*').eq('año', año).order('fecha')
+  const { data, error } = await sb().from('ingresos').select('*').eq('año', año).order('fecha', { ascending: false })
   if (error) throw error
   return data ?? []
 }
@@ -33,6 +72,18 @@ export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
   return data
 }
 
+export async function updateIngreso(id: string, form: Partial<IngresoInsert>): Promise<Ingreso> {
+  const updates: Record<string, unknown> = { ...form }
+  if (form.fecha) {
+    const fecha = new Date(form.fecha)
+    updates.año = fecha.getFullYear()
+    updates.mes = fecha.getMonth() + 1
+  }
+  const { data, error } = await sb().from('ingresos').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
 export async function deleteIngreso(id: string) {
   const { error } = await sb().from('ingresos').delete().eq('id', id)
   if (error) throw error
@@ -40,7 +91,7 @@ export async function deleteIngreso(id: string) {
 
 // ─── EGRESOS ─────────────────────────────────────────────────────────────────
 export async function getEgresosByAño(año: number): Promise<Egreso[]> {
-  const { data, error } = await sb().from('egresos').select('*').eq('año', año).order('fecha')
+  const { data, error } = await sb().from('egresos').select('*').eq('año', año).order('fecha', { ascending: false })
   if (error) throw error
   return data ?? []
 }
@@ -51,6 +102,18 @@ export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
   const { data, error } = await sb().from('egresos')
     .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
     .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Promise<Egreso> {
+  const updates: Record<string, unknown> = { ...form }
+  if (form.fecha) {
+    const fecha = new Date(form.fecha)
+    updates.año = fecha.getFullYear()
+    updates.mes = fecha.getMonth() + 1
+  }
+  const { data, error } = await sb().from('egresos').update(updates).eq('id', id).select().single()
   if (error) throw error
   return data
 }
