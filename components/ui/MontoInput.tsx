@@ -9,7 +9,7 @@ interface MontoInputProps {
 }
 
 function toDisplay(raw: string): string {
-  const clean = raw.replace(/[^\d,]/g, '')
+  const clean  = raw.replace(/[^\d,]/g, '')
   const parts  = clean.split(',')
   const entero = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
   return parts.length > 1 ? entero + ',' + parts[1].slice(0, 2) : entero
@@ -24,12 +24,12 @@ export default function MontoInput({ value, onChange, placeholder = '0', classNa
     if (!value) return ''
     const num = parseFloat(value)
     if (isNaN(num)) return ''
-    return toDisplay(value.replace('.', ','))
+    return toDisplay(String(num).replace('.', ','))
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input   = e.target.value.replace(/[^\d,]/g, '')
-    const commas  = (input.match(/,/g) || []).length
+    const input  = e.target.value.replace(/[^\d,]/g, '')
+    const commas = (input.match(/,/g) || []).length
     if (commas > 1) return
     const formatted = toDisplay(input)
     setDisplay(formatted)
