@@ -8,9 +8,7 @@ interface PageHeaderValue {
   setHeader: (title: string, subtitle?: string, action?: ReactNode) => void
 }
 
-const PageHeaderContext = createContext<PageHeaderValue>({
-  title: '', setHeader: () => {}
-})
+const PageHeaderContext = createContext<PageHeaderValue>({ title: '', setHeader: () => {} })
 
 export function PageHeaderProvider({ children }: { children: ReactNode }) {
   const [title, setTitle]       = useState('')
