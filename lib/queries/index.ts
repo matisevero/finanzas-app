@@ -18,16 +18,9 @@ const uid = async () => {
 }
 
 // ─── CATEGORIAS CUSTOM ────────────────────────────────────────────────────────
-export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
-  const { data, error } = await sb()
-    .from('categorias_custom')
-    .select('*')
-    .eq('modulo', modulo)
-    .order('nombre')
-  if (error) throw error
-  const flat = data ?? []
+function buildTree(flat: CategoriaCustom[]): CategoriaCustom[] {
   const map: Record<string, CategoriaCustom> = {}
-  flat.forEach(c => { map[c.id] = { ...c, children: [] } })
+  flat.forEach(c => { map[c.id] = { ...c, children: [] as CategoriaCustom[] } })
   const roots: CategoriaCustom[] = []
   flat.forEach(c => {
     if (c.parent_id && map[c.parent_id]) {
@@ -39,6 +32,27 @@ export async function getCategoriasCustom(modulo: string): Promise<CategoriaCust
   return roots
 }
 
+export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .select('*')
+    .eq('modulo', modulo)
+    .order('nombre')
+  if (error) throw error
+  const flat: CategoriaCustom[] = (data ?? []).map(c => ({
+    id: c.id as string,
+    user_id: c.user_id as string,
+    modulo: c.modulo as string,
+    nombre: c.nombre as string,
+    icono: c.icono as string,
+    color: c.color as string,
+    parent_id: c.parent_id as string | null,
+    created_at: c.created_at as string,
+    children: [] as CategoriaCustom[],
+  }))
+  return buildTree(flat)
+}
+
 export async function createCategoriaCustom(form: CategoriaCustomInsert): Promise<CategoriaCustom> {
   const userId = await uid()
   const { data, error } = await sb()
@@ -47,7 +61,7 @@ export async function createCategoriaCustom(form: CategoriaCustomInsert): Promis
     .select()
     .single()
   if (error) throw error
-  return data
+  return { ...data, children: [] as CategoriaCustom[] } as CategoriaCustom
 }
 
 export async function deleteCategoriaCustom(id: string) {
@@ -64,7 +78,7 @@ export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
 
 export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
   const userId = await uid()
-  const fecha  = new Date(form.fecha)
+  const fecha = new Date(form.fecha)
   const { data, error } = await sb().from('ingresos')
     .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
     .select().single()
@@ -98,7 +112,7 @@ export async function getEgresosByAño(año: number): Promise<Egreso[]> {
 
 export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
   const userId = await uid()
-  const fecha  = new Date(form.fecha)
+  const fecha = new Date(form.fecha)
   const { data, error } = await sb().from('egresos')
     .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
     .select().single()
