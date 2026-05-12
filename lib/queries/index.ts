@@ -18,9 +18,16 @@ const uid = async () => {
 }
 
 // ─── CATEGORIAS CUSTOM ────────────────────────────────────────────────────────
-function buildTree(flat: CategoriaCustom[]): CategoriaCustom[] {
+export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .select('*')
+    .eq('modulo', modulo)
+    .order('nombre')
+  if (error) throw error
+  const flat = data ?? []
   const map: Record<string, CategoriaCustom> = {}
-  flat.forEach(c => { map[c.id] = { ...c, children: [] as CategoriaCustom[] } })
+  flat.forEach(c => { map[c.id] = { ...c, children: [] } })
   const roots: CategoriaCustom[] = []
   flat.forEach(c => {
     if (c.parent_id && map[c.parent_id]) {
@@ -32,27 +39,6 @@ function buildTree(flat: CategoriaCustom[]): CategoriaCustom[] {
   return roots
 }
 
-export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
-  const { data, error } = await sb()
-    .from('categorias_custom')
-    .select('*')
-    .eq('modulo', modulo)
-    .order('nombre')
-  if (error) throw error
-  const flat: CategoriaCustom[] = (data ?? []).map(c => ({
-    id: c.id as string,
-    user_id: c.user_id as string,
-    modulo: c.modulo as string,
-    nombre: c.nombre as string,
-    icono: c.icono as string,
-    color: c.color as string,
-    parent_id: c.parent_id as string | null,
-    created_at: c.created_at as string,
-    children: [] as CategoriaCustom[],
-  }))
-  return buildTree(flat)
-}
-
 export async function createCategoriaCustom(form: CategoriaCustomInsert): Promise<CategoriaCustom> {
   const userId = await uid()
   const { data, error } = await sb()
@@ -61,7 +47,7 @@ export async function createCategoriaCustom(form: CategoriaCustomInsert): Promis
     .select()
     .single()
   if (error) throw error
-  return { ...data, children: [] as CategoriaCustom[] } as CategoriaCustom
+  return data
 }
 
 export async function deleteCategoriaCustom(id: string) {
