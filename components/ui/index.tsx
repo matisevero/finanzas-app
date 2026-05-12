@@ -40,12 +40,13 @@ export function PageHeader({ title, subtitle, action }: {
     return () => setHeader('', '', null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, subtitle])
-
   return null
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
-export function Card({ children, className = '', padding = 'md', onClick }: { children: React.ReactNode; className?: string; padding?: 'sm'|'md'|'lg'; onClick?: () => void }) {
+export function Card({ children, className = '', padding = 'md', onClick }: {
+  children: React.ReactNode; className?: string; padding?: 'sm' | 'md' | 'lg'; onClick?: () => void
+}) {
   const p = { sm: 'p-4', md: 'p-6', lg: 'p-8' }[padding]
   return <div className={`bg-white border border-slate-200 rounded-2xl ${p} shadow-card ${className}`} onClick={onClick}>{children}</div>
 }
@@ -61,12 +62,12 @@ export function CardTitle({ children, action }: { children: React.ReactNode; act
 }
 
 // ─── ChartToggle ─────────────────────────────────────────────────────────────
-export function ChartToggle({ options, value, onChange }: { options: Array<{value:string;label:string}>; value: string; onChange: (v:string)=>void }) {
+export function ChartToggle({ options, value, onChange }: { options: Array<{ value: string; label: string }>; value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-lg p-1">
       {options.map(opt => (
         <button key={opt.value} onClick={() => onChange(opt.value)}
-          className={`px-3 py-1 rounded-md text-xs font-semibold transition-all border-none cursor-pointer ${value===opt.value?'bg-white text-slate-900 shadow-sm':'bg-transparent text-slate-500 hover:text-slate-700'}`}>
+          className={`px-3 py-1 rounded-md text-xs font-semibold transition-all border-none cursor-pointer ${value === opt.value ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'}`}>
           {opt.label}
         </button>
       ))}
@@ -75,7 +76,7 @@ export function ChartToggle({ options, value, onChange }: { options: Array<{valu
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children }: { open:boolean; onClose:()=>void; title:string; children:React.ReactNode }) {
+export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -102,7 +103,7 @@ export function Badge({ children, color = '#1A5E9E' }: { children: React.ReactNo
 }
 
 // ─── ProgressBar ─────────────────────────────────────────────────────────────
-export function ProgressBar({ value, color = '#1A5E9E', height = 6 }: { value:number; color?:string; height?:number }) {
+export function ProgressBar({ value, color = '#1A5E9E', height = 6 }: { value: number; color?: string; height?: number }) {
   return (
     <div className="bg-slate-100 rounded-full overflow-hidden" style={{ height }}>
       <div className="h-full rounded-full transition-all duration-700"
@@ -111,7 +112,7 @@ export function ProgressBar({ value, color = '#1A5E9E', height = 6 }: { value:nu
   )
 }
 
-// ─── Loading ─────────────────────────────────────────────────────────────────
+// ─── LoadingSpinner ───────────────────────────────────────────────────────────
 export function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-16">
@@ -121,7 +122,7 @@ export function LoadingSpinner() {
 }
 
 // ─── EmptyState ───────────────────────────────────────────────────────────────
-export function EmptyState({ icon = '📭', title, description, action }: { icon?:string; title:string; description?:string; action?:React.ReactNode }) {
+export function EmptyState({ icon = '📭', title, description, action }: { icon?: string; title: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="text-5xl mb-4">{icon}</div>
@@ -137,10 +138,10 @@ export function Table({ children }: { children: React.ReactNode }) {
   return <div className="overflow-x-auto"><table className="w-full border-collapse">{children}</table></div>
 }
 export function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
-  return <th className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest pb-3 border-b border-slate-100 ${right?'text-right':'text-left'}`}>{children}</th>
+  return <th className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest pb-3 border-b border-slate-100 ${right ? 'text-right' : 'text-left'}`}>{children}</th>
 }
 export function Td({ children, right, className = '' }: { children: React.ReactNode; right?: boolean; className?: string }) {
-  return <td className={`py-3 border-b border-slate-50 text-sm ${right?'text-right':''} ${className}`}>{children}</td>
+  return <td className={`py-3 border-b border-slate-50 text-sm ${right ? 'text-right' : ''} ${className}`}>{children}</td>
 }
 
 // ─── FieldLabel ──────────────────────────────────────────────────────────────
@@ -149,12 +150,12 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
-export function Tabs({ tabs, value, onChange }: { tabs: Array<{value:string;label:string}>; value:string; onChange:(v:string)=>void }) {
+export function Tabs({ tabs, value, onChange }: { tabs: Array<{ value: string; label: string }>; value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
       {tabs.map(t => (
         <button key={t.value} onClick={() => onChange(t.value)}
-          className={`tab ${value===t.value?'tab-active':''}`}>
+          className={`tab ${value === t.value ? 'tab-active' : ''}`}>
           {t.label}
         </button>
       ))}
