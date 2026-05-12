@@ -1,231 +1,287 @@
-// ─── Primitivos ──────────────────────────────────────────────────────────────
-export type Moneda = 'ARS' | 'USD' | 'EUR' | 'BTC' | 'ETH' | 'USDT'
-export type TipoIngreso = string
-export type TipoEgreso = string
-export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa'
-export type Quien = 'Mati' | 'Dani' | 'ambos'
+import { createClient } from '@/lib/supabase/client'
+import type {
+  Ingreso, IngresoInsert, Egreso, EgresoInsert,
+  Deuda, DeudaInsert, PagoDeuda,
+  Tarjeta, TarjetaTransaccion, PagoTarjeta,
+  EventoCalendario, EventoInsert,
+  Meta, MetaInsert,
+  PrecioItem, PrecioHistorial,
+  SaldoInicial,
+  CategoriaCustom, CategoriaCustomInsert,
+} from '@/types'
 
-// ─── Categoría custom ─────────────────────────────────────────────────────────
-export interface CategoriaCustom {
-  id: string
-  user_id: string
-  modulo: string
-  nombre: string
-  icono: string
-  color: string
-  parent_id: string | null
-  created_at: string
-  children?: CategoriaCustom[]
-}
-export type CategoriaCustomInsert = Omit<CategoriaCustom, 'id' | 'user_id' | 'created_at' | 'children'>
-
-// ─── Usuario ─────────────────────────────────────────────────────────────────
-export interface Usuario {
-  id: string
-  email: string
-  nombre: string
-  avatar_url?: string
-  moneda_principal: Moneda
-  monedas_ahorro: Moneda[]
-  monedas_cripto: Moneda[]
-  created_at: string
-  updated_at: string
+const sb = () => createClient()
+const uid = async () => {
+  const { data: { user } } = await sb().auth.getUser()
+  if (!user) throw new Error('No autenticado')
+  return user.id
 }
 
-// ─── Ingresos ────────────────────────────────────────────────────────────────
-export interface Ingreso {
-  id: string
-  user_id: string
-  año: number
-  mes: number
-  tipo: string
-  monto: number
-  moneda: Moneda
-  descripcion: string
-  fecha: string
-  quien: Quien
-  recurrente: boolean
-  created_at: string
-}
-export type IngresoInsert = Omit<Ingreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
-
-// ─── Egresos ─────────────────────────────────────────────────────────────────
-export interface Egreso {
-  id: string
-  user_id: string
-  año: number
-  mes: number
-  categoria: string
-  monto: number
-  moneda: Moneda
-  descripcion: string
-  fecha: string
-  quien: Quien
-  recurrente: boolean
-  created_at: string
-}
-export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
-
-// ─── Deudas largo plazo ───────────────────────────────────────────────────────
-export interface Deuda {
-  id: string
-  user_id: string
-  nombre: string
-  banco: string
-  total_original: number
-  pendiente: number
-  cuota_mensual: number
-  tasa_interes: number
-  moneda: Moneda
-  fecha_inicio: string
-  fecha_vencimiento: string
-  cuota_actual: number
-  cuota_total: number
-  color: string
-  activa: boolean
-  created_at: string
-}
-export type DeudaInsert = Omit<Deuda, 'id' | 'user_id' | 'created_at'>
-
-export interface PagoDeuda {
-  id: string
-  deuda_id: string
-  fecha: string
-  descripcion: string
-  monto: number
-  moneda: Moneda
-  created_at: string
+// ─── CATEGORIAS CUSTOM ────────────────────────────────────────────────────────
+function buildTree(flat: CategoriaCustom[]): CategoriaCustom[] {
+  const map: Record<string, CategoriaCustom> = {}
+  flat.forEach(c => { map[c.id] = { ...c, children: [] as CategoriaCustom[] } })
+  const roots: CategoriaCustom[] = []
+  flat.forEach(c => {
+    if (c.parent_id && map[c.parent_id]) {
+      map[c.parent_id].children!.push(map[c.id])
+    } else {
+      roots.push(map[c.id])
+    }
+  })
+  return roots
 }
 
-// ─── Tarjetas ────────────────────────────────────────────────────────────────
-export interface Tarjeta {
-  id: string
-  user_id: string
-  nombre: string
-  banco: string
-  limite: number
-  moneda: Moneda
-  color: string
-  icono: string
-  quien: Quien
-  dia_cierre: number
-  dia_vencimiento: number
-  activa: boolean
-  created_at: string
+export async function getCategoriasCustom(modulo: string): Promise<CategoriaCustom[]> {
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .select('*')
+    .eq('modulo', modulo)
+    .order('nombre')
+  if (error) throw error
+  const flat: CategoriaCustom[] = (data ?? []).map(c => ({
+    id: c.id as string,
+    user_id: c.user_id as string,
+    modulo: c.modulo as string,
+    nombre: c.nombre as string,
+    icono: c.icono as string,
+    color: c.color as string,
+    parent_id: c.parent_id as string | null,
+    created_at: c.created_at as string,
+    children: [] as CategoriaCustom[],
+  }))
+  return buildTree(flat)
 }
 
-export interface TarjetaTransaccion {
-  id: string
-  tarjeta_id: string
-  descripcion: string
-  categoria: string
-  fecha: string
-  monto: number
-  moneda: Moneda
-  cotizacion_ars?: number
-  cuota_actual?: number
-  cuota_total?: number
-  tipo: 'debito' | 'credito'
-  created_at: string
+export async function createCategoriaCustom(form: CategoriaCustomInsert): Promise<CategoriaCustom> {
+  const userId = await uid()
+  const { data, error } = await sb()
+    .from('categorias_custom')
+    .insert({ ...form, user_id: userId })
+    .select()
+    .single()
+  if (error) throw error
+  return { ...data, children: [] as CategoriaCustom[] } as CategoriaCustom
 }
 
-export interface PagoTarjeta {
-  id: string
-  tarjeta_id: string
-  año: number
-  mes: number
-  monto: number
-  moneda: Moneda
-  fecha_pago: string
-  created_at: string
+export async function deleteCategoriaCustom(id: string) {
+  const { error } = await sb().from('categorias_custom').delete().eq('id', id)
+  if (error) throw error
 }
 
-// ─── Eventos calendario / cash flow ──────────────────────────────────────────
-export interface EventoCalendario {
-  id: string
-  user_id: string
-  dia: number
-  mes: number
-  año: number
-  tipo: TipoEvento
-  descripcion: string
-  monto?: number
-  moneda: Moneda
-  recurrente: boolean
-  pagado: boolean
-  created_at: string
-}
-export type EventoInsert = Omit<EventoCalendario, 'id' | 'user_id' | 'created_at'>
-
-// ─── Metas ───────────────────────────────────────────────────────────────────
-export interface Meta {
-  id: string
-  user_id: string
-  nombre: string
-  descripcion?: string
-  monto_objetivo: number
-  monto_actual: number
-  moneda: Moneda
-  fecha_limite: string
-  icono: string
-  color: string
-  completada: boolean
-  created_at: string
-}
-export type MetaInsert = Omit<Meta, 'id' | 'user_id' | 'created_at'>
-
-// ─── Precios recurrentes ──────────────────────────────────────────────────────
-export interface PrecioItem {
-  id: string
-  user_id: string
-  nombre: string
-  categoria: string
-  icono: string
-  created_at: string
+// ─── INGRESOS ─────────────────────────────────────────────────────────────────
+export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
+  const { data, error } = await sb().from('ingresos').select('*').eq('año', año).order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
 }
 
-export interface PrecioHistorial {
-  id: string
-  item_id: string
-  mes: string
-  valor: number
-  moneda: Moneda
-  created_at: string
+export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
+  const userId = await uid()
+  const fecha = new Date(form.fecha)
+  const { data, error } = await sb().from('ingresos')
+    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .select().single()
+  if (error) throw error
+  return data
 }
 
-// ─── Cash flow ───────────────────────────────────────────────────────────────
-export interface SaldoInicial {
-  id: string
-  user_id: string
-  año: number
-  mes: number
-  monto: number
-  moneda: Moneda
-  created_at: string
+export async function updateIngreso(id: string, form: Partial<IngresoInsert>): Promise<Ingreso> {
+  const updates: Record<string, unknown> = { ...form }
+  if (form.fecha) {
+    const fecha = new Date(form.fecha)
+    updates.año = fecha.getFullYear()
+    updates.mes = fecha.getMonth() + 1
+  }
+  const { data, error } = await sb().from('ingresos').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
 }
 
-// ─── App state ───────────────────────────────────────────────────────────────
-export interface AppConfig {
-  añoActivo: number
-  monedaPrincipal: Moneda
-  monedasAhorro: Moneda[]
-  monedasCripto: Moneda[]
+export async function deleteIngreso(id: string) {
+  const { error } = await sb().from('ingresos').delete().eq('id', id)
+  if (error) throw error
 }
 
-export interface ResumenAnual {
-  totalIngresos: number
-  totalEgresos: number
-  totalAhorro: number
-  totalDeuda: number
-  cuotasMensuales: number
-  moneda: Moneda
+// ─── EGRESOS ─────────────────────────────────────────────────────────────────
+export async function getEgresosByAño(año: number): Promise<Egreso[]> {
+  const { data, error } = await sb().from('egresos').select('*').eq('año', año).order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
 }
 
-export interface DiaFlow {
-  dia: number
-  entradas: number
-  salidas: number
-  neto: number
-  saldoAcumulado: number
-  eventos: EventoCalendario[]
+export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
+  const userId = await uid()
+  const fecha = new Date(form.fecha)
+  const { data, error } = await sb().from('egresos')
+    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Promise<Egreso> {
+  const updates: Record<string, unknown> = { ...form }
+  if (form.fecha) {
+    const fecha = new Date(form.fecha)
+    updates.año = fecha.getFullYear()
+    updates.mes = fecha.getMonth() + 1
+  }
+  const { data, error } = await sb().from('egresos').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteEgreso(id: string) {
+  const { error } = await sb().from('egresos').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── DEUDAS ──────────────────────────────────────────────────────────────────
+export async function getDeudas(): Promise<Deuda[]> {
+  const { data, error } = await sb().from('deudas').select('*').eq('activa', true).order('created_at')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createDeuda(form: DeudaInsert): Promise<Deuda> {
+  const userId = await uid()
+  const { data, error } = await sb().from('deudas').insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateDeuda(id: string, updates: Partial<DeudaInsert>): Promise<Deuda> {
+  const { data, error } = await sb().from('deudas').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function getPagosDeuda(deudaId: string): Promise<PagoDeuda[]> {
+  const { data, error } = await sb().from('pagos_deuda').select('*').eq('deuda_id', deudaId).order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createPagoDeuda(pagoData: Omit<PagoDeuda, 'id' | 'created_at'>): Promise<PagoDeuda> {
+  const { data, error } = await sb().from('pagos_deuda').insert(pagoData).select().single()
+  if (error) throw error
+  return data
+}
+
+// ─── TARJETAS ────────────────────────────────────────────────────────────────
+export async function getTarjetas(): Promise<Tarjeta[]> {
+  const { data, error } = await sb().from('tarjetas').select('*').eq('activa', true).order('created_at')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getTarjetaTransacciones(tarjetaId?: string): Promise<TarjetaTransaccion[]> {
+  let q = sb().from('tarjeta_transacciones').select('*').order('fecha', { ascending: false })
+  if (tarjetaId) q = q.eq('tarjeta_id', tarjetaId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getPagosTarjeta(tarjetaId?: string): Promise<PagoTarjeta[]> {
+  let q = sb().from('pagos_tarjeta').select('*').order('año, mes')
+  if (tarjetaId) q = q.eq('tarjeta_id', tarjetaId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function upsertPagoTarjeta(pago: Omit<PagoTarjeta, 'id' | 'created_at'>): Promise<PagoTarjeta> {
+  const { data, error } = await sb().from('pagos_tarjeta').upsert(pago, { onConflict: 'tarjeta_id,año,mes' }).select().single()
+  if (error) throw error
+  return data
+}
+
+// ─── EVENTOS CALENDARIO ──────────────────────────────────────────────────────
+export async function getEventosByMes(año: number, mes: number): Promise<EventoCalendario[]> {
+  const { data, error } = await sb().from('eventos_calendario')
+    .select('*').eq('año', año).eq('mes', mes).order('dia')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createEvento(form: EventoInsert): Promise<EventoCalendario> {
+  const userId = await uid()
+  const { data, error } = await sb().from('eventos_calendario')
+    .insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateEvento(id: string, updates: Partial<EventoCalendario>): Promise<EventoCalendario> {
+  const { data, error } = await sb().from('eventos_calendario').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function togglePagado(id: string, pagado: boolean) {
+  const { error } = await sb().from('eventos_calendario').update({ pagado }).eq('id', id)
+  if (error) throw error
+}
+
+// ─── SALDO INICIAL ────────────────────────────────────────────────────────────
+export async function getSaldoInicial(año: number, mes: number): Promise<SaldoInicial | null> {
+  const userId = await uid()
+  const { data } = await sb().from('saldo_inicial')
+    .select('*').eq('user_id', userId).eq('año', año).eq('mes', mes).single()
+  return data
+}
+
+export async function upsertSaldoInicial(año: number, mes: number, monto: number, moneda = 'ARS') {
+  const userId = await uid()
+  const { error } = await sb().from('saldo_inicial')
+    .upsert({ user_id: userId, año, mes, monto, moneda }, { onConflict: 'user_id,año,mes' })
+  if (error) throw error
+}
+
+// ─── METAS ───────────────────────────────────────────────────────────────────
+export async function getMetas(): Promise<Meta[]> {
+  const { data, error } = await sb().from('metas').select('*').order('fecha_limite')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createMeta(form: MetaInsert): Promise<Meta> {
+  const userId = await uid()
+  const { data, error } = await sb().from('metas').insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateMeta(id: string, updates: Partial<MetaInsert>): Promise<Meta> {
+  const { data, error } = await sb().from('metas').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteMeta(id: string) {
+  const { error } = await sb().from('metas').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── PRECIOS ─────────────────────────────────────────────────────────────────
+export async function getPrecioItems(): Promise<PrecioItem[]> {
+  const { data, error } = await sb().from('precio_items').select('*').order('nombre')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getPrecioHistorial(itemId?: string): Promise<PrecioHistorial[]> {
+  let q = sb().from('precio_historial').select('*').order('mes')
+  if (itemId) q = q.eq('item_id', itemId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function upsertPrecioHistorial(itemId: string, mes: string, valor: number, moneda = 'ARS') {
+  const { error } = await sb().from('precio_historial')
+    .upsert({ item_id: itemId, mes, valor, moneda }, { onConflict: 'item_id,mes' })
+  if (error) throw error
 }
