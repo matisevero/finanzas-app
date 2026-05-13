@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createCategoriaCustom } from '@/lib/queries'
 import type { CategoriaCustom } from '@/types'
 
@@ -25,100 +25,159 @@ interface Props {
 }
 
 export default function CategoriaSelector({ modulo, value, onChange, categorias, categoriasBase, onCategoriasChange }: Props) {
+  const [open, setOpen]           = useState(false)
   const [showNew, setShowNew]     = useState(false)
   const [newNombre, setNewNombre] = useState('')
   const [newIcono, setNewIcono]   = useState('📦')
   const [newColor, setNewColor]   = useState('#888780')
   const [newParent, setNewParent] = useState('')
   const [saving, setSaving]       = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
   const customFlat = flattenCats(categorias)
+
+  const allOptions = [
+    ...categoriasBase.map(c => ({ id: c.key, label: c.label, icono: c.icon, color: c.color, isCustom: false })),
+    ...customFlat.map(c => ({ ...c, isCustom: true })),
+  ]
+
+  const selected = allOptions.find(o => o.id === value)
+
+  // Cerrar al click fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false); setShowNew(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const handleCreate = async () => {
     if (!newNombre.trim()) return
     setSaving(true)
     try {
-      await createCategoriaCustom({
+      const created = await createCategoriaCustom({
         modulo, nombre: newNombre.trim(),
         icono: newIcono, color: newColor,
         parent_id: newParent || null,
       })
       onCategoriasChange()
-      setNewNombre(''); setNewParent(''); setShowNew(false)
+      onChange(created.id)
+      setNewNombre(''); setNewParent(''); setShowNew(false); setOpen(false)
     } finally { setSaving(false) }
   }
 
   return (
-    <div>
-      <select value={value} onChange={e => onChange(e.target.value)} className="input-field mb-2">
-        <optgroup label="Categorías base">
-          {categoriasBase.map(c => (
-            <option key={c.key} value={c.key}>{c.icon} {c.label}</option>
-          ))}
-        </optgroup>
-        {customFlat.length > 0 && (
-          <optgroup label="Mis categorías">
-            {customFlat.map(c => (
-              <option key={c.id} value={c.id}>
-                {'\u00A0'.repeat(c.indent * 4)}{c.icono} {c.label}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+    <div ref={ref} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setShowNew(false) }}
+        className="input-field flex items-center justify-between gap-2 text-left w-full">
+        <span className="flex items-center gap-2">
+          <span>{selected?.icono ?? '📦'}</span>
+          <span>{selected?.label ?? 'Seleccioná'}</span>
+        </span>
+        <span className="text-slate-400 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
 
-      {!showNew ? (
-        <button type="button" onClick={() => setShowNew(true)}
-          className="text-xs text-blue-600 hover:text-blue-800 border-none bg-transparent cursor-pointer px-0">
-          + Crear nueva categoría
-        </button>
-      ) : (
-        <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 mt-2">
-          <div className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Nueva categoría</div>
-          <input value={newNombre} onChange={e => setNewNombre(e.target.value)}
-            placeholder="Nombre" className="input-field mb-2 text-sm" />
-          <div className="flex gap-2 mb-2">
-            <div className="flex-1">
-              <div className="text-[10px] text-slate-400 mb-1">Ícono</div>
-              <div className="flex flex-wrap gap-1">
-                {ICONOS.map(ic => (
-                  <button key={ic} type="button" onClick={() => setNewIcono(ic)}
-                    className={`w-7 h-7 rounded text-sm cursor-pointer border transition-all ${newIcono === ic ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'}`}>
-                    {ic}
-                  </button>
-                ))}
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-modal overflow-hidden">
+          {/* Lista de opciones */}
+          <div className="max-h-48 overflow-y-auto">
+            {categoriasBase.length > 0 && (
+              <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                Categorías base
               </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-400 mb-1">Color</div>
-              <div className="flex flex-wrap gap-1 max-w-[80px]">
-                {COLORES.map(c => (
-                  <button key={c} type="button" onClick={() => setNewColor(c)}
-                    className={`w-5 h-5 rounded-full cursor-pointer border-2 transition-all ${newColor === c ? 'border-slate-900 scale-110' : 'border-transparent'}`}
-                    style={{ background: c }} />
-                ))}
+            )}
+            {categoriasBase.map(c => (
+              <button key={c.key} type="button"
+                onClick={() => { onChange(c.key); setOpen(false) }}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.key ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}>
+                <span>{c.icon}</span>
+                <span>{c.label}</span>
+              </button>
+            ))}
+
+            {customFlat.length > 0 && (
+              <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 border-t border-slate-100">
+                Mis categorías
               </div>
-            </div>
+            )}
+            {customFlat.map(c => (
+              <button key={c.id} type="button"
+                onClick={() => { onChange(c.id); setOpen(false) }}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.id ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}
+                style={{ paddingLeft: `${12 + c.indent * 16}px` }}>
+                <span>{c.icono}</span>
+                <span>{c.label}</span>
+              </button>
+            ))}
           </div>
-          {customFlat.length > 0 && (
-            <div className="mb-2">
-              <div className="text-[10px] text-slate-400 mb-1">Subcategoría de (opcional)</div>
-              <select value={newParent} onChange={e => setNewParent(e.target.value)} className="input-field text-sm">
-                <option value="">— Ninguna (categoría raíz) —</option>
-                {customFlat.map(c => (
-                  <option key={c.id} value={c.id}>{c.icono} {c.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button type="button" onClick={handleCreate} disabled={saving || !newNombre.trim()}
-              className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50">
-              {saving ? 'Guardando...' : 'Guardar'}
-            </button>
-            <button type="button" onClick={() => setShowNew(false)} className="btn-ghost text-xs py-1.5 px-3">
-              Cancelar
-            </button>
+
+          {/* Separador + botón nueva categoría */}
+          <div className="border-t border-slate-100">
+            {!showNew ? (
+              <button type="button" onClick={() => setShowNew(true)}
+                className="w-full text-left px-3 py-2.5 text-xs text-blue-600 hover:bg-blue-50 transition-colors border-none bg-white cursor-pointer font-medium">
+                + Crear nueva categoría
+              </button>
+            ) : (
+              <div className="p-3 bg-slate-50">
+                <div className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Nueva categoría</div>
+                <input value={newNombre} onChange={e => setNewNombre(e.target.value)}
+                  placeholder="Nombre" className="input-field mb-2 text-sm" autoFocus />
+
+                <div className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <div className="text-[10px] text-slate-400 mb-1">Ícono</div>
+                    <div className="flex flex-wrap gap-1">
+                      {ICONOS.map(ic => (
+                        <button key={ic} type="button" onClick={() => setNewIcono(ic)}
+                          className={`w-7 h-7 rounded text-sm cursor-pointer border transition-all ${newIcono === ic ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+                          {ic}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 mb-1">Color</div>
+                    <div className="flex flex-wrap gap-1 max-w-[80px]">
+                      {COLORES.map(c => (
+                        <button key={c} type="button" onClick={() => setNewColor(c)}
+                          className={`w-5 h-5 rounded-full cursor-pointer border-2 transition-all ${newColor === c ? 'border-slate-900 scale-110' : 'border-transparent'}`}
+                          style={{ background: c }} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {customFlat.length > 0 && (
+                  <div className="mb-2">
+                    <div className="text-[10px] text-slate-400 mb-1">Subcategoría de (opcional)</div>
+                    <select value={newParent} onChange={e => setNewParent(e.target.value)} className="input-field text-sm">
+                      <option value="">— Ninguna —</option>
+                      {customFlat.map(c => (
+                        <option key={c.id} value={c.id}>{c.icono} {c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button type="button" onClick={handleCreate} disabled={saving || !newNombre.trim()}
+                    className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50">
+                    {saving ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  <button type="button" onClick={() => setShowNew(false)} className="btn-ghost text-xs py-1.5 px-3">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
