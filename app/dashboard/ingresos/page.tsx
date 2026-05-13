@@ -88,8 +88,6 @@ export default function IngresosPage() {
   const { añoActivo, monedaPrincipal: m } = useAppStore()
   const { data: ingresos, loading, refetch } = useIngresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('ingresos')
-
-  // Cast explícito para evitar que TypeScript infiera children como unknown[]
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
   const [chartType, setChartType]     = useState<'apilado' | 'agrupado'>('apilado')
@@ -129,7 +127,9 @@ export default function IngresosPage() {
   const chartData = useMemo(() => MESES_CORTOS.map((month, i) => {
     const mes = i + 1
     const point: Record<string, number | string> = { month }
-    tiposBase.forEach(({ key }) => { point[key] = (ingresos ?? []).filter(x => x.mes === mes && x.tipo === key).reduce((s, x) => s + x.monto, 0) })
+    tiposBase.forEach(({ key }) => {
+      point[key] = (ingresos ?? []).filter(x => x.mes === mes && x.tipo === key).reduce((s, x) => s + x.monto, 0)
+    })
     return point
   }), [ingresos, tiposBase])
 
@@ -225,9 +225,16 @@ export default function IngresosPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-              <Tooltip contentStyle={TT} formatter={(v: number) => [fmt(v, m)]} />
+              {/* Tooltip con nombre de categoría */}
+              <Tooltip
+                contentStyle={TT}
+                formatter={(value: number, name: string) => {
+                  const info = getTipoInfo(name)
+                  return [fmt(value, m), info.label]
+                }}
+              />
               {tiposBase.map(({ key, label, color }) => (
-                <Bar key={key} dataKey={key} name={label} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
               ))}
             </BarChart>
           </ResponsiveContainer>
@@ -249,7 +256,7 @@ export default function IngresosPage() {
                   <Pie data={compData} cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={3} dataKey="value">
                     {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={TT} formatter={(v: number) => [fmt(v, m)]} />
+                  <Tooltip contentStyle={TT} formatter={(v: number, _: string, entry: { payload?: { name?: string } }) => [fmt(v, m), entry?.payload?.name ?? '']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1.5 mt-2">
@@ -301,13 +308,13 @@ export default function IngresosPage() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr>
+                <tr className="bg-slate-50">
                   {cols.map((col, i) => (
                     <th key={col} draggable
                       onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
                       onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
                       onClick={() => toggleSort(col)}
-                      className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest pb-3 border-b border-slate-100 cursor-pointer select-none hover:text-slate-600 pr-4 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
+                      className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
                       <span className="inline-flex items-center gap-1">
                         <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
                         {COL_LABEL[col]}
@@ -315,14 +322,15 @@ export default function IngresosPage() {
                       </span>
                     </th>
                   ))}
-                  <th className="text-right text-slate-400 text-[11px] font-bold uppercase tracking-widest pb-3 border-b border-slate-100 w-16"> </th>
+                  <th className="py-3 px-3 border-b border-slate-200 w-16"> </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((ingreso, rowIdx) => {
                   const cfg       = getTipoInfo(ingreso.tipo)
                   const isEditing = editingId === ingreso.id
-                  const bg        = rowIdx % 2 === 0 ? '' : 'bg-slate-50/70'
+                  // Mayor contraste: blanco vs gris más visible
+                  const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
 
                   if (isEditing) return (
                     <InlineEditRow key={ingreso.id} ingreso={ingreso} tiposBase={tiposBase}
@@ -333,26 +341,26 @@ export default function IngresosPage() {
                   const cellFor = (col: SortKey) => {
                     switch (col) {
                       case 'fecha':
-                        return <td key={col} className={`py-3 border-b border-slate-100 text-sm pr-4 ${bg}`}>
+                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
                           <span className="text-slate-500 text-xs font-mono">{fmtDate(ingreso.fecha)}</span>
                         </td>
                       case 'descripcion':
-                        return <td key={col} className={`py-3 border-b border-slate-100 text-sm pr-4 ${bg}`}>
+                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
                           <div className="flex items-center gap-2">
                             <span>{cfg.icon}</span>
                             <span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span>
                           </div>
                         </td>
                       case 'tipo':
-                        return <td key={col} className={`py-3 border-b border-slate-100 text-sm pr-4 ${bg}`}>
+                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                         </td>
                       case 'quien':
-                        return <td key={col} className={`py-3 border-b border-slate-100 text-sm pr-4 ${bg}`}>
+                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span>
                         </td>
                       case 'monto':
-                        return <td key={col} className={`py-3 border-b border-slate-100 text-sm text-right pr-4 ${bg}`}>
+                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}>
                           <span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span>
                         </td>
                       default: return null
@@ -360,9 +368,9 @@ export default function IngresosPage() {
                   }
 
                   return (
-                    <tr key={ingreso.id} className={`group ${bg} hover:bg-blue-50/30 transition-colors`}>
+                    <tr key={ingreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
                       {cols.map(col => cellFor(col))}
-                      <td className={`py-3 border-b border-slate-100 text-right ${bg}`}>
+                      <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
                         <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => setEditingId(ingreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
                           <button onClick={() => handleDelete(ingreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
