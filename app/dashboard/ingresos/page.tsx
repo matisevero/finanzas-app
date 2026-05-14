@@ -12,23 +12,101 @@ import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import type { Moneda, Quien, Ingreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
-const PIE_COLORS = ['#2D7D2D', '#52A852', '#BA7517', '#1A5E9E', '#5B3FA6', '#E8A020', '#1D9E75', '#888780']
+const PIE_COLORS = ['#2D7D2D','#52A852','#BA7517','#1A5E9E','#5B3FA6','#E8A020','#1D9E75','#888780']
 const HOY = new Date()
+const PAGE_SIZE = 30
 
 const FORM_INIT = {
-  tipo: 'salario',
-  monto: '',
-  descripcion: '',
+  tipo: 'salario', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
-  moneda: 'ARS' as Moneda,
-  quien: 'ambos' as Quien,
-  recurrente: false,
+  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false,
 }
 
 type SortKey = 'fecha' | 'monto' | 'tipo' | 'descripcion' | 'quien'
 type SortDir = 'asc' | 'desc'
 const COLS_DEFAULT: SortKey[] = ['fecha', 'descripcion', 'tipo', 'quien', 'monto']
 const COL_LABEL: Record<SortKey, string> = { fecha: 'Fecha', descripcion: 'Descripción', tipo: 'Tipo', quien: 'Quién', monto: 'Importe' }
+
+// ─── MultiDropdown ────────────────────────────────────────────────────────────
+function MultiDropdown({ label, options, selected, onChange }: {
+  label: string
+  options: { key: string; label: string }[]
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const allSelected = selected.length === 0
+  const activeLabel = allSelected ? label
+    : selected.length === 1 ? (options.find(o => o.key === selected[0])?.label ?? label)
+    : `${label} (${selected.length})`
+
+  const toggle = (key: string) =>
+    onChange(selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key])
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button"
+        onClick={() => setOpen(v => !v)}
+        onBlur={e => { if (!ref.current?.contains(e.relatedTarget as Node)) setOpen(false) }}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${!allSelected ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
+        {activeLabel} <span className="opacity-60">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-modal min-w-[180px] overflow-hidden">
+          <div className="p-1 max-h-56 overflow-y-auto">
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => onChange([])}
+              className={`w-full text-left px-3 py-2 text-xs rounded-lg cursor-pointer border-none transition-colors ${allSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'bg-transparent text-slate-600 hover:bg-slate-50'}`}>
+              Todos
+            </button>
+            {options.map(opt => (
+              <button key={opt.key} type="button" onMouseDown={e => e.preventDefault()} onClick={() => toggle(opt.key)}
+                className={`w-full text-left px-3 py-2 text-xs rounded-lg cursor-pointer border-none transition-colors flex items-center gap-2 ${selected.includes(opt.key) ? 'bg-blue-50 text-blue-700 font-semibold' : 'bg-transparent text-slate-600 hover:bg-slate-50'}`}>
+                <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.includes(opt.key) ? 'bg-blue-700 border-blue-700' : 'border-slate-300'}`}>
+                  {selected.includes(opt.key) && <span className="text-white text-[8px]">✓</span>}
+                </span>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Custom tooltip top 5 ────────────────────────────────────────────────────
+function CustomTooltip({ active, payload, label, getTipoInfo, m }: {
+  active?: boolean; payload?: { name: string; value: number }[]
+  label?: string; getTipoInfo: (k: string) => { label: string; color: string }; m: Moneda
+}) {
+  if (!active || !payload?.length) return null
+  const top5  = [...payload].filter(p => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5)
+  const total = top5.reduce((s, p) => s + p.value, 0)
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', minWidth: 180 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>{label}</div>
+      {top5.map(p => {
+        const info = getTipoInfo(p.name)
+        return (
+          <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
+            </div>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value, m)}</span>
+          </div>
+        )
+      })}
+      {top5.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, marginTop: 6, borderTop: '1px solid #f1f5f9' }}>
+          <span style={{ fontSize: 10, color: '#94a3b8' }}>Total</span>
+          <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmt(total, m)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel, refetchCats }: {
@@ -46,21 +124,12 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
     recurrente: ingreso.recurrente,
   })
   const [saving, setSaving] = useState(false)
-
-  const handle = async () => {
-    setSaving(true)
-    await onSave(ingreso.id, form)
-    setSaving(false)
-  }
+  const handle = async () => { setSaving(true); await onSave(ingreso.id, form); setSaving(false) }
 
   return (
     <tr className="bg-blue-50/60">
-      <td className="py-1.5 px-2 border-b border-blue-100">
-        <input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} className="input-field py-1 text-xs w-full" />
-      </td>
-      <td className="py-1.5 px-2 border-b border-blue-100">
-        <input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs w-full" placeholder="Descripción" />
-      </td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} className="input-field py-1 text-xs w-full" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100">
         <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
@@ -70,9 +139,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
           <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-1.5 px-2 border-b border-blue-100 text-right">
-        <MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="py-1 text-xs text-right" />
-      </td>
+      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="py-1 text-xs text-right" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100 text-right">
         <div className="flex gap-1 justify-end">
           <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
@@ -83,27 +150,30 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
   )
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function IngresosPage() {
   const { añoActivo, monedaPrincipal: m } = useAppStore()
   const { data: ingresos, loading, refetch } = useIngresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('ingresos')
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
-  const [chartType, setChartType]     = useState<'apilado' | 'agrupado'>('apilado')
+  const [chartType, setChartType]     = useState<'apilado'|'agrupado'>('apilado')
+  const [sidePanel, setSidePanel]     = useState<'composicion'|'top'>('composicion')
   const [compMes, setCompMes]         = useState(HOY.getMonth())
-  const [filterTipo, setFilterTipo]   = useState('todos')
-  const [filterQuien, setFilterQuien] = useState('todos')
+  const [hiddenKeys, setHiddenKeys]   = useState<string[]>([])
+  const [filterTipos, setFilterTipos] = useState<string[]>([])
+  const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
   const [saving, setSaving]           = useState(false)
   const [form, setForm]               = useState(FORM_INIT)
-  const [editingId, setEditingId]     = useState<string | null>(null)
+  const [editingId, setEditingId]     = useState<string|null>(null)
   const [sortKey, setSortKey]         = useState<SortKey>('fecha')
   const [sortDir, setSortDir]         = useState<SortDir>('desc')
   const [cols, setCols]               = useState<SortKey[]>(COLS_DEFAULT)
-  const dragCol  = useRef<number | null>(null)
-  const dragOver = useRef<number | null>(null)
+  const [page, setPage]               = useState(1)
+  const dragCol  = useRef<number|null>(null)
+  const dragOver = useRef<number|null>(null)
 
   const tiposBase = useMemo(() =>
     Object.entries(TIPOS_INGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
@@ -126,7 +196,7 @@ export default function IngresosPage() {
 
   const chartData = useMemo(() => MESES_CORTOS.map((month, i) => {
     const mes = i + 1
-    const point: Record<string, number | string> = { month }
+    const point: Record<string, number|string> = { month }
     tiposBase.forEach(({ key }) => {
       point[key] = (ingresos ?? []).filter(x => x.mes === mes && x.tipo === key).reduce((s, x) => s + x.monto, 0)
     })
@@ -140,19 +210,28 @@ export default function IngresosPage() {
       .filter(d => d.value > 0)
   }, [ingresos, compMes, allTipos])
 
+  const topAño = useMemo(() =>
+    allTipos
+      .map(t => ({ label: t.label, color: t.color, value: (ingresos ?? []).filter(i => i.tipo === t.key).reduce((s, i) => s + i.monto, 0) }))
+      .filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 8)
+  , [ingresos, allTipos])
+
   const filtered = useMemo(() => {
     const rows = (ingresos ?? [])
-      .filter(i => filterTipo === 'todos' || i.tipo === filterTipo)
-      .filter(i => filterQuien === 'todos' || i.quien === filterQuien)
+      .filter(i => filterTipos.length === 0 || filterTipos.includes(i.tipo))
+      .filter(i => filterQuien.length === 0 || filterQuien.includes(i.quien))
       .filter(i => !search || i.descripcion.toLowerCase().includes(search.toLowerCase()))
     return [...rows].sort((a, b) => {
-      const va = a[sortKey as keyof Ingreso] as string | number
-      const vb = b[sortKey as keyof Ingreso] as string | number
+      const va = a[sortKey as keyof Ingreso] as string|number
+      const vb = b[sortKey as keyof Ingreso] as string|number
       if (va < vb) return sortDir === 'asc' ? -1 : 1
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [ingresos, filterTipo, filterQuien, search, sortKey, sortDir])
+  }, [ingresos, filterTipos, filterQuien, search, sortKey, sortDir])
+
+  const visibleRows = filtered.slice(0, page * PAGE_SIZE)
+  const hasMore     = filtered.length > visibleRows.length
 
   const total         = (ingresos ?? []).reduce((s, i) => s + i.monto, 0)
   const salarios      = (ingresos ?? []).filter(i => i.tipo === 'salario').reduce((s, i) => s + i.monto, 0)
@@ -187,11 +266,15 @@ export default function IngresosPage() {
   const onDragEnter = (i: number) => { dragOver.current = i }
   const onDragEnd   = () => {
     if (dragCol.current === null || dragOver.current === null) return
-    const next = [...cols]
-    const [removed] = next.splice(dragCol.current, 1)
-    next.splice(dragOver.current, 0, removed)
+    const next = [...cols]; const [removed] = next.splice(dragCol.current, 1); next.splice(dragOver.current, 0, removed)
     setCols(next); dragCol.current = null; dragOver.current = null
   }
+
+  const setFilterTiposR = (v: string[]) => { setFilterTipos(v); setPage(1) }
+  const setFilterQuienR = (v: string[]) => { setFilterQuien(v); setPage(1) }
+  const setSearchR      = (v: string)   => { setSearch(v); setPage(1) }
+
+  const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
 
   if (loading) return <LoadingSpinner />
 
@@ -209,15 +292,18 @@ export default function IngresosPage() {
 
       <div className="grid grid-cols-3 gap-5 mb-5">
         <Card className="col-span-2">
-          <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado' | 'agrupado')} />}>
+          <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
             Evolución de ingresos {añoActivo}
           </CardTitle>
+          {/* Leyenda clickeable */}
           <div className="flex gap-3 flex-wrap mb-3">
             {tiposBase.map(({ key, label, color }) => (
-              <div key={key} className="flex items-center gap-1.5">
+              <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
                 <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
                 <span className="text-slate-500 text-xs">{label}</span>
-              </div>
+              </button>
             ))}
           </div>
           <ResponsiveContainer width="100%" height={220}>
@@ -225,182 +311,202 @@ export default function IngresosPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-              {/* Tooltip con nombre de categoría */}
-              <Tooltip
-                contentStyle={TT}
-                formatter={(value: number, name: string) => {
-                  const info = getTipoInfo(name)
-                  return [fmt(value, m), info.label]
-                }}
-              />
-              {tiposBase.map(({ key, label, color }) => (
+              <Tooltip content={(props) => <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />} />
+              {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
                 <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
               ))}
             </BarChart>
           </ResponsiveContainer>
         </Card>
 
+        {/* Panel derecho */}
         <Card>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-slate-900 font-semibold text-[15px]">Composición</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-              <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-              <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
-            </div>
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+            {(['composicion', 'top'] as const).map(v => (
+              <button key={v} onClick={() => setSidePanel(v)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+                {v === 'composicion' ? 'Composición' : 'Top categorías'}
+              </button>
+            ))}
           </div>
-          {compData.length > 0 ? (
+
+          {sidePanel === 'composicion' && (
             <>
-              <ResponsiveContainer width="100%" height={150}>
-                <PieChart>
-                  <Pie data={compData} cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={3} dataKey="value">
-                    {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={TT} formatter={(v: number, _: string, entry: { payload?: { name?: string } }) => [fmt(v, m), entry?.payload?.name ?? '']} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-col gap-1.5 mt-2">
-                {compData.map((d, i) => (
-                  <div key={d.name} className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="text-slate-500 text-xs">{d.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
-                      <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value, m)}</span>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-slate-500 text-xs font-medium">Mes</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                  <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                  <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                </div>
               </div>
+              {compData.length > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height={140}>
+                    <PieChart>
+                      <Pie data={compData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
+                        {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex flex-col gap-1.5 mt-2">
+                    {compData.map((d, i) => (
+                      <div key={d.name} className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                          <span className="text-slate-500 text-xs">{d.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                          <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value, m)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
             </>
-          ) : (
-            <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>
+          )}
+
+          {sidePanel === 'top' && (
+            <>
+              <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
+              {topAño.length > 0 ? (
+                <div className="flex flex-col gap-3">
+                  {topAño.map((d, i) => {
+                    const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
+                    return (
+                      <div key={d.label}>
+                        <div className="flex justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
+                            <span className="text-xs font-medium text-slate-700">{d.label}</span>
+                          </div>
+                          <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: d.color }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
+            </>
           )}
         </Card>
       </div>
 
+      {/* Tabla */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
           <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
         </div>
         <div className="flex gap-2 flex-wrap mb-4 items-center">
-          <div className="relative flex-1 min-w-[160px]">
+          <div className="relative flex-1 min-w-[180px]">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
+            <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
           </div>
-          <div className="flex gap-1 flex-wrap">
-            {[{ k: 'todos', l: 'Todos' }, ...allTipos.map(t => ({ k: t.key, l: t.label }))].map(({ k, l }) => (
-              <button key={k} onClick={() => setFilterTipo(k)} className={`chip text-xs py-1 px-3 ${filterTipo === k ? 'chip-on' : ''}`}>{l}</button>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            {[{ k: 'todos', l: 'Todos' }, { k: 'Mati', l: 'Mati' }, { k: 'Dani', l: 'Dani' }, { k: 'ambos', l: 'Ambos' }].map(({ k, l }) => (
-              <button key={k} onClick={() => setFilterQuien(k)} className={`chip text-xs py-1 px-3 ${filterQuien === k ? 'chip-on' : ''}`}>{l}</button>
-            ))}
-          </div>
+          <MultiDropdown label="Tipo" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterTipos} onChange={setFilterTiposR} />
+          <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
+          {(filterTipos.length > 0 || filterQuien.length > 0 || search) && (
+            <button onClick={() => { setFilterTiposR([]); setFilterQuienR([]); setSearchR('') }}
+              className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
+              Limpiar
+            </button>
+          )}
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyState icon="💸" title={search || filterTipo !== 'todos' ? 'Sin resultados' : 'Sin ingresos registrados'} description="Agregá tu primer ingreso para empezar." />
+          <EmptyState icon="💸" title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-slate-50">
-                  {cols.map((col, i) => (
-                    <th key={col} draggable
-                      onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
-                      onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
-                      onClick={() => toggleSort(col)}
-                      className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
-                        {COL_LABEL[col]}
-                        {sortKey === col && <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-                      </span>
-                    </th>
-                  ))}
-                  <th className="py-3 px-3 border-b border-slate-200 w-16"> </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((ingreso, rowIdx) => {
-                  const cfg       = getTipoInfo(ingreso.tipo)
-                  const isEditing = editingId === ingreso.id
-                  // Mayor contraste: blanco vs gris más visible
-                  const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-50">
+                    {cols.map((col, i) => (
+                      <th key={col} draggable
+                        onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
+                        onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
+                        onClick={() => toggleSort(col)}
+                        className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
+                          {COL_LABEL[col]}
+                          {sortKey === col && <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="py-3 px-3 border-b border-slate-200 w-16" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((ingreso, rowIdx) => {
+                    const cfg       = getTipoInfo(ingreso.tipo)
+                    const isEditing = editingId === ingreso.id
+                    const bg        = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
 
-                  if (isEditing) return (
-                    <InlineEditRow key={ingreso.id} ingreso={ingreso} tiposBase={tiposBase}
-                      categoriasCustom={categoriasCustom} onSave={handleUpdate}
-                      onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
-                  )
+                    if (isEditing) return (
+                      <InlineEditRow key={ingreso.id} ingreso={ingreso} tiposBase={tiposBase}
+                        categoriasCustom={categoriasCustom} onSave={handleUpdate}
+                        onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
+                    )
 
-                  const cellFor = (col: SortKey) => {
-                    switch (col) {
-                      case 'fecha':
-                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
-                          <span className="text-slate-500 text-xs font-mono">{fmtDate(ingreso.fecha)}</span>
-                        </td>
-                      case 'descripcion':
-                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
-                          <div className="flex items-center gap-2">
-                            <span>{cfg.icon}</span>
-                            <span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span>
+                    const cellFor = (col: SortKey) => {
+                      switch (col) {
+                        case 'fecha':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-500 text-xs font-mono">{fmtDate(ingreso.fecha)}</span></td>
+                        case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><div className="flex items-center gap-2"><span>{cfg.icon}</span><span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span></div></td>
+                        case 'tipo':        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
+                        case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
+                        case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
+                        default: return null
+                      }
+                    }
+
+                    return (
+                      <tr key={ingreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
+                        {cols.map(col => cellFor(col))}
+                        <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
+                          <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setEditingId(ingreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
+                            <button onClick={() => handleDelete(ingreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
                           </div>
                         </td>
-                      case 'tipo':
-                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
-                        </td>
-                      case 'quien':
-                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span>
-                        </td>
-                      case 'monto':
-                        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}>
-                          <span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span>
-                        </td>
-                      default: return null
-                    }
-                  }
-
-                  return (
-                    <tr key={ingreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
-                      {cols.map(col => cellFor(col))}
-                      <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
-                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => setEditingId(ingreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
-                          <button onClick={() => handleDelete(ingreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {hasMore && (
+              <div className="flex items-center justify-center pt-4 border-t border-slate-100 mt-2">
+                <button onClick={() => setPage(p => p + 1)}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium border-none bg-transparent cursor-pointer">
+                  Ver más ({filtered.length - visibleRows.length} restantes)
+                </button>
+              </div>
+            )}
+          </>
         )}
       </Card>
 
       <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT) }} title="Nuevo ingreso">
         <div className="flex flex-col gap-4">
-          <div>
-            <FieldLabel>Tipo</FieldLabel>
+          <div><FieldLabel>Tipo</FieldLabel>
             <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
               categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
           </div>
-          <div>
-            <FieldLabel>Descripción</FieldLabel>
+          <div><FieldLabel>Descripción</FieldLabel>
             <input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: Salario enero" className="input-field" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} /></div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={form.moneda} onChange={e => setForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
-                {['ARS', 'USD', 'EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
