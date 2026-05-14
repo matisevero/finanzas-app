@@ -1,5 +1,7 @@
 'use client'
 import { useState, useMemo, useRef } from 'react'
+import type { TooltipProps } from 'recharts'
+import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useIngresos, useCategoriasCustom } from '@/hooks'
@@ -40,7 +42,6 @@ function MultiDropdown({ label, options, selected, onChange }: {
   const activeLabel = allSelected ? label
     : selected.length === 1 ? (options.find(o => o.key === selected[0])?.label ?? label)
     : `${label} (${selected.length})`
-
   const toggle = (key: string) =>
     onChange(selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key])
 
@@ -75,26 +76,31 @@ function MultiDropdown({ label, options, selected, onChange }: {
   )
 }
 
-// ─── Custom tooltip top 5 ────────────────────────────────────────────────────
-function CustomTooltip({ active, payload, label, getTipoInfo, m }: {
-  active?: boolean; payload?: { name: string; value: number }[]
-  label?: string; getTipoInfo: (k: string) => { label: string; color: string }; m: Moneda
-}) {
+// ─── Custom tooltip top 5 — usa TooltipProps nativo de recharts ───────────────
+type CustomTooltipProps = TooltipProps<ValueType, NameType> & {
+  getTipoInfo: (k: string) => { label: string; color: string }
+  m: Moneda
+}
+function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltipProps) {
   if (!active || !payload?.length) return null
-  const top5  = [...payload].filter(p => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5)
-  const total = top5.reduce((s, p) => s + p.value, 0)
+  const top5 = [...payload]
+    .filter(p => (p.value as number) > 0)
+    .sort((a, b) => (b.value as number) - (a.value as number))
+    .slice(0, 5)
+  const total = top5.reduce((s, p) => s + (p.value as number), 0)
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', minWidth: 180 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>{label}</div>
       {top5.map(p => {
-        const info = getTipoInfo(p.name)
+        const key  = String(p.name ?? '')
+        const info = getTipoInfo(key)
         return (
-          <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+          <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value, m)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value as number, m)}</span>
           </div>
         )
       })}
@@ -276,6 +282,10 @@ export default function IngresosPage() {
 
   const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
 
+  // Renderizador del tooltip — tipado explícito para evitar el error de deploy
+  const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
+    <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
+
   if (loading) return <LoadingSpinner />
 
   return (
@@ -295,7 +305,6 @@ export default function IngresosPage() {
           <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
             Evolución de ingresos {añoActivo}
           </CardTitle>
-          {/* Leyenda clickeable */}
           <div className="flex gap-3 flex-wrap mb-3">
             {tiposBase.map(({ key, label, color }) => (
               <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
@@ -311,7 +320,7 @@ export default function IngresosPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-              <Tooltip content={(props) => <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />} />
+              <Tooltip content={renderTooltip} />
               {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
                 <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
               ))}
@@ -319,7 +328,6 @@ export default function IngresosPage() {
           </ResponsiveContainer>
         </Card>
 
-        {/* Panel derecho */}
         <Card>
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
             {(['composicion', 'top'] as const).map(v => (
@@ -398,7 +406,6 @@ export default function IngresosPage() {
         </Card>
       </div>
 
-      {/* Tabla */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
