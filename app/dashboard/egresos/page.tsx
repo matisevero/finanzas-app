@@ -1,5 +1,7 @@
 'use client'
 import { useState, useMemo, useRef } from 'react'
+import type { TooltipProps } from 'recharts'
+import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useEgresos, useCategoriasCustom } from '@/hooks'
@@ -74,26 +76,31 @@ function MultiDropdown({ label, options, selected, onChange }: {
   )
 }
 
-// ─── Custom tooltip top 5 ────────────────────────────────────────────────────
-function CustomTooltip({ active, payload, label, getTipoInfo, m }: {
-  active?: boolean; payload?: { name: string; value: number }[]
-  label?: string; getTipoInfo: (k: string) => { label: string; color: string }; m: Moneda
-}) {
+// ─── Custom tooltip top 5 — usa TooltipProps nativo de recharts ───────────────
+type CustomTooltipProps = TooltipProps<ValueType, NameType> & {
+  getTipoInfo: (k: string) => { label: string; color: string }
+  m: Moneda
+}
+function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltipProps) {
   if (!active || !payload?.length) return null
-  const top5  = [...payload].filter(p => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5)
-  const total = top5.reduce((s, p) => s + p.value, 0)
+  const top5 = [...payload]
+    .filter(p => (p.value as number) > 0)
+    .sort((a, b) => (b.value as number) - (a.value as number))
+    .slice(0, 5)
+  const total = top5.reduce((s, p) => s + (p.value as number), 0)
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', minWidth: 180 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>{label}</div>
       {top5.map(p => {
-        const info = getTipoInfo(p.name)
+        const key  = String(p.name ?? '')
+        const info = getTipoInfo(key)
         return (
-          <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+          <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value, m)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value as number, m)}</span>
           </div>
         )
       })}
@@ -274,6 +281,10 @@ export default function EgresosPage() {
   const setFilterQuienR = (v: string[]) => { setFilterQuien(v); setPage(1) }
   const setSearchR      = (v: string)   => { setSearch(v); setPage(1) }
 
+  // Renderizador tipado explícitamente para evitar error de deploy
+  const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
+    <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
+
   const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
 
   if (loading) return <LoadingSpinner />
@@ -310,7 +321,7 @@ export default function EgresosPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-              <Tooltip content={(props) => <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />} />
+              <Tooltip content={renderTooltip} />
               {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
                 <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
               ))}
