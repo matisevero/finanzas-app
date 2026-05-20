@@ -2,10 +2,10 @@
 import { useState, useMemo } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { useDeudas, useEventosMes } from '@/hooks'
-import { createDeuda, togglePagado, createEvento } from '@/lib/queries'
-import { fmt, fmtDate } from '@/lib/utils/formatters'
+import { createDeuda, togglePagado } from '@/lib/queries'
+import { fmt } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
-import { PageHeader, Card, Modal, Badge, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, Tabs } from '@/components/ui'
+import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, Tabs } from '@/components/ui'
 import type { Moneda } from '@/types'
 
 const HOY = new Date()
@@ -24,6 +24,7 @@ export default function DeudasPage() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [mostrarDeudas, setMostrarDeudas] = useState(false)
+  const [mostrarPagados, setMostrarPagados] = useState(false)
   const [form, setForm] = useState({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS' as Moneda, color:'#5B3FA6' })
 
   const diasEnMes = new Date(calAño, calMes+1, 0).getDate()
@@ -70,6 +71,18 @@ export default function DeudasPage() {
     setCalMes(m); setCalAño(a)
   }
 
+  // Eventos filtrados según toggle pagados
+  const eventosFiltrados = useMemo(() => {
+    const base = (eventos??[]).filter(e=>e.tipo!=='ingreso')
+    return mostrarPagados ? base : base.filter(e=>!e.pagado)
+  }, [eventos, mostrarPagados])
+
+  const eventosPorDiaFiltrados = useMemo(() => {
+    const m: Record<number, typeof eventos> = {}
+    ;eventosFiltrados.forEach(e => { if (!m[e.dia]) m[e.dia]=[]; m[e.dia]!.push(e) })
+    return m
+  }, [eventosFiltrados])
+
   if (ld||le) return <LoadingSpinner />
 
   return (
@@ -79,9 +92,9 @@ export default function DeudasPage() {
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          {l:'Deuda total',       v:fmt(totalPendiente), s:'Pendiente de pago',    c:'#5B3FA6'},
+          {l:'Deuda total',       v:fmt(totalPendiente), s:'Pendiente de pago',         c:'#5B3FA6'},
           {l:'Vence este mes',    v:fmt(venceMes),       s:`${pendientes} vencimientos`, c:'#C0392B'},
-          {l:'Cuota mensual fija',v:fmt(cuotaMensual),  s:'Comprometido/mes',     c:'#E8A020'},
+          {l:'Cuota mensual fija',v:fmt(cuotaMensual),   s:'Comprometido/mes',           c:'#E8A020'},
           {l:'Deudas activas',    v:String((deudas??[]).length), s:'Obligaciones registradas', c:'#1A5E9E'},
         ].map(k=>(
           <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
@@ -126,24 +139,30 @@ export default function DeudasPage() {
 
             {/* COLUMNA IZQUIERDA — Próximos vencimientos */}
             <Card>
-              <div className="text-slate-900 font-semibold text-sm mb-3">Próximos vencimientos</div>
-              {(eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,8).length===0 ? (
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-slate-900 font-semibold text-sm">Próximos vencimientos</div>
+                <button
+                  onClick={()=>setMostrarPagados(p=>!p)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-all ${mostrarPagados?'bg-slate-900 border-slate-900 text-white':'bg-white border-slate-200 text-slate-500 hover:border-slate-400'}`}>
+                  {mostrarPagados ? '🙈 Ocultar pagados' : '👁 Ver pagados'}
+                </button>
+              </div>
+              {eventosFiltrados.sort((a,b)=>a.dia-b.dia).slice(0,10).length===0 ? (
                 <div className="text-slate-400 text-xs text-center py-4">Sin pendientes 🎉</div>
-              ) : (eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,8).map(ev=>{
+              ) : eventosFiltrados.sort((a,b)=>a.dia-b.dia).slice(0,10).map((ev, rowIdx)=>{
                 const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+                const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
                 return (
-                  <div key={ev.id} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+                  <div key={ev.id} className={`flex items-center gap-3 px-2 py-2.5 rounded-lg ${bg} ${ev.pagado?'opacity-50':''}`}>
                     <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
                       <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{ev.dia}</span>
                       <span className="text-[8px] font-bold uppercase" style={{color:t.color}}>{MESES_CORTOS[calMes]}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-700 truncate">{ev.descripcion}</div>
+                      <div className={`text-sm font-medium text-slate-700 truncate ${ev.pagado?'line-through':''}`}>{ev.descripcion}</div>
                       <div className="text-xs text-slate-400">{t.label}</div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-sm font-mono font-bold text-red-600">{ev.monto?fmt(ev.monto):'-'}</div>
-                    </div>
+                    <div className="text-sm font-mono font-bold text-red-600 flex-shrink-0">{ev.monto?fmt(ev.monto):'-'}</div>
                     <button onClick={()=>handleToggle(ev.id,ev.pagado)}
                       className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
                       {ev.pagado&&<span className="text-[10px]">✓</span>}
@@ -153,7 +172,7 @@ export default function DeudasPage() {
               })}
             </Card>
 
-            {/* COLUMNA DERECHA — Calendario */}
+            {/* COLUMNA DERECHA — Calendario (sin leyenda de tipos) */}
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -161,14 +180,11 @@ export default function DeudasPage() {
                   <span className="font-semibold text-slate-900 min-w-[160px] text-center">{MESES[calMes]} {calAño}</span>
                   <button onClick={()=>navMes(1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer">›</button>
                 </div>
-                <div className="flex gap-3 flex-wrap">
-                  {Object.entries(TIPOS_EVENTO).map(([k,v])=>(
-                    <div key={k} className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-sm" style={{background:v.color}} />
-                      <span className="text-slate-400 text-xs">{v.label}</span>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  onClick={()=>setMostrarPagados(p=>!p)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-all ${mostrarPagados?'bg-slate-900 border-slate-900 text-white':'bg-white border-slate-200 text-slate-500 hover:border-slate-400'}`}>
+                  {mostrarPagados ? '🙈 Ocultar pagados' : '👁 Ver pagados'}
+                </button>
               </div>
 
               <div className="grid grid-cols-7 gap-0.5 mb-1">
@@ -183,7 +199,7 @@ export default function DeudasPage() {
                   const dia = i+1
                   const isHoy = dia===HOY_DIA && calMes===HOY_MES && calAño===HOY_AÑO
                   const isPast = new Date(calAño,calMes,dia) < new Date(HOY_AÑO,HOY_MES,HOY_DIA)
-                  const dayEvs = eventosPorDia[dia]??[]
+                  const dayEvs = eventosPorDiaFiltrados[dia]??[]
                   const visible = dayEvs.slice(0,3)
                   const extra = dayEvs.length-3
                   return (
@@ -197,7 +213,7 @@ export default function DeudasPage() {
                           <div key={ev.id} onClick={()=>handleToggle(ev.id,ev.pagado)}
                             className={`text-[9px] font-medium px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer transition-opacity ${ev.pagado?'opacity-40 line-through':''}`}
                             style={{background:t.color+'18',color:t.color}}>
-                            {t.icon} {ev.descripcion}
+                            {ev.descripcion}
                           </div>
                         )
                       })}
@@ -217,29 +233,28 @@ export default function DeudasPage() {
               <EmptyState icon="📋" title="Sin deudas registradas" description="Agregá tu primera deuda para hacer seguimiento." />
             ) : (
               <>
-                {/* Toggle deudas del mes */}
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-slate-500 text-sm">Deudas activas — {(deudas??[]).length} registradas</span>
                   <button
                     onClick={()=>setMostrarDeudas(p=>!p)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium cursor-pointer transition-all ${mostrarDeudas?'bg-slate-900 border-slate-900 text-white':'bg-white border-slate-200 text-slate-600 hover:border-slate-400'}`}>
-                    {mostrarDeudas ? '👁 Ocultar deudas del mes' : '👁 Ver deudas del mes'}
+                    {mostrarDeudas ? '🙈 Ocultar deudas del mes' : '👁 Ver deudas del mes'}
                   </button>
                 </div>
 
-                {/* Deudas del mes — colapsable */}
                 <div className={`overflow-hidden transition-all duration-300 ${mostrarDeudas?'max-h-[2000px] opacity-100 mb-5':'max-h-0 opacity-0'}`}>
-                  <div className="grid grid-cols-2 gap-4">
-                    {(eventos??[]).filter(e=>e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).map(ev=>{
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    {(eventos??[]).filter(e=>e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).map((ev, rowIdx)=>{
                       const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+                      const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
                       return (
-                        <div key={ev.id} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                        <div key={ev.id} className={`flex items-center gap-3 px-4 py-3 ${bg} ${ev.pagado?'opacity-50':''}`}>
                           <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
                             <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{ev.dia}</span>
                             <span className="text-[8px] font-bold uppercase" style={{color:t.color}}>{MESES_CORTOS[calMes]}</span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-700 truncate">{ev.descripcion}</div>
+                            <div className={`text-sm font-medium text-slate-700 truncate ${ev.pagado?'line-through':''}`}>{ev.descripcion}</div>
                             <div className="text-xs text-slate-400">{t.label}</div>
                           </div>
                           <div className="text-sm font-mono font-bold text-red-600">{ev.monto?fmt(ev.monto):'-'}</div>
@@ -253,7 +268,6 @@ export default function DeudasPage() {
                   </div>
                 </div>
 
-                {/* Deudas largo plazo */}
                 <div className="grid grid-cols-2 gap-5">
                   {(deudas??[]).map(d=>{
                     const pagado = d.total_original - d.pendiente
