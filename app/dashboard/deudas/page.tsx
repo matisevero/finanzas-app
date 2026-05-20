@@ -23,6 +23,7 @@ export default function DeudasPage() {
   const [expanded, setExpanded] = useState<Record<string,boolean>>({})
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [mostrarDeudas, setMostrarDeudas] = useState(false)
   const [form, setForm] = useState({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS' as Moneda, color:'#5B3FA6' })
 
   const diasEnMes = new Date(calAño, calMes+1, 0).getDate()
@@ -38,6 +39,7 @@ export default function DeudasPage() {
   const totalPendiente = (deudas??[]).reduce((s,d)=>s+d.pendiente,0)
   const cuotaMensual   = (deudas??[]).reduce((s,d)=>s+d.cuota_mensual,0)
   const venceMes       = (eventos??[]).filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).reduce((s,e)=>s+(e.monto??0),0)
+  const pagadoMes      = (eventos??[]).filter(e=>e.pagado&&e.monto).reduce((s,e)=>s+(e.monto??0),0)
   const pendientes     = (eventos??[]).filter(e=>!e.pagado).length
 
   const handleToggle = async (id:string, pagado:boolean) => {
@@ -90,111 +92,122 @@ export default function DeudasPage() {
         ))}
       </div>
 
-      <Tabs tabs={[{value:'calendario',label:'📅 Calendario'},{value:'largo',label:'📋 Largo plazo'}]} value={tab} onChange={v=>setTab(v as any)} />
-
-      <div className="mt-5">
+      {/* Tabs + Resumen del mes en la misma línea */}
+      <div className="flex items-center justify-between mb-5">
+        <Tabs tabs={[{value:'calendario',label:'📅 Calendario'},{value:'largo',label:'📋 Largo plazo'}]} value={tab} onChange={v=>setTab(v as any)} />
         {tab==='calendario' && (
-          <div className="grid grid-cols-3 gap-5">
-            <div className="col-span-2">
-              <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <button onClick={()=>navMes(-1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer">‹</button>
-                    <span className="font-semibold text-slate-900 min-w-[160px] text-center">{MESES[calMes]} {calAño}</span>
-                    <button onClick={()=>navMes(1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer">›</button>
-                  </div>
-                  <div className="flex gap-3 flex-wrap">
-                    {Object.entries(TIPOS_EVENTO).map(([k,v])=>(
-                      <div key={k} className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-sm" style={{background:v.color}} />
-                        <span className="text-slate-400 text-xs">{v.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+          <div className="flex items-center gap-5 bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Total a pagar:</span>
+              <span className="font-mono font-bold text-red-600">{fmt(venceMes)}</span>
+            </div>
+            <div className="w-px h-4 bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Pagado:</span>
+              <span className="font-mono font-bold text-emerald-600">{fmt(pagadoMes)}</span>
+            </div>
+            <div className="w-px h-4 bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Pendiente:</span>
+              <span className="font-mono font-bold text-red-600">{fmt(venceMes - pagadoMes)}</span>
+            </div>
+            <div className="w-px h-4 bg-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Sin monto:</span>
+              <span className="font-mono font-bold text-amber-600">{(eventos??[]).filter(e=>!e.monto).length} eventos</span>
+            </div>
+          </div>
+        )}
+      </div>
 
-                <div className="grid grid-cols-7 gap-0.5 mb-1">
-                  {['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>(
-                    <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase py-1">{d}</div>
+      <div>
+        {tab==='calendario' && (
+          <div className="grid grid-cols-2 gap-5">
+
+            {/* COLUMNA IZQUIERDA — Próximos vencimientos */}
+            <Card>
+              <div className="text-slate-900 font-semibold text-sm mb-3">Próximos vencimientos</div>
+              {(eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,8).length===0 ? (
+                <div className="text-slate-400 text-xs text-center py-4">Sin pendientes 🎉</div>
+              ) : (eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,8).map(ev=>{
+                const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+                return (
+                  <div key={ev.id} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+                    <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
+                      <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{ev.dia}</span>
+                      <span className="text-[8px] font-bold uppercase" style={{color:t.color}}>{MESES_CORTOS[calMes]}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-700 truncate">{ev.descripcion}</div>
+                      <div className="text-xs text-slate-400">{t.label}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-mono font-bold text-red-600">{ev.monto?fmt(ev.monto):'-'}</div>
+                    </div>
+                    <button onClick={()=>handleToggle(ev.id,ev.pagado)}
+                      className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
+                      {ev.pagado&&<span className="text-[10px]">✓</span>}
+                    </button>
+                  </div>
+                )
+              })}
+            </Card>
+
+            {/* COLUMNA DERECHA — Calendario */}
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>navMes(-1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer">‹</button>
+                  <span className="font-semibold text-slate-900 min-w-[160px] text-center">{MESES[calMes]} {calAño}</span>
+                  <button onClick={()=>navMes(1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer">›</button>
+                </div>
+                <div className="flex gap-3 flex-wrap">
+                  {Object.entries(TIPOS_EVENTO).map(([k,v])=>(
+                    <div key={k} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-sm" style={{background:v.color}} />
+                      <span className="text-slate-400 text-xs">{v.label}</span>
+                    </div>
                   ))}
                 </div>
+              </div>
 
-                <div className="grid grid-cols-7 gap-0.5">
-                  {Array.from({length:offsetLunes}).map((_,i)=><div key={`e${i}`} className="min-h-[72px]" />)}
-                  {Array.from({length:diasEnMes}).map((_,i)=>{
-                    const dia = i+1
-                    const isHoy = dia===HOY_DIA && calMes===HOY_MES && calAño===HOY_AÑO
-                    const isPast = new Date(calAño,calMes,dia) < new Date(HOY_AÑO,HOY_MES,HOY_DIA)
-                    const dayEvs = eventosPorDia[dia]??[]
-                    const visible = dayEvs.slice(0,3)
-                    const extra = dayEvs.length-3
-                    return (
-                      <div key={dia} className={`min-h-[72px] rounded-lg p-1.5 border transition-all ${isHoy?'bg-blue-50 border-blue-200':'border-transparent'} ${dayEvs.length>0?'hover:bg-slate-50 cursor-pointer':''} ${isPast&&!isHoy?'opacity-50':''}`}>
-                        <div className={`text-xs font-bold mb-1 ${isHoy?'text-blue-700':'text-slate-500'}`}>
-                          {dia}{isHoy&&<span className="ml-1 text-[8px] bg-blue-700 text-white rounded px-1">hoy</span>}
-                        </div>
-                        {visible.map(ev=>{
-                          const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
-                          return (
-                            <div key={ev.id} onClick={()=>handleToggle(ev.id,ev.pagado)}
-                              className={`text-[9px] font-medium px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer transition-opacity ${ev.pagado?'opacity-40 line-through':''}`}
-                              style={{background:t.color+'18',color:t.color}}>
-                              {t.icon} {ev.descripcion}
-                            </div>
-                          )
-                        })}
-                        {extra>0 && <div className="text-[9px] text-slate-400">+{extra} más</div>}
-                      </div>
-                    )
-                  })}
-                </div>
-              </Card>
-            </div>
+              <div className="grid grid-cols-7 gap-0.5 mb-1">
+                {['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>(
+                  <div key={d} className="text-center text-[10px] font-bold text-slate-400 uppercase py-1">{d}</div>
+                ))}
+              </div>
 
-            <div className="flex flex-col gap-4">
-              <Card>
-                <div className="text-slate-900 font-semibold text-sm mb-3">Próximos vencimientos</div>
-                {(eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,6).length===0 ? (
-                  <div className="text-slate-400 text-xs text-center py-4">Sin pendientes 🎉</div>
-                ) : (eventos??[]).filter(e=>!e.pagado&&e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).slice(0,6).map(ev=>{
-                  const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+              <div className="grid grid-cols-7 gap-0.5">
+                {Array.from({length:offsetLunes}).map((_,i)=><div key={`e${i}`} className="min-h-[72px]" />)}
+                {Array.from({length:diasEnMes}).map((_,i)=>{
+                  const dia = i+1
+                  const isHoy = dia===HOY_DIA && calMes===HOY_MES && calAño===HOY_AÑO
+                  const isPast = new Date(calAño,calMes,dia) < new Date(HOY_AÑO,HOY_MES,HOY_DIA)
+                  const dayEvs = eventosPorDia[dia]??[]
+                  const visible = dayEvs.slice(0,3)
+                  const extra = dayEvs.length-3
                   return (
-                    <div key={ev.id} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
-                      <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
-                        <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{ev.dia}</span>
-                        <span className="text-[8px] font-bold uppercase" style={{color:t.color}}>{MESES_CORTOS[calMes]}</span>
+                    <div key={dia} className={`min-h-[72px] rounded-lg p-1.5 border transition-all ${isHoy?'bg-blue-50 border-blue-200':'border-transparent'} ${dayEvs.length>0?'hover:bg-slate-50 cursor-pointer':''} ${isPast&&!isHoy?'opacity-50':''}`}>
+                      <div className={`text-xs font-bold mb-1 ${isHoy?'text-blue-700':'text-slate-500'}`}>
+                        {dia}{isHoy&&<span className="ml-1 text-[8px] bg-blue-700 text-white rounded px-1">hoy</span>}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-slate-700 truncate">{ev.descripcion}</div>
-                        <div className="text-xs text-slate-400">{t.label}</div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-sm font-mono font-bold text-red-600">{ev.monto?fmt(ev.monto):'-'}</div>
-                      </div>
-                      <button onClick={()=>handleToggle(ev.id,ev.pagado)}
-                        className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
-                        {ev.pagado&&<span className="text-[10px]">✓</span>}
-                      </button>
+                      {visible.map(ev=>{
+                        const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+                        return (
+                          <div key={ev.id} onClick={()=>handleToggle(ev.id,ev.pagado)}
+                            className={`text-[9px] font-medium px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer transition-opacity ${ev.pagado?'opacity-40 line-through':''}`}
+                            style={{background:t.color+'18',color:t.color}}>
+                            {t.icon} {ev.descripcion}
+                          </div>
+                        )
+                      })}
+                      {extra>0 && <div className="text-[9px] text-slate-400">+{extra} más</div>}
                     </div>
                   )
                 })}
-              </Card>
+              </div>
+            </Card>
 
-              <Card>
-                <div className="text-slate-900 font-semibold text-sm mb-3">Resumen del mes</div>
-                {[
-                  {l:'Total a pagar', v:fmt(venceMes), c:'#C0392B'},
-                  {l:'Pagado ✓', v:fmt((eventos??[]).filter(e=>e.pagado&&e.monto).reduce((s,e)=>s+(e.monto??0),0)), c:'#2D7D2D'},
-                  {l:'Pendiente', v:fmt(venceMes-(eventos??[]).filter(e=>e.pagado&&e.monto).reduce((s,e)=>s+(e.monto??0),0)), c:'#C0392B'},
-                  {l:'Sin monto', v:String((eventos??[]).filter(e=>!e.monto).length)+' eventos', c:'#E8A020'},
-                ].map(r=>(
-                  <div key={r.l} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                    <span className="text-slate-500 text-sm">{r.l}</span>
-                    <span className="font-mono font-bold text-sm" style={{color:r.c}}>{r.v}</span>
-                  </div>
-                ))}
-              </Card>
-            </div>
           </div>
         )}
 
@@ -204,7 +217,44 @@ export default function DeudasPage() {
               <EmptyState icon="📋" title="Sin deudas registradas" description="Agregá tu primera deuda para hacer seguimiento." />
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-5 mb-5">
+                {/* Toggle deudas del mes */}
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-slate-500 text-sm">Deudas activas — {(deudas??[]).length} registradas</span>
+                  <button
+                    onClick={()=>setMostrarDeudas(p=>!p)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium cursor-pointer transition-all ${mostrarDeudas?'bg-slate-900 border-slate-900 text-white':'bg-white border-slate-200 text-slate-600 hover:border-slate-400'}`}>
+                    {mostrarDeudas ? '👁 Ocultar deudas del mes' : '👁 Ver deudas del mes'}
+                  </button>
+                </div>
+
+                {/* Deudas del mes — colapsable */}
+                <div className={`overflow-hidden transition-all duration-300 ${mostrarDeudas?'max-h-[2000px] opacity-100 mb-5':'max-h-0 opacity-0'}`}>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(eventos??[]).filter(e=>e.tipo!=='ingreso').sort((a,b)=>a.dia-b.dia).map(ev=>{
+                      const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
+                      return (
+                        <div key={ev.id} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3">
+                          <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
+                            <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{ev.dia}</span>
+                            <span className="text-[8px] font-bold uppercase" style={{color:t.color}}>{MESES_CORTOS[calMes]}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-slate-700 truncate">{ev.descripcion}</div>
+                            <div className="text-xs text-slate-400">{t.label}</div>
+                          </div>
+                          <div className="text-sm font-mono font-bold text-red-600">{ev.monto?fmt(ev.monto):'-'}</div>
+                          <button onClick={()=>handleToggle(ev.id,ev.pagado)}
+                            className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
+                            {ev.pagado&&<span className="text-[10px]">✓</span>}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Deudas largo plazo */}
+                <div className="grid grid-cols-2 gap-5">
                   {(deudas??[]).map(d=>{
                     const pagado = d.total_original - d.pendiente
                     const pct = Math.round((pagado/d.total_original)*100)
