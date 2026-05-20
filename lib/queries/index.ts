@@ -143,6 +143,10 @@ export async function updateDeuda(id: string, updates: Partial<DeudaInsert>): Pr
   return data
 }
 
+export async function deleteDeuda(id: string): Promise<void> {
+  const { error } = await sb().from('deudas').delete().eq('id', id)
+  if (error) throw error
+}
 export async function getPagosDeuda(deudaId: string): Promise<PagoDeuda[]> {
   const { data, error } = await sb().from('pagos_deuda').select('*').eq('deuda_id', deudaId).order('fecha', { ascending: false })
   if (error) throw error
@@ -206,6 +210,10 @@ export async function updateEvento(id: string, updates: Partial<EventoCalendario
   return data
 }
 
+export async function deleteEvento(id: string): Promise<void> {
+  const { error } = await sb().from('eventos_calendario').delete().eq('id', id)
+  if (error) throw error
+}
 export async function togglePagado(id: string, pagado: boolean) {
   const { error } = await sb().from('eventos_calendario').update({ pagado }).eq('id', id)
   if (error) throw error
