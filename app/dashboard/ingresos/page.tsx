@@ -548,7 +548,7 @@ export default function IngresosPage() {
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
                 <Tooltip content={renderTooltip} />
                 {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
-                  <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={28} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                  <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={28} stackId={chartType === 'apilado' ? 'stack' : undefined} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
