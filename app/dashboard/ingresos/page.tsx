@@ -114,7 +114,7 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
   )
 }
 
-// ─── SheetNewRow ──────────────────────────────────────────────────────────────
+// ─── SheetNewRow — fila fija para ingreso rápido estilo Google Sheets ─────────
 function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
@@ -148,7 +148,8 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           <td key={col} className={base}>
             <input type="date" value={form.fecha}
               onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
               className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-emerald-400" />
           </td>
         )
@@ -157,7 +158,8 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           <td key={col} className={base}>
             <input value={form.descripcion}
               onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
               placeholder="Descripción..."
               className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-emerald-400" />
           </td>
@@ -176,7 +178,8 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           <td key={col} className={base}>
             <select value={form.quien}
               onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
               className="input-field py-1 text-xs">
               <option value="ambos">Ambos</option>
               <option value="Mati">Mati</option>
@@ -189,7 +192,8 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           <td key={col} className={`${base} text-right`}>
             <MontoInput value={form.monto}
               onChange={raw => setForm(p => ({ ...p, monto: raw }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
               className="py-1 text-xs text-right focus:ring-2 focus:ring-emerald-400" />
           </td>
         )
@@ -237,6 +241,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
   })
   const [saving, setSaving] = useState(false)
   const handle = async () => { setSaving(true); await onSave(ingreso.id, form); setSaving(false) }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); handle() }
     if (e.key === 'Escape') onCancel()
@@ -288,8 +293,6 @@ export default function IngresosPage() {
   const [sortDir, setSortDir]         = useState<SortDir>('desc')
   const [cols, setCols]               = useState<SortKey[]>(COLS_DEFAULT)
   const [page, setPage]               = useState(1)
-  // ── Layout handle: false = transacciones 2/3 | widgets 1/3 — true = invertido
-  const [widgetsExpanded, setWidgetsExpanded] = useState(false)
   const dragCol  = useRef<number|null>(null)
   const dragOver = useRef<number|null>(null)
 
@@ -365,6 +368,7 @@ export default function IngresosPage() {
     } catch (e) { console.error(e) } finally { setSaving(false) }
   }
 
+  // Fila Sheet — guardar nuevo ingreso rápido
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
     await createIngreso({ tipo: data.tipo, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
     refetch()
@@ -404,16 +408,13 @@ export default function IngresosPage() {
 
   if (loading) return <LoadingSpinner />
 
-  // Clases de ancho para cada panel según estado del handle
-  const txCols      = widgetsExpanded ? 'col-span-1' : 'col-span-2'
-  const widgetsCols = widgetsExpanded ? 'col-span-2' : 'col-span-1'
 
   return (
     <div>
       <PageHeader title="Ingresos" subtitle={`Todos tus flujos de entrada — ${añoActivo}`}
         action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo ingreso</button>} />
 
-      {/* ── StatCards — siempre full width ── */}
+      {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#2D7D2D" icon="💰" sub="Acumulado" />
         <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#2D7D2D" icon="👔" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
@@ -421,20 +422,20 @@ export default function IngresosPage() {
         <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" icon="📅" sub="Sobre meses con datos" />
       </div>
 
-      {/* ── Layout principal: 3 columnas con handle en el medio ── */}
-      <div className="grid grid-cols-3 gap-0 items-start">
+      {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
+      <div className="grid grid-cols-3 gap-5 items-start">
 
-        {/* ── Panel TRANSACCIONES ── */}
-        <div className={`${txCols} transition-all duration-300 pr-2`}>
+        {/* ── Columna izquierda: Transacciones ── */}
+        <div className="col-span-2">
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
               <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
-              <div className="relative flex-1 min-w-[140px]">
+              <div className="relative flex-1 min-w-[180px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
-                <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar..." className="input-field pl-8 py-1.5 text-xs" />
+                <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
               <MultiDropdown label="Tipo" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterTipos} onChange={setFilterTiposR} />
               <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
@@ -522,136 +523,115 @@ export default function IngresosPage() {
           </Card>
         </div>
 
-        {/* ── HANDLE ── */}
-        <div className="flex items-stretch justify-center px-1" style={{ minHeight: '100%' }}>
-          <button
-            onClick={() => setWidgetsExpanded(p => !p)}
-            title={widgetsExpanded ? 'Contraer widgets' : 'Expandir widgets'}
-            className="group flex flex-col items-center justify-center w-5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-400 cursor-pointer transition-all self-stretch"
-            style={{ minHeight: 120 }}>
-            <div className="flex flex-col gap-1 items-center">
-              <div className="w-1 h-1 rounded-full bg-slate-300 group-hover:bg-slate-500 transition-colors" />
-              <div className="w-1 h-1 rounded-full bg-slate-300 group-hover:bg-slate-500 transition-colors" />
-              <div className="w-1 h-1 rounded-full bg-slate-300 group-hover:bg-slate-500 transition-colors" />
+        {/* ── Columna derecha: Widgets ── */}
+        <div className="col-span-1 flex flex-col gap-5">
+
+          {/* Gráfico evolución */}
+          <Card>
+            <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
+              Evolución {añoActivo}
+            </CardTitle>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {tiposBase.map(({ key, label, color }) => (
+                <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                  className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                  style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                  <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                  <span className="text-slate-500 text-xs">{label}</span>
+                </button>
+              ))}
             </div>
-            <span className="text-[8px] text-slate-300 group-hover:text-slate-500 mt-2 transition-colors select-none"
-              style={{ writingMode: 'vertical-rl' }}>
-              {widgetsExpanded ? '◀' : '▶'}
-            </span>
-          </button>
-        </div>
-
-        {/* ── Panel WIDGETS ── */}
-        <div className={`${widgetsCols} transition-all duration-300 pl-2`}>
-          <div className="flex flex-col gap-5">
-
-            {/* Gráfico evolución */}
-            <Card>
-              <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
-                Evolución {añoActivo}
-              </CardTitle>
-              <div className="flex gap-3 flex-wrap mb-3">
-                {tiposBase.map(({ key, label, color }) => (
-                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
-                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
-                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-                    <span className="text-slate-500 text-xs">{label}</span>
-                  </button>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
+                <Tooltip content={renderTooltip} />
+                {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                  <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={28} stackId={chartType === 'apilado' ? 'stack' : undefined} />
                 ))}
-              </div>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-                  <Tooltip content={renderTooltip} />
-                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
-                    <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
 
-            {/* Composición / Top */}
-            <Card>
-              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
-                {(['composicion', 'top'] as const).map(v => (
-                  <button key={v} onClick={() => setSidePanel(v)}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
-                    {v === 'composicion' ? 'Composición' : 'Top categorías'}
-                  </button>
-                ))}
-              </div>
+          {/* Composición / Top */}
+          <Card>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+              {(['composicion', 'top'] as const).map(v => (
+                <button key={v} onClick={() => setSidePanel(v)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+                  {v === 'composicion' ? 'Composición' : 'Top categorías'}
+                </button>
+              ))}
+            </div>
 
-              {sidePanel === 'composicion' && (
-                <>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-slate-500 text-xs font-medium">Mes</span>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-                      <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-                      <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
-                    </div>
+            {sidePanel === 'composicion' && (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-slate-500 text-xs font-medium">Mes</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
                   </div>
-                  {compData.length > 0 ? (
-                    <>
-                      <ResponsiveContainer width="100%" height={140}>
-                        <PieChart>
-                          <Pie data={compData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-                            {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                          </Pie>
-                          <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="flex flex-col gap-1.5 mt-2">
-                        {compData.map((d, i) => (
-                          <div key={d.name} className="flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                              <span className="text-slate-500 text-xs">{d.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
-                              <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value, m)}</span>
-                            </div>
+                </div>
+                {compData.length > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={130}>
+                      <PieChart>
+                        <Pie data={compData} cx="50%" cy="50%" innerRadius={36} outerRadius={58} paddingAngle={3} dataKey="value">
+                          {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      {compData.map((d, i) => (
+                        <div key={d.name} className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                            <span className="text-slate-500 text-xs">{d.name}</span>
                           </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
-                </>
-              )}
-
-              {sidePanel === 'top' && (
-                <>
-                  <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
-                  {topAño.length > 0 ? (
-                    <div className="flex flex-col gap-3">
-                      {topAño.map((d, i) => {
-                        const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
-                        return (
-                          <div key={d.label}>
-                            <div className="flex justify-between mb-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
-                                <span className="text-xs font-medium text-slate-700">{d.label}</span>
-                              </div>
-                              <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
-                            </div>
-                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: d.color }} />
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                            <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value, m)}</span>
                           </div>
-                        )
-                      })}
+                        </div>
+                      ))}
                     </div>
-                  ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
-                </>
-              )}
-            </Card>
+                  </>
+                ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
+              </>
+            )}
 
-          </div>
+            {sidePanel === 'top' && (
+              <>
+                <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
+                {topAño.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {topAño.map((d, i) => {
+                      const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
+                      return (
+                        <div key={d.label}>
+                          <div className="flex justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
+                              <span className="text-xs font-medium text-slate-700">{d.label}</span>
+                            </div>
+                            <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: d.color }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
+              </>
+            )}
+          </Card>
+
         </div>
       </div>
 
