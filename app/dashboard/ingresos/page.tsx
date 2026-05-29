@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -76,7 +76,7 @@ function MultiDropdown({ label, options, selected, onChange }: {
   )
 }
 
-// ─── Custom tooltip top 5 — usa TooltipProps nativo de recharts ───────────────
+// ─── Custom tooltip ───────────────────────────────────────────────────────────
 type CustomTooltipProps = TooltipProps<ValueType, NameType> & {
   getTipoInfo: (k: string) => { label: string; color: string }
   m: Moneda
@@ -114,7 +114,117 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
   )
 }
 
-// ─── Inline edit row ──────────────────────────────────────────────────────────
+// ─── SheetNewRow — fila fija para ingreso rápido estilo Google Sheets ─────────
+function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
+  cols: SortKey[]
+  tiposBase: { key: string; label: string; icon: string; color: string }[]
+  categoriasCustom: CategoriaCustom[]
+  onSave: (data: typeof FORM_INIT) => Promise<void>
+  refetchCats: () => void
+}) {
+  const [form, setForm] = useState(FORM_INIT)
+  const [saving, setSaving] = useState(false)
+  const [active, setActive] = useState(false)
+
+  const handleSave = async () => {
+    if (!form.monto || !form.fecha) return
+    setSaving(true)
+    await onSave(form)
+    setForm(FORM_INIT)
+    setSaving(false)
+    setActive(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSave() }
+    if (e.key === 'Escape') { setForm(FORM_INIT); setActive(false) }
+  }
+
+  const cellFor = (col: SortKey) => {
+    const base = 'py-1.5 px-2 border-b border-emerald-200'
+    switch (col) {
+      case 'fecha':
+        return (
+          <td key={col} className={base}>
+            <input type="date" value={form.fecha}
+              onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
+              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-emerald-400" />
+          </td>
+        )
+      case 'descripcion':
+        return (
+          <td key={col} className={base}>
+            <input value={form.descripcion}
+              onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
+              placeholder="Descripción..."
+              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-emerald-400" />
+          </td>
+        )
+      case 'tipo':
+        return (
+          <td key={col} className={base}>
+            <CategoriaSelector modulo="ingresos" value={form.tipo}
+              onChange={v => setForm(p => ({ ...p, tipo: v }))}
+              categorias={categoriasCustom} categoriasBase={tiposBase}
+              onCategoriasChange={refetchCats} />
+          </td>
+        )
+      case 'quien':
+        return (
+          <td key={col} className={base}>
+            <select value={form.quien}
+              onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
+              className="input-field py-1 text-xs">
+              <option value="ambos">Ambos</option>
+              <option value="Mati">Mati</option>
+              <option value="Dani">Dani</option>
+            </select>
+          </td>
+        )
+      case 'monto':
+        return (
+          <td key={col} className={`${base} text-right`}>
+            <MontoInput value={form.monto}
+              onChange={raw => setForm(p => ({ ...p, monto: raw }))}
+              onFocus={() => setActive(true)}
+              onKeyDown={handleKeyDown}
+              className="py-1 text-xs text-right focus:ring-2 focus:ring-emerald-400" />
+          </td>
+        )
+      default: return null
+    }
+  }
+
+  return (
+    <tr className={`transition-colors ${active ? 'bg-emerald-50' : 'bg-emerald-50/40 hover:bg-emerald-50'}`}>
+      {cols.map(col => cellFor(col))}
+      <td className="py-1.5 px-2 border-b border-emerald-200 text-right">
+        {active ? (
+          <div className="flex gap-1 justify-end">
+            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
+              className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
+              {saving ? '...' : '+ Guardar'}
+            </button>
+            <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
+              className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
+              ✕
+            </button>
+          </div>
+        ) : (
+          <span className="text-[10px] text-emerald-500 font-medium select-none">↵ nueva fila</span>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+// ─── InlineEditRow ────────────────────────────────────────────────────────────
 function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel, refetchCats }: {
   ingreso: Ingreso
   tiposBase: { key: string; label: string; icon: string; color: string }[]
@@ -132,20 +242,25 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
   const [saving, setSaving] = useState(false)
   const handle = async () => { setSaving(true); await onSave(ingreso.id, form); setSaving(false) }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handle() }
+    if (e.key === 'Escape') onCancel()
+  }
+
   return (
     <tr className="bg-blue-50/60">
-      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} className="input-field py-1 text-xs w-full" /></td>
-      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100">
         <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
       <td className="py-1.5 px-2 border-b border-blue-100">
-        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} className="input-field py-1 text-xs">
+        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs">
           <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="py-1 text-xs text-right" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className="py-1 text-xs text-right" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100 text-right">
         <div className="flex gap-1 justify-end">
           <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
@@ -253,6 +368,12 @@ export default function IngresosPage() {
     } catch (e) { console.error(e) } finally { setSaving(false) }
   }
 
+  // Fila Sheet — guardar nuevo ingreso rápido
+  const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
+    await createIngreso({ tipo: data.tipo, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
+    refetch()
+  }, [refetch])
+
   const handleUpdate = async (id: string, data: Partial<typeof FORM_INIT>) => {
     await updateIngreso(id, { tipo: data.tipo, descripcion: data.descripcion, monto: parseFloat(data.monto ?? '0'), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
     setEditingId(null); refetch()
@@ -282,7 +403,6 @@ export default function IngresosPage() {
 
   const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
 
-  // Renderizador del tooltip — tipado explícito para evitar el error de deploy
   const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
     <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
 
@@ -451,6 +571,15 @@ export default function IngresosPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* ── Fila Sheet: ingreso rápido estilo Google Sheets ── */}
+                  <SheetNewRow
+                    cols={cols}
+                    tiposBase={tiposBase}
+                    categoriasCustom={categoriasCustom}
+                    onSave={handleSheetSave}
+                    refetchCats={refetchCats}
+                  />
+
                   {visibleRows.map((ingreso, rowIdx) => {
                     const cfg       = getTipoInfo(ingreso.tipo)
                     const isEditing = editingId === ingreso.id
