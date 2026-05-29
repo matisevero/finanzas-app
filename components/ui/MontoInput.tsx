@@ -6,6 +6,8 @@ interface MontoInputProps {
   onChange: (raw: string) => void
   placeholder?: string
   className?: string
+  onFocus?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }
 
 function toDisplay(raw: string): string {
@@ -19,7 +21,7 @@ function toRaw(display: string): string {
   return display.replace(/\./g, '').replace(',', '.')
 }
 
-export default function MontoInput({ value, onChange, placeholder = '0', className = '' }: MontoInputProps) {
+export default function MontoInput({ value, onChange, placeholder = '0', className = '', onFocus, onKeyDown }: MontoInputProps) {
   const [display, setDisplay] = useState(() => {
     if (!value) return ''
     const num = parseFloat(value)
@@ -42,6 +44,8 @@ export default function MontoInput({ value, onChange, placeholder = '0', classNa
       inputMode="decimal"
       value={display}
       onChange={handleChange}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
       placeholder={placeholder}
       className={`input-field font-mono ${className}`}
     />
