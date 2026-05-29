@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -76,7 +76,7 @@ function MultiDropdown({ label, options, selected, onChange }: {
   )
 }
 
-// ─── Custom tooltip top 5 — usa TooltipProps nativo de recharts ───────────────
+// ─── Custom tooltip ───────────────────────────────────────────────────────────
 type CustomTooltipProps = TooltipProps<ValueType, NameType> & {
   getTipoInfo: (k: string) => { label: string; color: string }
   m: Moneda
@@ -114,7 +114,113 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
   )
 }
 
-// ─── Inline edit row ──────────────────────────────────────────────────────────
+// ─── SheetNewRow ──────────────────────────────────────────────────────────────
+function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
+  cols: SortKey[]
+  tiposBase: { key: string; label: string; icon: string; color: string }[]
+  categoriasCustom: CategoriaCustom[]
+  onSave: (data: typeof FORM_INIT) => Promise<void>
+  refetchCats: () => void
+}) {
+  const [form, setForm] = useState(FORM_INIT)
+  const [saving, setSaving] = useState(false)
+  const [active, setActive] = useState(false)
+
+  const handleSave = async () => {
+    if (!form.monto || !form.fecha) return
+    setSaving(true)
+    await onSave(form)
+    setForm(FORM_INIT)
+    setSaving(false)
+    setActive(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSave() }
+    if (e.key === 'Escape') { setForm(FORM_INIT); setActive(false) }
+  }
+
+  const cellFor = (col: SortKey) => {
+    const base = 'py-1.5 px-2 border-b border-red-100'
+    switch (col) {
+      case 'fecha':
+        return (
+          <td key={col} className={base}>
+            <input type="date" value={form.fecha}
+              onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
+              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-red-300" />
+          </td>
+        )
+      case 'descripcion':
+        return (
+          <td key={col} className={base}>
+            <input value={form.descripcion}
+              onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
+              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              placeholder="Descripción..."
+              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-red-300" />
+          </td>
+        )
+      case 'categoria':
+        return (
+          <td key={col} className={base}>
+            <CategoriaSelector modulo="egresos" value={form.categoria}
+              onChange={v => setForm(p => ({ ...p, categoria: v }))}
+              categorias={categoriasCustom} categoriasBase={tiposBase}
+              onCategoriasChange={refetchCats} />
+          </td>
+        )
+      case 'quien':
+        return (
+          <td key={col} className={base}>
+            <select value={form.quien}
+              onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
+              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              className="input-field py-1 text-xs">
+              <option value="ambos">Ambos</option>
+              <option value="Mati">Mati</option>
+              <option value="Dani">Dani</option>
+            </select>
+          </td>
+        )
+      case 'monto':
+        return (
+          <td key={col} className={`${base} text-right`}>
+            <MontoInput value={form.monto}
+              onChange={raw => setForm(p => ({ ...p, monto: raw }))}
+              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
+              className="py-1 text-xs text-right focus:ring-2 focus:ring-red-300" />
+          </td>
+        )
+      default: return null
+    }
+  }
+
+  return (
+    <tr className={`transition-colors ${active ? 'bg-red-50' : 'bg-red-50/30 hover:bg-red-50'}`}>
+      {cols.map(col => cellFor(col))}
+      <td className="py-1.5 px-2 border-b border-red-100 text-right">
+        {active ? (
+          <div className="flex gap-1 justify-end">
+            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
+              className="text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
+              {saving ? '...' : '+ Guardar'}
+            </button>
+            <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
+              className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
+              ✕
+            </button>
+          </div>
+        ) : (
+          <span className="text-[10px] text-red-400 font-medium select-none">↵ nueva fila</span>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+// ─── InlineEditRow ────────────────────────────────────────────────────────────
 function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, refetchCats }: {
   egreso: Egreso
   tiposBase: { key: string; label: string; icon: string; color: string }[]
@@ -131,21 +237,25 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
   })
   const [saving, setSaving] = useState(false)
   const handle = async () => { setSaving(true); await onSave(egreso.id, form); setSaving(false) }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handle() }
+    if (e.key === 'Escape') onCancel()
+  }
 
   return (
     <tr className="bg-blue-50/60">
-      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} className="input-field py-1 text-xs w-full" /></td>
-      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100">
         <CategoriaSelector modulo="egresos" value={form.categoria} onChange={v => setForm(p => ({ ...p, categoria: v }))}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
       <td className="py-1.5 px-2 border-b border-blue-100">
-        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} className="input-field py-1 text-xs">
+        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs">
           <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="py-1 text-xs text-right" /></td>
+      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className="py-1 text-xs text-right" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100 text-right">
         <div className="flex gap-1 justify-end">
           <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
@@ -254,6 +364,11 @@ export default function EgresosPage() {
     } catch (e) { console.error(e) } finally { setSaving(false) }
   }
 
+  const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
+    await createEgreso({ categoria: data.categoria, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
+    refetch()
+  }, [refetch])
+
   const handleUpdate = async (id: string, data: Partial<typeof FORM_INIT>) => {
     await updateEgreso(id, { categoria: data.categoria, descripcion: data.descripcion, monto: parseFloat(data.monto ?? '0'), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
     setEditingId(null); refetch()
@@ -281,7 +396,6 @@ export default function EgresosPage() {
   const setFilterQuienR = (v: string[]) => { setFilterQuien(v); setPage(1) }
   const setSearchR      = (v: string)   => { setSearch(v); setPage(1) }
 
-  // Renderizador tipado explícitamente para evitar error de deploy
   const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
     <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
 
@@ -294,6 +408,7 @@ export default function EgresosPage() {
       <PageHeader title="Egresos" subtitle={`Control detallado de gastos — ${añoActivo}`}
         action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo egreso</button>} />
 
+      {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#C0392B" icon="📤" sub="Acumulado" />
         <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" icon="💳" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
@@ -301,202 +416,215 @@ export default function EgresosPage() {
         <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" icon="📅" sub="Sobre meses con datos" />
       </div>
 
-      <div className="grid grid-cols-3 gap-5 mb-5">
-        <Card className="col-span-2">
-          <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
-            Evolución de egresos {añoActivo}
-          </CardTitle>
-          <div className="flex gap-2 flex-wrap mb-3">
-            {tiposBase.map(({ key, label, color }) => (
-              <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
-                className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
-                style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
-                <div className="w-2 h-2 rounded-sm" style={{ background: color }} />
-                <span className="text-slate-500 text-[10px]">{label}</span>
-              </button>
-            ))}
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
-              <Tooltip content={renderTooltip} />
-              {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
-                <Bar key={key} dataKey={key} name={key} fill={color} radius={[3, 3, 0, 0]} maxBarSize={32} stackId={chartType === 'apilado' ? 'stack' : undefined} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
+      {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
+      <div className="grid grid-cols-3 gap-5 items-start">
 
-        <Card>
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
-            {(['composicion', 'top'] as const).map(v => (
-              <button key={v} onClick={() => setSidePanel(v)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
-                {v === 'composicion' ? 'Composición' : 'Top categorías'}
-              </button>
-            ))}
-          </div>
-
-          {sidePanel === 'composicion' && (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-slate-500 text-xs font-medium">Mes</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-                  <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-                  <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
-                </div>
-              </div>
-              {compData.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height={130}>
-                    <PieChart>
-                      <Pie data={compData} cx="50%" cy="50%" innerRadius={36} outerRadius={58} paddingAngle={3} dataKey="value">
-                        {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-col gap-1 mt-1">
-                    {compData.slice(0, 5).map((d, i) => (
-                      <div key={d.name} className="flex justify-between items-center">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                          <span className="text-slate-500 text-[10px]">{d.name}</span>
-                        </div>
-                        <span className="text-slate-900 text-[10px] font-mono font-bold">{fmt(d.value, m)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : <div className="text-center text-slate-400 text-sm py-4">Sin datos</div>}
-            </>
-          )}
-
-          {sidePanel === 'top' && (
-            <>
-              <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
-              {topAño.length > 0 ? (
-                <div className="flex flex-col gap-3">
-                  {topAño.map((d, i) => {
-                    const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
-                    return (
-                      <div key={d.label}>
-                        <div className="flex justify-between mb-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
-                            <span className="text-xs font-medium text-slate-700">{d.label}</span>
-                          </div>
-                          <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: d.color }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
-            </>
-          )}
-        </Card>
-      </div>
-
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-          <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
-        </div>
-        <div className="flex gap-2 flex-wrap mb-4 items-center">
-          <div className="relative flex-1 min-w-[180px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
-            <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
-          </div>
-          <MultiDropdown label="Categoría" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterCats} onChange={setFilterCatsR} />
-          <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
-          {(filterCats.length > 0 || filterQuien.length > 0 || search) && (
-            <button onClick={() => { setFilterCatsR([]); setFilterQuienR([]); setSearchR('') }}
-              className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
-              Limpiar
-            </button>
-          )}
-        </div>
-
-        {filtered.length === 0 ? (
-          <EmptyState icon="💸" title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-slate-50">
-                    {cols.map((col, i) => (
-                      <th key={col} draggable
-                        onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
-                        onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
-                        onClick={() => toggleSort(col)}
-                        className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
-                        <span className="inline-flex items-center gap-1">
-                          <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
-                          {COL_LABEL[col]}
-                          {sortKey === col && <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-                        </span>
-                      </th>
-                    ))}
-                    <th className="py-3 px-3 border-b border-slate-200 w-16" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((egreso, rowIdx) => {
-                    const cfg       = getTipoInfo(egreso.categoria)
-                    const isEditing = editingId === egreso.id
-                    const bg        = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
-
-                    if (isEditing) return (
-                      <InlineEditRow key={egreso.id} egreso={egreso} tiposBase={tiposBase}
-                        categoriasCustom={categoriasCustom} onSave={handleUpdate}
-                        onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
-                    )
-
-                    const cellFor = (col: SortKey) => {
-                      switch (col) {
-                        case 'fecha':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-500 text-xs font-mono">{fmtDate(egreso.fecha)}</span></td>
-                        case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><div className="flex items-center gap-2"><span>{cfg.icon}</span><span className="text-slate-700 font-medium">{egreso.descripcion || cfg.label}</span></div></td>
-                        case 'categoria':   return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
-                        case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
-                        case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
-                        default: return null
-                      }
-                    }
-
-                    return (
-                      <tr key={egreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
-                        {cols.map(col => cellFor(col))}
-                        <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
-                          <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
-                            <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+        {/* ── Columna izquierda: Transacciones ── */}
+        <div className="col-span-2">
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
             </div>
-            {hasMore && (
-              <div className="flex items-center justify-center pt-4 border-t border-slate-100 mt-2">
-                <button onClick={() => setPage(p => p + 1)}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium border-none bg-transparent cursor-pointer">
-                  Ver más ({filtered.length - visibleRows.length} restantes)
-                </button>
+            <div className="flex gap-2 flex-wrap mb-4 items-center">
+              <div className="relative flex-1 min-w-[180px]">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
+                <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
+              <MultiDropdown label="Categoría" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterCats} onChange={setFilterCatsR} />
+              <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
+              {(filterCats.length > 0 || filterQuien.length > 0 || search) && (
+                <button onClick={() => { setFilterCatsR([]); setFilterQuienR([]); setSearchR('') }}
+                  className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
+                  Limpiar
+                </button>
+              )}
+            </div>
+
+            {filtered.length === 0 ? (
+              <EmptyState icon="💸" title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        {cols.map((col, i) => (
+                          <th key={col} draggable
+                            onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
+                            onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
+                            onClick={() => toggleSort(col)}
+                            className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
+                            <span className="inline-flex items-center gap-1">
+                              <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
+                              {COL_LABEL[col]}
+                              {sortKey === col && <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                            </span>
+                          </th>
+                        ))}
+                        <th className="py-3 px-3 border-b border-slate-200 w-16" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} onSave={handleSheetSave} refetchCats={refetchCats} />
+                      {visibleRows.map((egreso, rowIdx) => {
+                        const cfg       = getTipoInfo(egreso.categoria)
+                        const isEditing = editingId === egreso.id
+                        const bg        = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
+
+                        if (isEditing) return (
+                          <InlineEditRow key={egreso.id} egreso={egreso} tiposBase={tiposBase}
+                            categoriasCustom={categoriasCustom} onSave={handleUpdate}
+                            onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
+                        )
+
+                        const cellFor = (col: SortKey) => {
+                          switch (col) {
+                            case 'fecha':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-500 text-xs font-mono">{fmtDate(egreso.fecha)}</span></td>
+                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><div className="flex items-center gap-2"><span>{cfg.icon}</span><span className="text-slate-700 font-medium">{egreso.descripcion || cfg.label}</span></div></td>
+                            case 'categoria':   return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
+                            case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
+                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
+                            default: return null
+                          }
+                        }
+
+                        return (
+                          <tr key={egreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
+                            {cols.map(col => cellFor(col))}
+                            <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
+                              <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
+                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {hasMore && (
+                  <div className="flex items-center justify-center pt-4 border-t border-slate-100 mt-2">
+                    <button onClick={() => setPage(p => p + 1)}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium border-none bg-transparent cursor-pointer">
+                      Ver más ({filtered.length - visibleRows.length} restantes)
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
-      </Card>
+          </Card>
+        </div>
+
+        {/* ── Columna derecha: Widgets ── */}
+        <div className="col-span-1 flex flex-col gap-5">
+
+          {/* Gráfico evolución */}
+          <Card>
+            <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
+              Evolución {añoActivo}
+            </CardTitle>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {tiposBase.map(({ key, label, color }) => (
+                <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                  className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                  style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                  <div className="w-2 h-2 rounded-sm" style={{ background: color }} />
+                  <span className="text-slate-500 text-[10px]">{label}</span>
+                </button>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmt(v, m)} />
+                <Tooltip content={renderTooltip} />
+                {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                  <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={28} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          {/* Composición / Top */}
+          <Card>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+              {(['composicion', 'top'] as const).map(v => (
+                <button key={v} onClick={() => setSidePanel(v)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+                  {v === 'composicion' ? 'Composición' : 'Top categorías'}
+                </button>
+              ))}
+            </div>
+
+            {sidePanel === 'composicion' && (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-slate-500 text-xs font-medium">Mes</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                  </div>
+                </div>
+                {compData.length > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={130}>
+                      <PieChart>
+                        <Pie data={compData} cx="50%" cy="50%" innerRadius={36} outerRadius={58} paddingAngle={3} dataKey="value">
+                          {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex flex-col gap-1 mt-1">
+                      {compData.slice(0, 5).map((d, i) => (
+                        <div key={d.name} className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                            <span className="text-slate-500 text-[10px]">{d.name}</span>
+                          </div>
+                          <span className="text-slate-900 text-[10px] font-mono font-bold">{fmt(d.value, m)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : <div className="text-center text-slate-400 text-sm py-4">Sin datos</div>}
+              </>
+            )}
+
+            {sidePanel === 'top' && (
+              <>
+                <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
+                {topAño.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {topAño.map((d, i) => {
+                      const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
+                      return (
+                        <div key={d.label}>
+                          <div className="flex justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
+                              <span className="text-xs font-medium text-slate-700">{d.label}</span>
+                            </div>
+                            <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: d.color }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>}
+              </>
+            )}
+          </Card>
+
+        </div>
+      </div>
 
       <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT) }} title="Nuevo egreso">
         <div className="flex flex-col gap-4">
