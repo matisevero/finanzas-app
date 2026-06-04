@@ -1,6 +1,6 @@
 'use client'
-import { useState, useMemo, useRef } from 'react'
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useEventosMes, useIngresos, useEgresos, useDeudas } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
@@ -277,11 +277,28 @@ export default function CashFlowPage() {
   const [mes, setMes] = useState(HOY.getMonth())
   const [año, setAño] = useState(HOY.getFullYear())
   const [simItems, setSimItems] = useState<SimItem[]>([])
+  const [simInited, setSimInited] = useState(false)
 
   const { data: eventos,  loading: le } = useEventosMes(año, mes + 1)
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: lx } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
+
+  // Pre-cargar eventos del mes en el simulador (solo la primera vez que cargan, o al cambiar mes)
+  useEffect(() => {
+    if (!eventos) return
+    const items: SimItem[] = eventos.map((ev, i) => ({
+      id: i + 1,
+      label: ev.descripcion,
+      monto: ev.monto ?? 0,
+      tipo: ev.tipo === 'tarjeta' || ev.tipo === 'casa' || ev.tipo === 'servicio' ||
+            ev.tipo === 'expensa' || ev.tipo === 'edu' || ev.tipo === 'egreso'
+            ? 'deuda' : ev.tipo === 'ingreso' ? 'ingreso' : 'deuda',
+      dia: ev.dia,
+    })).filter(it => it.monto > 0)
+    setSimItems(items)
+    setSimInited(true)
+  }, [eventos])
 
   const diasEnMes = new Date(año, mes + 1, 0).getDate()
   const mesNum    = mes + 1
@@ -309,8 +326,16 @@ export default function CashFlowPage() {
 
   const saldoFin   = flowData[flowData.length - 1]?.saldo ?? 0
   const minDia     = flowData.reduce((a, b) => a.saldo < b.saldo ? a : b, flowData[0] ?? { saldo: 0, dia: 0 })
-  const dispDia    = Math.max(0, Math.round(saldoFin / diasEnMes))
   const diasConEvs = flowData.filter(d => d.eventos.length > 0)
+
+  // Gasto diario disponible: (saldo de hoy - pagos pendientes restantes) / días restantes del mes
+  const diaHoy = (mes === HOY.getMonth() && año === HOY.getFullYear()) ? HOY.getDate() : 1
+  const saldoHoy = flowData.find(d => d.dia === diaHoy)?.saldo ?? saldoInicial
+  const pagosRestantes = (eventos ?? [])
+    .filter(ev => ev.dia > diaHoy && ev.tipo !== 'ingreso')
+    .reduce((s, ev) => s + (ev.monto ?? 0), 0)
+  const diasRestantes = Math.max(1, diasEnMes - diaHoy)
+  const gastoDiarioDisp = Math.round((saldoHoy - pagosRestantes) / diasRestantes)
 
   const totalIngresos = (ingresos ?? []).filter(i => i.mes === mesNum).reduce((s, i) => s + i.monto, 0)
   const totalEgresos  = (egresos  ?? []).filter(e => e.mes === mesNum).reduce((s, e) => s + e.monto, 0)
@@ -383,7 +408,7 @@ export default function CashFlowPage() {
           { l: 'Saldo inicial',          v: fmt(saldoInicial, m), s: 'Ingresos − Egresos − Deudas',    c: saldoInicial >= 0 ? '#1A5E9E' : '#C0392B' },
           { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Proyección con eventos del mes', c: saldoFin >= 0 ? '#1A5E9E' : '#C0392B' },
           { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#C0392B' },
-          { l: 'Gasto diario sugerido',  v: fmt(dispDia, m),      s: 'Para llegar bien al mes',        c: '#2D7D2D' },
+          { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Sin quedar en rojo (${diasRestantes} días restantes)` : `Faltan ${fmt(Math.abs(gastoDiarioDisp) * diasRestantes, m)} para cubrir los pagos`, c: gastoDiarioDisp >= 0 ? '#2D7D2D' : '#C0392B' },
         ].map(k => (
           <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
             <div className="label mb-1">{k.l}</div>
@@ -393,30 +418,48 @@ export default function CashFlowPage() {
         ))}
       </div>
 
-      {/* ── Gráfico saldo acumulado ── */}
-      <Card className="mb-5">
-        <CardTitle>Saldo disponible acumulado</CardTitle>
-        <p className="text-slate-400 text-xs mb-4">Línea azul = zona cómoda · Rojo = déficit · Los puntos marcan días con movimientos</p>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={flowData} margin={{ top: 5, right: 10, bottom: 0, left: 10 }}>
-            <defs>
-              <linearGradient id="gPos" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#1A5E9E" stopOpacity={0.12} />
-                <stop offset="95%" stopColor="#1A5E9E" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis dataKey="dia" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false}
-              tickFormatter={v => v % 5 === 0 || v === 1 ? String(v) : ''} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v, m)} />
-            <Tooltip contentStyle={TT} formatter={(v: number) => [fmt(v, m), 'Saldo']} labelFormatter={l => `Día ${l}`} />
-            <ReferenceLine y={0} stroke="#C0392B" strokeDasharray="4 3" strokeWidth={1.5} />
-            <Area type="monotone" dataKey="saldo" stroke="#1A5E9E" fill="url(#gPos)" strokeWidth={2.5}
-              dot={(p: any) => p.payload.eventos?.length > 0
-                ? <circle key={p.key} cx={p.cx} cy={p.cy} r={4} fill={p.payload.saldo < 0 ? '#C0392B' : '#1A5E9E'} stroke="#fff" strokeWidth={2} />
-                : <g key={p.key} />} />
-          </AreaChart>
-        </ResponsiveContainer>
+      {/* ── Gasto diario disponible ── */}
+      <Card className={`mb-5 ${gastoDiarioDisp < 0 ? 'border border-red-200 bg-red-50/40' : 'border border-emerald-100 bg-emerald-50/30'}`}>
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <CardTitle>¿Cuánto podés gastar por día?</CardTitle>
+            <p className="text-slate-400 text-xs mt-1 mb-4">
+              Calculado como: saldo actual − pagos pendientes restantes del mes, dividido los {diasRestantes} días que quedan.
+            </p>
+            {gastoDiarioDisp >= 0 ? (
+              <div className="flex items-end gap-3">
+                <div className="text-4xl font-bold font-mono text-emerald-700">{fmt(gastoDiarioDisp, m)}</div>
+                <div className="text-slate-500 text-sm mb-1">por día sin quedar en rojo</div>
+              </div>
+            ) : (
+              <div>
+                <div className="text-4xl font-bold font-mono text-red-600 mb-1">Déficit</div>
+                <div className="text-red-500 text-sm">
+                  Faltan <span className="font-bold">{fmt(Math.abs(gastoDiarioDisp) * diasRestantes, m)}</span> para cubrir los pagos restantes del mes.
+                  Evitá gastos extra hasta que entre plata.
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-3 text-sm min-w-[220px]">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Saldo hoy (día {diaHoy})</span>
+              <span className={`font-mono font-semibold ${saldoHoy >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmt(saldoHoy, m)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Pagos pendientes</span>
+              <span className="font-mono font-semibold text-red-500">−{fmt(pagosRestantes, m)}</span>
+            </div>
+            <div className="flex justify-between border-t border-slate-100 pt-2">
+              <span className="text-slate-400">Disponible real</span>
+              <span className={`font-mono font-semibold ${(saldoHoy - pagosRestantes) >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{fmt(saldoHoy - pagosRestantes, m)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Días restantes</span>
+              <span className="font-mono font-semibold text-slate-600">{diasRestantes}</span>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* ── Gráfico entradas/salidas ── */}
