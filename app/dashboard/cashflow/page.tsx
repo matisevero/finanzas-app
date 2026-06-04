@@ -293,7 +293,7 @@ export default function CashFlowPage() {
       if (!d.fecha_vencimiento) return false
       const fv = new Date(d.fecha_vencimiento)
       return fv.getFullYear() === año && (fv.getMonth() + 1) === mesNum
-    }).reduce((s, d) => s + (d.monto ?? 0), 0)
+    }).reduce((s, d) => s + (d.cuota_mensual ?? 0), 0)
     return totalIngresos - totalEgresos - totalDeudas
   }, [ingresos, egresos, deudas, mesNum, año])
 
@@ -318,7 +318,7 @@ export default function CashFlowPage() {
     if (!d.fecha_vencimiento) return false
     const fv = new Date(d.fecha_vencimiento)
     return fv.getFullYear() === año && (fv.getMonth() + 1) === mesNum
-  }).reduce((s, d) => s + (d.monto ?? 0), 0)
+  }).reduce((s, d) => s + (d.cuota_mensual ?? 0), 0)
 
   if (le || li || lx || ld) return <LoadingSpinner />
 
