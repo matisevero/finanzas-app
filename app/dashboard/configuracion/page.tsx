@@ -58,7 +58,18 @@ const MAPA_CAT_EGRESO: Record<string,string> = {
   'Educación':'educacion','Otros':'otro','Efectivo':'otro',
 }
 
-type ImportResult = { ingresos: number; egresos: number; eventos: number; errores: string[] }
+type ImportResult = { ingresos: number; egresos: number; eventos: number; saltados: number; errores: string[] }
+
+// Clave de deduplicación para ingresos/egresos
+function claveIngreso(r: { fecha: string; monto: number; descripcion: string }) {
+  return `${r.fecha}|${r.monto}|${r.descripcion}`
+}
+function claveEgreso(r: { fecha: string; monto: number; descripcion: string }) {
+  return `${r.fecha}|${r.monto}|${r.descripcion}`
+}
+function claveEvento(r: { dia: number; mes: number; año: number; descripcion: string; monto: number | null }) {
+  return `${r.año}|${r.mes}|${r.dia}|${r.descripcion}|${r.monto}`
+}
 
 export default function ConfiguracionPage() {
   const router = useRouter()
@@ -76,6 +87,11 @@ export default function ConfiguracionPage() {
   const [importStep, setImportStep] = useState('')
   const [exporting, setExporting] = useState(false)
   const fileMultiRef = useRef<HTMLInputElement>(null)
+
+  // Zona de peligro
+  const [deleteStep, setDeleteStep] = useState<'idle'|'confirming'|'deleting'>('idle')
+  const [deleteInput, setDeleteInput] = useState('')
+  const [deleteMsg, setDeleteMsg] = useState<{type:'ok'|'err',text:string}|null>(null)
 
   useEffect(()=>{
     sb.auth.getUser().then(({data:{user}})=>{
@@ -120,7 +136,7 @@ export default function ConfiguracionPage() {
     const files = fileMultiRef.current?.files
     if (!files || files.length === 0) return
     setImporting(true); setImportResult(null)
-    const result: ImportResult = { ingresos:0, egresos:0, eventos:0, errores:[] }
+    const result: ImportResult = { ingresos:0, egresos:0, eventos:0, saltados:0, errores:[] }
     try {
       const {data:{user}} = await sb.auth.getUser()
       if (!user) throw new Error('No autenticado')
@@ -136,45 +152,82 @@ export default function ConfiguracionPage() {
 
         if (tipo === 'ingresos') {
           setImportStep(`Importando ${file.name}...`)
-          const rows = filas.map(f=>{
+          const candidatos = filas.map(f=>{
             const fecha = parseFecha(f[0])
             if (!fecha) return null
             const fechaObj = new Date(fecha)
             return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, tipo:MAPA_TIPO_INGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
-          }).filter(Boolean).filter((r:any)=>r.monto>0)
-          if (rows.length>0) {
-            const {error} = await sb.from('ingresos').insert(rows as any[])
-            if (error) result.errores.push(file.name+': '+error.message)
-            else result.ingresos += rows.length
+          }).filter(Boolean).filter((r:any)=>r.monto>0) as any[]
+
+          if (candidatos.length > 0) {
+            // Traer existentes para deduplicar
+            const años = [...new Set(candidatos.map((r:any)=>r.año))]
+            const { data: existentes } = await sb.from('ingresos')
+              .select('fecha,monto,descripcion')
+              .eq('user_id', user.id)
+              .in('año', años)
+            const existentesSet = new Set((existentes||[]).map((r:any) => claveIngreso(r)))
+            const nuevos = candidatos.filter((r:any) => !existentesSet.has(claveIngreso(r)))
+            result.saltados += candidatos.length - nuevos.length
+            if (nuevos.length > 0) {
+              const {error} = await sb.from('ingresos').insert(nuevos)
+              if (error) result.errores.push(file.name+': '+error.message)
+              else result.ingresos += nuevos.length
+            }
           }
+
         } else if (tipo === 'egresos') {
           setImportStep(`Importando ${file.name}...`)
-          const rows = filas.map(f=>{
+          const candidatos = filas.map(f=>{
             const fecha = parseFecha(f[0])
             if (!fecha) return null
             const fechaObj = new Date(fecha)
             return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, categoria:MAPA_CAT_EGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
-          }).filter(Boolean).filter((r:any)=>r.monto>0)
-          if (rows.length>0) {
-            const {error} = await sb.from('egresos').insert(rows as any[])
-            if (error) result.errores.push(file.name+': '+error.message)
-            else result.egresos += rows.length
+          }).filter(Boolean).filter((r:any)=>r.monto>0) as any[]
+
+          if (candidatos.length > 0) {
+            const años = [...new Set(candidatos.map((r:any)=>r.año))]
+            const { data: existentes } = await sb.from('egresos')
+              .select('fecha,monto,descripcion')
+              .eq('user_id', user.id)
+              .in('año', años)
+            const existentesSet = new Set((existentes||[]).map((r:any) => claveEgreso(r)))
+            const nuevos = candidatos.filter((r:any) => !existentesSet.has(claveEgreso(r)))
+            result.saltados += candidatos.length - nuevos.length
+            if (nuevos.length > 0) {
+              const {error} = await sb.from('egresos').insert(nuevos)
+              if (error) result.errores.push(file.name+': '+error.message)
+              else result.egresos += nuevos.length
+            }
           }
+
         } else if (tipo === 'deudas') {
           setImportStep(`Importando ${file.name}...`)
-          const rows = filas.filter(f=>f[0]==='FALSE').map(f=>{
+          const candidatos = filas.filter(f=>f[0]==='FALSE').map(f=>{
             const fecha = parseFecha(f[1])
             if (!fecha) return null
             const fechaObj = new Date(fecha)
             const cat = f[2]||''
             const tipoEv = cat.includes('Tarjeta')?'tarjeta':cat==='Casa'?'casa':cat==='Servicios'?'servicio':cat==='Expensas'?'expensa':cat==='Educación'?'edu':'egreso'
             return { user_id:user.id, dia:fechaObj.getDate(), mes:fechaObj.getMonth()+1, año:fechaObj.getFullYear(), tipo:tipoEv, descripcion:f[3]||'', monto:parseMonto(f[4])||null, moneda:'ARS', recurrente:false, pagado:false }
-          }).filter(Boolean).filter((r:any)=>r.descripcion)
-          if (rows.length>0) {
-            const {error} = await sb.from('eventos_calendario').insert(rows as any[])
-            if (error) result.errores.push(file.name+': '+error.message)
-            else result.eventos += rows.length
+          }).filter(Boolean).filter((r:any)=>r.descripcion) as any[]
+
+          if (candidatos.length > 0) {
+            const años = [...new Set(candidatos.map((r:any)=>r.año))]
+            const { data: existentes } = await sb.from('eventos_calendario')
+              .select('dia,mes,año,descripcion,monto')
+              .eq('user_id', user.id)
+              .in('año', años)
+            const existentesSet = new Set((existentes||[]).map((r:any) => claveEvento(r)))
+            const nuevos = candidatos.filter((r:any) => !existentesSet.has(claveEvento(r)))
+            result.saltados += candidatos.length - nuevos.length
+            if (nuevos.length > 0) {
+              const {error} = await sb.from('eventos_calendario').insert(nuevos)
+              if (error) result.errores.push(file.name+': '+error.message)
+              else result.eventos += nuevos.length
+            }
           }
+
         } else {
           result.errores.push(file.name+': no se pudo detectar el tipo de archivo')
         }
@@ -204,6 +257,27 @@ export default function ConfiguracionPage() {
       a.href=url; a.download=`finanzas-backup-${new Date().toISOString().slice(0,10)}.json`; a.click()
       URL.revokeObjectURL(url)
     } finally { setExporting(false) }
+  }
+
+  const handleBorrarTodo = async () => {
+    if (deleteInput !== 'BORRAR') return
+    setDeleteStep('deleting')
+    setDeleteMsg(null)
+    try {
+      const {data:{user}} = await sb.auth.getUser()
+      if (!user) throw new Error('No autenticado')
+      const tablas = ['ingresos','egresos','eventos_calendario','deudas','metas','tarjetas']
+      for (const tabla of tablas) {
+        const {error} = await sb.from(tabla).delete().eq('user_id', user.id)
+        if (error) throw new Error(`Error borrando ${tabla}: ${error.message}`)
+      }
+      setDeleteMsg({type:'ok', text:'Todos los datos fueron eliminados correctamente.'})
+      setDeleteStep('idle')
+      setDeleteInput('')
+    } catch(e) {
+      setDeleteMsg({type:'err', text:e instanceof Error?e.message:'Error inesperado'})
+      setDeleteStep('confirming')
+    }
   }
 
   const logout = async () => { await sb.auth.signOut(); router.push('/auth/login') }
@@ -286,6 +360,7 @@ export default function ConfiguracionPage() {
           <p className="text-slate-400 text-sm mb-4">
             Seleccioná uno o varios archivos CSV exportados desde tu Google Sheet.
             El sistema detecta automáticamente si es de Ingresos, Gastos o Deudas según el contenido.
+            Los registros duplicados (misma fecha, monto y descripción) se saltean automáticamente.
           </p>
           <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors mb-5 text-center">
             <div className="text-3xl mb-2">📂</div>
@@ -301,7 +376,12 @@ export default function ConfiguracionPage() {
               <div className={`flex-1 text-sm px-4 py-3 rounded-xl ${importResult.errores.length>0?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700'}`}>
                 {importResult.errores.length>0
                   ? '⚠ '+importResult.errores.join(' · ')
-                  : '✓ Importado correctamente — '+[importResult.ingresos>0&&importResult.ingresos+' ingresos', importResult.egresos>0&&importResult.egresos+' egresos', importResult.eventos>0&&importResult.eventos+' eventos'].filter(Boolean).join(' · ')
+                  : '✓ Importado — '+[
+                      importResult.ingresos>0 && importResult.ingresos+' ingresos',
+                      importResult.egresos>0  && importResult.egresos+' egresos',
+                      importResult.eventos>0  && importResult.eventos+' eventos',
+                      importResult.saltados>0 && importResult.saltados+' duplicados salteados',
+                    ].filter(Boolean).join(' · ')
                 }
               </div>
             )}
@@ -318,6 +398,63 @@ export default function ConfiguracionPage() {
             </button>
             <span className="text-slate-400 text-xs">El archivo se descarga directamente en tu computadora</span>
           </div>
+        </Card>
+
+        {/* ZONA DE PELIGRO */}
+        <Card className="col-span-2 border border-red-100 bg-red-50/30">
+          <div className="text-red-700 font-semibold text-[15px] mb-2">⚠ Zona de peligro</div>
+          <p className="text-slate-500 text-sm mb-5">
+            Borrá todos los datos de la aplicación (ingresos, egresos, deudas, eventos, metas y tarjetas).
+            Esta acción es irreversible. Te recomendamos hacer un backup antes.
+          </p>
+
+          {deleteStep === 'idle' && (
+            <button
+              onClick={()=>{ setDeleteStep('confirming'); setDeleteInput(''); setDeleteMsg(null) }}
+              className="px-4 py-2 rounded-xl text-sm font-semibold border-2 border-red-300 text-red-600 hover:bg-red-100 transition-all cursor-pointer"
+            >
+              Borrar todos los datos
+            </button>
+          )}
+
+          {deleteStep === 'confirming' && (
+            <div className="flex flex-col gap-3 max-w-md">
+              <p className="text-sm text-slate-600">
+                Para confirmar, escribí <span className="font-bold text-red-600">BORRAR</span> en el campo y presioná el botón.
+              </p>
+              <input
+                value={deleteInput}
+                onChange={e=>setDeleteInput(e.target.value)}
+                placeholder="Escribí BORRAR para confirmar"
+                className="input-field border-red-200 focus:border-red-400"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={handleBorrarTodo}
+                  disabled={deleteInput !== 'BORRAR'}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                >
+                  Confirmar y borrar todo
+                </button>
+                <button
+                  onClick={()=>{ setDeleteStep('idle'); setDeleteInput('') }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border-2 border-slate-200 text-slate-600 hover:border-slate-400 transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {deleteStep === 'deleting' && (
+            <p className="text-sm text-red-500 font-medium">Borrando datos...</p>
+          )}
+
+          {deleteMsg && (
+            <div className={`mt-3 text-sm px-4 py-3 rounded-xl max-w-md ${deleteMsg.type==='ok'?'bg-emerald-50 text-emerald-700':'bg-red-100 text-red-700'}`}>
+              {deleteMsg.type==='ok' ? '✓ ' : '⚠ '}{deleteMsg.text}
+            </div>
+          )}
         </Card>
 
       </div>
