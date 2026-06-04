@@ -155,8 +155,10 @@ export default function ConfiguracionPage() {
           const candidatos = filas.map(f=>{
             const fecha = parseFecha(f[0])
             if (!fecha) return null
-            const fechaObj = new Date(fecha)
-            return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, tipo:MAPA_TIPO_INGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
+            const [añoStr, mesStr] = fecha.split('-')
+            const añoNum = parseInt(añoStr, 10)
+            const mesNum = parseInt(mesStr, 10)
+            return { user_id:user.id, año:añoNum, mes:mesNum, tipo:MAPA_TIPO_INGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
           }).filter(Boolean).filter((r:any)=>r.monto>0) as any[]
 
           if (candidatos.length > 0) {
@@ -181,8 +183,10 @@ export default function ConfiguracionPage() {
           const candidatos = filas.map(f=>{
             const fecha = parseFecha(f[0])
             if (!fecha) return null
-            const fechaObj = new Date(fecha)
-            return { user_id:user.id, año:fechaObj.getFullYear(), mes:fechaObj.getMonth()+1, categoria:MAPA_CAT_EGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
+            const [añoStr, mesStr] = fecha.split('-')
+            const añoNum = parseInt(añoStr, 10)
+            const mesNum = parseInt(mesStr, 10)
+            return { user_id:user.id, año:añoNum, mes:mesNum, categoria:MAPA_CAT_EGRESO[f[1]]||'otro', descripcion:f[2]||'', monto:parseMonto(f[3]), moneda:'ARS', fecha, quien:'ambos', recurrente:false }
           }).filter(Boolean).filter((r:any)=>r.monto>0) as any[]
 
           if (candidatos.length > 0) {
@@ -206,10 +210,13 @@ export default function ConfiguracionPage() {
           const candidatos = filas.filter(f=>f[0]==='FALSE').map(f=>{
             const fecha = parseFecha(f[1])
             if (!fecha) return null
-            const fechaObj = new Date(fecha)
+            const [añoStr, mesStr, diaStr] = fecha.split('-')
+            const diaNum = parseInt(diaStr, 10)
+            const mesNum = parseInt(mesStr, 10)
+            const añoNum = parseInt(añoStr, 10)
             const cat = f[2]||''
             const tipoEv = cat.includes('Tarjeta')?'tarjeta':cat==='Casa'?'casa':cat==='Servicios'?'servicio':cat==='Expensas'?'expensa':cat==='Educación'?'edu':'egreso'
-            return { user_id:user.id, dia:fechaObj.getDate(), mes:fechaObj.getMonth()+1, año:fechaObj.getFullYear(), tipo:tipoEv, descripcion:f[3]||'', monto:parseMonto(f[4])||null, moneda:'ARS', recurrente:false, pagado:false }
+            return { user_id:user.id, dia:diaNum, mes:mesNum, año:añoNum, tipo:tipoEv, descripcion:f[3]||'', monto:parseMonto(f[4])||null, moneda:'ARS', recurrente:false, pagado:false }
           }).filter(Boolean).filter((r:any)=>r.descripcion) as any[]
 
           if (candidatos.length > 0) {
