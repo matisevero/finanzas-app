@@ -160,7 +160,7 @@ export default function DeudasPage() {
           dia: parseInt(evForm.dia), mes, año,
           tipo: evForm.tipo as any,
           descripcion: cuotas > 1 ? `${evForm.descripcion} (${i+1}/${cuotas})` : evForm.descripcion,
-          monto: evForm.monto ? parseFloat(evForm.monto) : null,
+          monto: evForm.monto ? parseFloat(evForm.monto) : undefined,
           moneda: evForm.moneda, recurrente: evForm.recurrente, pagado: false,
         })
       }
