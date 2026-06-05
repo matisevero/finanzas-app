@@ -153,6 +153,7 @@ export interface EventoCalendario {
   moneda: Moneda
   recurrente: boolean
   pagado: boolean
+  egreso_id?: string | null
   created_at: string
 }
 export type EventoInsert = Omit<EventoCalendario, 'id' | 'user_id' | 'created_at'>
