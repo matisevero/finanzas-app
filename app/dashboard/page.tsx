@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
-import { fmt } from '@/lib/utils/formatters'
+import { fmt, fmtFull } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, ChartToggle, ProgressBar, LoadingSpinner } from '@/components/ui'
 
@@ -336,8 +336,8 @@ export default function DashboardPage() {
                 <BarChart data={chartFlowData} barCategoryGap="30%" barGap={3}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} />
-                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,m)} />
-                  <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
+                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
+                  <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                   <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
                   <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={36} />
                   <Bar dataKey="Gastos"   fill="#C0392B" radius={[4,4,0,0]} maxBarSize={36} />
@@ -351,7 +351,7 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
-                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmtFull(v,m), p.name]} /></PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-2.5">
                   {pieEgresoData.map((d,i)=>(
@@ -360,7 +360,7 @@ export default function DashboardPage() {
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
                         <span className="text-slate-600 text-sm">{d.name}</span>
                       </div>
-                      <span className="text-slate-900 text-sm font-mono font-bold">{fmt(d.value,m)}</span>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
                     </div>
                   ))}
                 </div>
@@ -373,7 +373,7 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
-                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmtFull(v,m), p.name]} /></PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-2.5">
                   {pieIngresoData.map((d,i)=>(
@@ -382,7 +382,7 @@ export default function DashboardPage() {
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
                         <span className="text-slate-600 text-sm">{d.name}</span>
                       </div>
-                      <span className="text-slate-900 text-sm font-mono font-bold">{fmt(d.value,m)}</span>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
                     </div>
                   ))}
                 </div>
@@ -398,12 +398,12 @@ export default function DashboardPage() {
                     <div key={d.id}>
                       <div className="flex justify-between mb-2">
                         <span className="text-slate-700 font-medium">{d.nombre}</span>
-                        <span className="font-mono font-bold text-lg" style={{color:d.color}}>{fmt(d.pendiente,m)}</span>
+                        <span className="font-mono font-bold text-lg" style={{color:d.color}}>{fmtFull(d.pendiente,m)}</span>
                       </div>
                       <ProgressBar value={pct} color={d.color} height={8} />
                       <div className="flex justify-between mt-1 text-xs text-slate-400">
                         <span>{pct}% pagado</span>
-                        <span>Cuota: {fmt(d.cuota_mensual,m)}/mes</span>
+                        <span>Cuota: {fmtFull(d.cuota_mensual,m)}/mes</span>
                       </div>
                     </div>
                   )
@@ -424,7 +424,7 @@ export default function DashboardPage() {
                       <div className="text-slate-400 text-sm">{t.banco} · {t.quien}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono text-lg font-bold text-slate-700">{fmt(t.limite,m)}</div>
+                      <div className="font-mono text-lg font-bold text-slate-700">{fmtFull(t.limite,m)}</div>
                       <div className="text-slate-400 text-xs">límite</div>
                     </div>
                   </div>
