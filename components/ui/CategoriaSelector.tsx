@@ -77,7 +77,6 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
         onClick={() => { setOpen(v => !v); setShowNew(false) }}
         className="input-field flex items-center justify-between gap-2 text-left w-full">
         <span className="flex items-center gap-2">
-          <span>{selected?.icono ?? '📦'}</span>
           <span>{selected?.label ?? 'Seleccioná'}</span>
         </span>
         <span className="text-slate-400 text-xs">{open ? '▲' : '▼'}</span>
@@ -97,7 +96,6 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
               <button key={c.key} type="button"
                 onClick={() => { onChange(c.key); setOpen(false) }}
                 className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.key ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}>
-                <span>{c.icon}</span>
                 <span>{c.label}</span>
               </button>
             ))}
@@ -112,7 +110,6 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
                 onClick={() => { onChange(c.id); setOpen(false) }}
                 className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.id ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}
                 style={{ paddingLeft: `${12 + c.indent * 16}px` }}>
-                <span>{c.icono}</span>
                 <span>{c.label}</span>
               </button>
             ))}
