@@ -72,6 +72,68 @@ function MultiDropdown({ label, options, selected, onChange }: {
           </div>
         </div>
       )}
+      {/* ── Modal gráfico expandido ── */}
+      {expandedChart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
+
+            {expandedChart==='evolucion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {tiposBase.map(({ key, label, color }) => (
+                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                    <span className="text-slate-500 text-xs">{label}</span>
+                  </button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
+                  <Tooltip content={renderTooltip} />
+                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </>}
+
+            {expandedChart==='composicion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-3">
+                  {compData.map((d, i) => (
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -110,6 +172,68 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
           <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmt(total, m)}</span>
         </div>
       )}
+      {/* ── Modal gráfico expandido ── */}
+      {expandedChart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
+
+            {expandedChart==='evolucion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {tiposBase.map(({ key, label, color }) => (
+                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                    <span className="text-slate-500 text-xs">{label}</span>
+                  </button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
+                  <Tooltip content={renderTooltip} />
+                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </>}
+
+            {expandedChart==='composicion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-3">
+                  {compData.map((d, i) => (
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -180,7 +304,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
               onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
               onFocus={() => setActive(true)}
               onKeyDown={handleKeyDown}
-              className="input-field py-1 text-xs">
+              className="input-field py-1 text-xs w-full">
               <option value="ambos">Ambos</option>
               <option value="Mati">Mati</option>
               <option value="Dani">Dani</option>
@@ -293,6 +417,7 @@ export default function IngresosPage() {
   const [sortDir, setSortDir]         = useState<SortDir>('desc')
   const [cols, setCols]               = useState<SortKey[]>(COLS_DEFAULT)
   const [page, setPage]               = useState(1)
+  const [expandedChart, setExpandedChart] = useState<'evolucion'|'composicion'|null>(null)
   const dragCol  = useRef<number|null>(null)
   const dragOver = useRef<number|null>(null)
 
@@ -351,10 +476,21 @@ export default function IngresosPage() {
     })
   }, [ingresos, filterTipos, filterQuien, search, sortKey, sortDir])
 
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set([HOY.getMonth() + 1]))
+  const rowsByMonth = useMemo(() => {
+    const map: Record<number, typeof filtered> = {}
+    filtered.forEach(i => { if (!map[i.mes]) map[i.mes] = []; map[i.mes].push(i) })
+    return map
+  }, [filtered])
+  const sortedMonths = useMemo(() => Object.keys(rowsByMonth).map(Number).sort((a,b) => b - a), [rowsByMonth])
   const visibleRows = filtered.slice(0, page * PAGE_SIZE)
   const hasMore     = filtered.length > visibleRows.length
 
   const total         = (ingresos ?? []).reduce((s, i) => s + i.monto, 0)
+  const mesActual     = HOY.getMonth() + 1
+  const totalMesAct   = (ingresos ?? []).filter(i => i.mes === mesActual).reduce((s, i) => s + i.monto, 0)
+  const totalMesAnt   = (ingresos ?? []).filter(i => i.mes === mesActual - 1).reduce((s, i) => s + i.monto, 0)
+  const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
   const salarios      = (ingresos ?? []).filter(i => i.tipo === 'salario').reduce((s, i) => s + i.monto, 0)
   const mesesConDatos = new Set((ingresos ?? []).map(i => i.mes)).size
   const promedio      = mesesConDatos > 0 ? Math.round(total / mesesConDatos) : 0
@@ -411,15 +547,15 @@ export default function IngresosPage() {
 
   return (
     <div>
-      <PageHeader title="Ingresos" subtitle={`Todos tus flujos de entrada — ${añoActivo}`}
+      <PageHeader title="Ingresos"
         action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo ingreso</button>} />
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#2D7D2D" icon="💰" sub="Acumulado" />
-        <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#2D7D2D" icon="👔" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
-        <StatCard label="Ingresos extra"        value={fmt(total - salarios, m)} color="#52A852" icon="📈" sub="Freelance + alquiler + otros" />
-        <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" icon="📅" sub="Sobre meses con datos" />
+        <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#2D7D2D" icon="💰" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
+        <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#2D7D2D" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
+        <StatCard label="Ingresos extra"        value={fmt(total - salarios, m)} color="#52A852" sub="Freelance + alquiler + otros" />
+        <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" sub="Sobre meses con datos" />
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
@@ -486,8 +622,8 @@ export default function IngresosPage() {
 
                         const cellFor = (col: SortKey) => {
                           switch (col) {
-                            case 'fecha':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-500 text-xs font-mono">{fmtDate(ingreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><div className="flex items-center gap-2"><span>{cfg.icon}</span><span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span></div></td>
+                            case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg} w-20`}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
+                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span></td>
                             case 'tipo':        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
                             case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
@@ -527,8 +663,8 @@ export default function IngresosPage() {
         <div className="col-span-1 flex flex-col gap-5">
 
           {/* Gráfico evolución */}
-          <Card>
-            <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all group" onClick={()=>setExpandedChart('evolucion')}>
+            <CardTitle action={<div onClick={e=>e.stopPropagation()}><ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} /></div>}>
               Evolución {añoActivo}
             </CardTitle>
             <div className="flex gap-2 flex-wrap mb-3">
@@ -555,7 +691,7 @@ export default function IngresosPage() {
           </Card>
 
           {/* Composición / Top */}
-          <Card>
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>setExpandedChart('composicion')}>
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
               {(['composicion', 'top'] as const).map(v => (
                 <button key={v} onClick={() => setSidePanel(v)}
@@ -670,6 +806,68 @@ export default function IngresosPage() {
           </div>
         </div>
       </Modal>
+      {/* ── Modal gráfico expandido ── */}
+      {expandedChart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
+
+            {expandedChart==='evolucion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {tiposBase.map(({ key, label, color }) => (
+                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                    <span className="text-slate-500 text-xs">{label}</span>
+                  </button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
+                  <Tooltip content={renderTooltip} />
+                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </>}
+
+            {expandedChart==='composicion' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-3">
+                  {compData.map((d, i) => (
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
