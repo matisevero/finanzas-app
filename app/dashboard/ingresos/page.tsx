@@ -157,7 +157,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 
   return (
     <tr className="bg-emerald-50/60">
-      <td className="py-2 px-2 border-b border-emerald-100 w-20">
+      <td className="py-2 px-2 border-b border-emerald-100" style={{width:72}}>
         <input type="date" value={form.fecha}
           onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
           onKeyDown={handleKeyDown}
@@ -187,7 +187,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           <option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-2 px-2 border-b border-emerald-100 text-right w-36">
+      <td className="py-2 px-2 border-b border-emerald-100 text-right" style={{width:116}}>
         <MontoInput value={form.monto}
           onChange={raw => setForm(p => ({ ...p, monto: raw }))}
           onKeyDown={handleKeyDown}
@@ -483,11 +483,11 @@ export default function IngresosPage() {
 
                         const cellFor = (col: SortKey) => {
                           switch (col) {
-                            case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg} w-20`}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
+                            case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg}`} style={{width:72}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
                             case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span></td>
                             case 'tipo':        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
-                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
+                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`} style={{width:116}}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
                             default: return null
                           }
                         }
