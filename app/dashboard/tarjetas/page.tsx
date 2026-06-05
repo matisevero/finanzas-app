@@ -89,12 +89,9 @@ export default function TarjetasPage() {
 
   const cats = ['Todos','Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros']
 
-  if (lt||lp||lx) return <LoadingSpinner />
-
-  // Split tarjetas by moneda if they have txns in both
+  // Split tarjetas by moneda — must be before any early return
   const tarjetasConMoneda = useMemo(() => {
-    type TarjetaItem = NonNullable<typeof tarjetas>[0]
-    const result: { tarjeta: TarjetaItem; moneda: string }[] = []
+    const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string }[] = []
     ;(tarjetas??[]).forEach(t => {
       const monedas = [...new Set((txns??[]).filter(x=>x.tarjeta_id===t.id).map(x=>x.moneda))]
       if (monedas.length <= 1) {
@@ -105,6 +102,8 @@ export default function TarjetasPage() {
     })
     return result
   }, [tarjetas, txns])
+
+  if (lt||lp||lx) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
   const monedaActiva = activaId==='todas' ? null : activaId.includes('|') ? activaId.split('|')[1] : null
