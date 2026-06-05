@@ -30,12 +30,16 @@ const CHIP_STYLE: Record<string, { bg: string; border: string; text: string }> =
 // ── Componente calendario semanal ─────────────────────────────────────────────
 function CalendarioSemanal({
   saldoBase, items, onItemsChange, mesBase, añoBase,
+  gastoDiario, gastoDiarioRestante, diasRestantes,
 }: {
   saldoBase: number
   items: SimItem[]
   onItemsChange: (items: SimItem[]) => void
   mesBase: number
   añoBase: number
+  gastoDiario: number
+  gastoDiarioRestante: number
+  diasRestantes: number
 }) {
   const [weekOffset, setWeekOffset]   = useState(0)
   const [showModal, setShowModal]     = useState(false)
@@ -57,6 +61,13 @@ function CalendarioSemanal({
   }, [weekOffset, mesBase, añoBase])
 
   const weekLabel = `${weekDates[0].getDate()}/${weekDates[0].getMonth()+1} — ${weekDates[6].getDate()}/${weekDates[6].getMonth()+1}`
+
+  // Budget simulado: refleja cambios del simulador en tiempo real
+  const gastadoSim   = items.filter(i => i.tipo !== 'ingreso').reduce((s, i) => s + i.monto, 0)
+  const ingresadoSim = items.filter(i => i.tipo === 'ingreso').reduce((s, i) => s + i.monto, 0)
+  const saldoSimulado = saldoBase + ingresadoSim - gastadoSim
+  const gastoDiarioSim = Math.round(saldoSimulado / Math.max(1, diasRestantes))
+  const semaforo = gastoDiarioSim >= gastoDiario ? 'ok' : gastoDiarioSim >= 0 ? 'cuidado' : 'deficit'
 
   // Días del mes que corresponden a esta semana
   const diasSemana = weekDates.map(d =>
@@ -114,7 +125,11 @@ function CalendarioSemanal({
           <div className="text-slate-900 font-semibold text-[15px]">Simulador semanal</div>
           <div className="text-slate-400 text-xs mt-0.5">Arrastrá los items para ver cómo cambia tu saldo día a día</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${semaforo==='ok'?'bg-emerald-50 border-emerald-200 text-emerald-700':semaforo==='cuidado'?'bg-amber-50 border-amber-200 text-amber-700':'bg-red-50 border-red-200 text-red-600'}`}>
+            {semaforo==='ok'?'✓':semaforo==='cuidado'?'~':'⚠'} {gastoDiarioSim >= 0 ? gastoDiarioSim.toLocaleString('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}) : 'Déficit'}/día
+          </div>
+          <div className="flex items-center gap-2">
           <button onClick={() => setWeekOffset(w => w-1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer text-sm">‹</button>
           <span className="text-xs font-medium text-slate-600 min-w-[120px] text-center">{weekLabel}</span>
           <button onClick={() => setWeekOffset(w => w+1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer text-sm">›</button>
@@ -122,6 +137,7 @@ function CalendarioSemanal({
             className="ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 text-white text-xs font-medium border-none cursor-pointer hover:opacity-90">
             + Agregar item
           </button>
+          </div>
         </div>
       </div>
 
@@ -304,15 +320,10 @@ export default function CashFlowPage() {
   const mesNum    = mes + 1
 
   const saldoInicial = useMemo(() => {
-    const totalIngresos = (ingresos ?? []).filter(i => i.mes === mesNum).reduce((s, i) => s + i.monto, 0)
-    const totalEgresos  = (egresos  ?? []).filter(e => e.mes === mesNum).reduce((s, e) => s + e.monto, 0)
-    const totalDeudas   = (deudas   ?? []).filter(d => {
-      if (!d.fecha_vencimiento) return false
-      const fv = new Date(d.fecha_vencimiento)
-      return fv.getFullYear() === año && (fv.getMonth() + 1) === mesNum
-    }).reduce((s, d) => s + (d.cuota_mensual ?? 0), 0)
-    return totalIngresos - totalEgresos - totalDeudas
-  }, [ingresos, egresos, deudas, mesNum, año])
+    const totalIngresos = (ingresos ?? []).filter(i => i.mes === mesNum && i.año === año).reduce((s, i) => s + i.monto, 0)
+    const totalComprometido = (eventos ?? []).filter(ev => ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
+    return totalIngresos - totalComprometido
+  }, [ingresos, eventos, mesNum, año])
 
   const flowData = useMemo(() =>
     proyectarCashFlow(saldoInicial, eventos ?? [], diasEnMes)
@@ -328,14 +339,18 @@ export default function CashFlowPage() {
   const minDia     = flowData.reduce((a, b) => a.saldo < b.saldo ? a : b, flowData[0] ?? { saldo: 0, dia: 0 })
   const diasConEvs = flowData.filter(d => d.eventos.length > 0)
 
-  // Gasto diario disponible: (saldo de hoy - pagos pendientes restantes) / días restantes del mes
+  // Gasto diario = balance libre del mes / días del mes
+  const gastoDiarioDisp = Math.round(saldoInicial / diasEnMes)
   const diaHoy = (mes === HOY.getMonth() && año === HOY.getFullYear()) ? HOY.getDate() : 1
+  const diasRestantes = Math.max(1, diasEnMes - diaHoy)
   const saldoHoy = flowData.find(d => d.dia === diaHoy)?.saldo ?? saldoInicial
   const pagosRestantes = (eventos ?? [])
-    .filter(ev => ev.dia > diaHoy && ev.tipo !== 'ingreso')
+    .filter(ev => ev.dia > diaHoy && ev.tipo !== 'ingreso' && !ev.pagado)
     .reduce((s, ev) => s + (ev.monto ?? 0), 0)
-  const diasRestantes = Math.max(1, diasEnMes - diaHoy)
-  const gastoDiarioDisp = Math.round((saldoHoy - pagosRestantes) / diasRestantes)
+  const totalIngresosFuturos = (eventos ?? [])
+    .filter(ev => ev.dia > diaHoy && ev.tipo === 'ingreso')
+    .reduce((s, ev) => s + (ev.monto ?? 0), 0)
+  const gastoDiarioRestante = Math.round((saldoHoy + totalIngresosFuturos - pagosRestantes) / diasRestantes)
 
   const totalIngresos = (ingresos ?? []).filter(i => i.mes === mesNum).reduce((s, i) => s + i.monto, 0)
   const totalEgresos  = (egresos  ?? []).filter(e => e.mes === mesNum).reduce((s, e) => s + e.monto, 0)
@@ -368,6 +383,9 @@ export default function CashFlowPage() {
         onItemsChange={setSimItems}
         mesBase={mes}
         añoBase={año}
+        gastoDiario={gastoDiarioDisp}
+        gastoDiarioRestante={gastoDiarioRestante}
+        diasRestantes={diasRestantes}
       />
 
       {/* ── Banner saldo calculado ── */}
@@ -385,13 +403,8 @@ export default function CashFlowPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />
-            <span className="text-slate-500 text-xs">Egresos del mes</span>
-            <span className="text-red-600 font-mono font-bold text-sm">-{fmt(totalEgresos, m)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-slate-500 text-xs">Deudas vencen este mes</span>
-            <span className="text-amber-700 font-mono font-bold text-sm">-{fmt(totalDeudas, m)}</span>
+            <span className="text-slate-500 text-xs">Pagos comprometidos</span>
+            <span className="text-red-600 font-mono font-bold text-sm">-{fmt((eventos??[]).filter(ev=>ev.tipo!=='ingreso'&&ev.monto).reduce((s,ev)=>s+(ev.monto??0),0), m)}</span>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-slate-400 text-xs">Saldo inicial =</span>
@@ -408,7 +421,7 @@ export default function CashFlowPage() {
           { l: 'Saldo inicial',          v: fmt(saldoInicial, m), s: 'Ingresos − Egresos − Deudas',    c: saldoInicial >= 0 ? '#1A5E9E' : '#C0392B' },
           { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Proyección con eventos del mes', c: saldoFin >= 0 ? '#1A5E9E' : '#C0392B' },
           { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#C0392B' },
-          { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Sin quedar en rojo (${diasRestantes} días restantes)` : `Faltan ${fmt(Math.abs(gastoDiarioDisp) * diasRestantes, m)} para cubrir los pagos`, c: gastoDiarioDisp >= 0 ? '#2D7D2D' : '#C0392B' },
+          { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasEnMes} días del mes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#2D7D2D' : '#C0392B' },
         ].map(k => (
           <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
             <div className="label mb-1">{k.l}</div>
