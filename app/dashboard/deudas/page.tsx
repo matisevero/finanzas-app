@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { useDeudas, useEventosMes, useIngresos } from '@/hooks'
+import { useDeudas, useEventosMes, useEventosAño, useIngresos } from '@/hooks'
 import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
@@ -125,11 +125,11 @@ export default function DeudasPage() {
   const [calMes, setCalMes] = useState(HOY_MES)
   const [calAño, setCalAño] = useState(HOY_AÑO)
   const { data: eventos, loading: le, refetch: refEventos } = useEventosMes(calAño, calMes + 1)
+  const { data: eventosAño } = useEventosAño(calAño)
   const [expanded, setExpanded] = useState<Record<string,boolean>>({})
   const [editingEventoId, setEditingEventoId] = useState<string|null>(null)
   const [editingDeudaId, setEditingDeudaId] = useState<string|null>(null)
   const [mostrarPagados, setMostrarPagados] = useState(false)
-  const [showGrafico, setShowGrafico] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Modal nuevo evento (calendario)
@@ -171,15 +171,17 @@ export default function DeudasPage() {
   const pagadoMes      = (eventos ?? []).filter(e => e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
   const pendientes     = (eventos ?? []).filter(e => !e.pagado && e.tipo !== 'ingreso').length
 
-  // Gráfico anual: ingresos por mes vs cuota mensual estimada
+  // Gráfico anual: vencimientos reales por mes vs ingresos del mes
   const chartAnual = useMemo(() => {
+    const LABELS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
     return Array.from({length: 12}, (_, i) => {
       const mesNum = i + 1
       const ingMes = (ingresos ?? []).filter(ing => ing.mes === mesNum && ing.año === calAño).reduce((s, ing) => s + ing.monto, 0)
-      const pct = ingMes > 0 ? Math.round(cuotaMensual / ingMes * 100) : 0
-      return { month: ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][i], ingresos: ingMes, deudas: cuotaMensual, pct }
+      const deudaMes = (eventosAño ?? []).filter(ev => ev.mes === mesNum && ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
+      const pct = ingMes > 0 ? Math.round(deudaMes / ingMes * 100) : 0
+      return { month: LABELS[i], ingresos: ingMes, deudas: deudaMes, pct }
     })
-  }, [ingresos, cuotaMensual, calAño])
+  }, [ingresos, eventosAño, calAño])
 
   // % deuda vs ingresos del mes
   const totalIngresosMes = (ingresos ?? []).filter(i => i.mes === calMes + 1 && i.año === calAño).reduce((s, i) => s + i.monto, 0)
@@ -509,15 +511,11 @@ export default function DeudasPage() {
 
       {/* ── Gráfico anual % deuda vs ingresos ── */}
       <div className="mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-slate-900 font-semibold text-[15px]">Deuda mensual vs Ingresos — {calAño}</div>
-          <button onClick={() => setShowGrafico(p => !p)}
-            className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer">
-            {showGrafico ? '▲ Ocultar' : '▼ Ver gráfico'}
-          </button>
+        <div className="mb-3">
+          <div className="text-slate-900 font-semibold text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
+          <div className="text-slate-400 text-xs mt-0.5">Total deudas del mes como % de tus ingresos</div>
         </div>
-        {showGrafico && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <p className="text-slate-400 text-xs mb-4">Barras = ingresos del mes · Línea = cuota fija mensual · % = proporción</p>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartAnual} barCategoryGap="30%">
@@ -533,8 +531,7 @@ export default function DeudasPage() {
                 <Line yAxisId="right" type="monotone" dataKey="pct" name="% deuda/ingreso" stroke="#5B3FA6" strokeWidth={2} dot={{ r: 3, fill: '#5B3FA6' }} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* ── Modal nuevo vencimiento ── */}
