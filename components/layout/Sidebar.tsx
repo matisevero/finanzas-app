@@ -24,7 +24,9 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2">
         {NAV_ITEMS.map(item => {
-          const active = pathname === item.href || pathname.startsWith(item.href + '/')
+          const active = item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname === item.href || pathname.startsWith(item.href + '/')
           return (
             <Link key={item.id} href={item.href}
               className={`
