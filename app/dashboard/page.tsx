@@ -178,12 +178,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-4 gap-5 mb-5">
 
         {/* Flujo — 2 columnas */}
-        <Card className="col-span-2 transition-all hover:shadow-lg hover:border-slate-300">
-          <CardTitle action={<>
-            <button onClick={()=>setExpandedChart('flujo')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button>
+        <Card className="col-span-2 transition-all hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer group" onClick={()=>setExpandedChart('flujo')}>
+          <CardTitle action={<div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
+            <span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>
             <ChartToggle
               options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]}
-              value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></>}
+              value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></div>}
           >
             Flujo Financiero {añoActivo}
           </CardTitle>
@@ -223,9 +223,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Distribución Egresos — 1 columna */}
-        <Card
-          className="hover:border-slate-300 transition-all">
-          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('egresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/egresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Distribución Gastos</CardTitle>
+        <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('egresos')}>
+          <CardTitle action={<span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>}>Distribución Gastos</CardTitle>
           {pieEgresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -251,9 +250,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Distribución Ingresos — 1 columna */}
-        <Card
-          className="hover:border-slate-300 transition-all">
-          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('ingresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/ingresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Distribución Ingresos</CardTitle>
+        <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('ingresos')}>
+          <CardTitle action={<span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>}>Distribución Ingresos</CardTitle>
           {pieIngresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -327,8 +325,8 @@ export default function DashboardPage() {
       </div>
       {/* ── Modal expandido ── */}
       {expandedChart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpandedChart(null)}
               className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
@@ -338,7 +336,7 @@ export default function DashboardPage() {
                 <BarChart data={chartFlowData} barCategoryGap="30%" barGap={3}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} />
-                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v/1000,m)+'k'} />
+                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,m)} />
                   <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                   <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
                   <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={36} />
