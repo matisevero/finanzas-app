@@ -101,14 +101,14 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value as number, m)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmtFull(p.value as number, m)}</span>
           </div>
         )
       })}
       {top5.length > 1 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, marginTop: 6, borderTop: '1px solid #f1f5f9' }}>
           <span style={{ fontSize: 10, color: '#94a3b8' }}>Total</span>
-          <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmt(total, m)}</span>
+          <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmtFull(total, m)}</span>
         </div>
       )}
 
@@ -182,7 +182,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
               onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
               onFocus={() => setActive(true)}
               onKeyDown={handleKeyDown}
-              className="input-field py-1 text-xs w-full">
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium cursor-pointer bg-white text-slate-700 hover:border-slate-400 transition-all w-full">
               <option value="ambos">Ambos</option>
               <option value="Mati">Mati</option>
               <option value="Dani">Dani</option>
@@ -203,24 +203,33 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
     }
   }
 
+  if (!active) {
+    return (
+      <tr>
+        <td colSpan={cols.length + 1} className="py-2 px-3 border-b border-slate-100">
+          <button onClick={() => setActive(true)}
+            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 border-none bg-transparent cursor-pointer flex items-center gap-1.5 transition-colors">
+            <span className="text-base leading-none">+</span> Nuevo ingreso
+          </button>
+        </td>
+      </tr>
+    )
+  }
+
   return (
-    <tr className={`transition-colors ${active ? 'bg-emerald-50' : 'bg-emerald-50/40 hover:bg-emerald-50'}`}>
+    <tr className="bg-emerald-50">
       {cols.map(col => cellFor(col))}
       <td className="py-1.5 px-2 border-b border-emerald-200 text-right">
-        {active ? (
-          <div className="flex gap-1 justify-end">
-            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
-              className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
-              {saving ? '...' : '+ Guardar'}
-            </button>
-            <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
-              className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
-              ✕
-            </button>
-          </div>
-        ) : (
-          <span className="text-[10px] text-emerald-500 font-medium select-none">↵ nueva fila</span>
-        )}
+        <div className="flex gap-1 justify-end">
+          <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
+            className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
+            {saving ? '...' : '✓ Guardar'}
+          </button>
+          <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
+            className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
+            ✕
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -258,7 +267,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
       <td className="py-1.5 px-2 border-b border-blue-100">
-        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs">
+        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className="flex items-center px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium cursor-pointer bg-white text-slate-700 w-full">
           <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
         </select>
       </td>
@@ -569,8 +578,8 @@ export default function IngresosPage() {
           </Card>
 
           {/* Composición / Top */}
-          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>setExpandedChart('composicion')}>
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>{ if(sidePanel==='composicion') setExpandedChart('composicion') }}>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4" onClick={e=>e.stopPropagation()}>
               {(['composicion', 'top'] as const).map(v => (
                 <button key={v} onClick={() => setSidePanel(v)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
@@ -581,7 +590,7 @@ export default function IngresosPage() {
 
             {sidePanel === 'composicion' && (
               <>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3" onClick={e=>e.stopPropagation()}>
                   <span className="text-slate-500 text-xs font-medium">Mes</span>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
@@ -691,7 +700,10 @@ export default function IngresosPage() {
             <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
             {expandedChart==='evolucion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-slate-900 font-semibold text-lg">Evolución {añoActivo}</div>
+                <ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />
+              </div>
               <div className="flex gap-2 flex-wrap mb-4">
                 {tiposBase.map(({ key, label, color }) => (
                   <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
@@ -716,7 +728,17 @@ export default function IngresosPage() {
             </>}
 
             {expandedChart==='composicion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
+              <div className="flex items-center justify-between mb-5">
+                <div className="text-slate-900 font-semibold text-lg">Composición {añoActivo}</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-400 text-xs">Mes:</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-8 items-center">
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
