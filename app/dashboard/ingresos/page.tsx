@@ -157,11 +157,11 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 
   return (
     <tr className="bg-emerald-50/60">
-      <td className="py-2 px-2 border-b border-emerald-100 w-28">
+      <td className="py-2 px-2 border-b border-emerald-100 w-24">
         <input type="date" value={form.fecha}
           onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
           onKeyDown={handleKeyDown}
-          className="input-field py-1 text-xs w-full" />
+          className="input-field py-1 text-xs w-full" style={{borderRadius:2}} />
       </td>
       <td className="py-2 px-2 border-b border-emerald-100">
         <input value={form.descripcion}
@@ -169,9 +169,9 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           onKeyDown={handleKeyDown}
           placeholder="Descripción..."
           autoFocus
-          className="input-field py-1 text-xs w-full" />
+          className="input-field py-1 text-xs w-full" style={{borderRadius:2}} />
       </td>
-      <td className="py-2 px-2 border-b border-emerald-100 min-w-[180px]">
+      <td className="py-2 px-2 border-b border-emerald-100 w-36">
         <CategoriaSelector modulo="ingresos" value={form.tipo}
           onChange={v => setForm(p => ({ ...p, tipo: v }))}
           categorias={categoriasCustom} categoriasBase={tiposBase}
@@ -181,7 +181,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
         <select value={form.quien}
           onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
           onKeyDown={handleKeyDown}
-          className="input-field py-1 text-xs w-full">
+          className="input-field py-1 text-xs w-full px-2" style={{borderRadius:2}}>
           <option value="ambos">Ambos</option>
           <option value="Mati">Mati</option>
           <option value="Dani">Dani</option>
