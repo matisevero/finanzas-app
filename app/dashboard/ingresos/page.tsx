@@ -157,7 +157,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 
   return (
     <tr className="bg-emerald-50/60">
-      <td className="py-2 px-2 border-b border-emerald-100 w-24">
+      <td className="py-2 px-2 border-b border-emerald-100 w-20">
         <input type="date" value={form.fecha}
           onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
           onKeyDown={handleKeyDown}
