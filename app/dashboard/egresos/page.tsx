@@ -64,7 +64,7 @@ function MultiDropdown({ label, options, selected, onChange }: {
               <button key={opt.key} type="button" onMouseDown={e => e.preventDefault()} onClick={() => toggle(opt.key)}
                 className={`w-full text-left px-3 py-2 text-xs rounded-lg cursor-pointer border-none transition-colors flex items-center gap-2 ${selected.includes(opt.key) ? 'bg-blue-50 text-blue-700 font-semibold' : 'bg-transparent text-slate-600 hover:bg-slate-50'}`}>
                 <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.includes(opt.key) ? 'bg-blue-700 border-blue-700' : 'border-slate-300'}`}>
-                  {selected.includes(opt.key) && <span className="text-white text-[8px]">✓</span>}
+                  {selected.includes(opt.key) && <span className="text-white text-[8px]"></span>}
                 </span>
                 {opt.label}
               </button>
@@ -72,6 +72,7 @@ function MultiDropdown({ label, options, selected, onChange }: {
           </div>
         </div>
       )}
+
     </div>
   )
 }
@@ -100,21 +101,22 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmt(p.value as number, m)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmtFull(p.value as number, m)}</span>
           </div>
         )
       })}
       {top5.length > 1 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, marginTop: 6, borderTop: '1px solid #f1f5f9' }}>
           <span style={{ fontSize: 10, color: '#94a3b8' }}>Total</span>
-          <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmt(total, m)}</span>
+          <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmtFull(total, m)}</span>
         </div>
       )}
+
     </div>
   )
 }
 
-// ─── SheetNewRow ──────────────────────────────────────────────────────────────
+// ─── SheetNewRow — fila colapsable ──────────────────────────────────────────
 function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
@@ -140,81 +142,68 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
     if (e.key === 'Escape') { setForm(FORM_INIT); setActive(false) }
   }
 
-  const cellFor = (col: SortKey) => {
-    const base = 'py-1.5 px-2 border-b border-red-100'
-    switch (col) {
-      case 'fecha':
-        return (
-          <td key={col} className={base}>
-            <input type="date" value={form.fecha}
-              onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
-              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-red-300" />
-          </td>
-        )
-      case 'descripcion':
-        return (
-          <td key={col} className={base}>
-            <input value={form.descripcion}
-              onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
-              placeholder="Descripción..."
-              className="input-field py-1 text-xs w-full focus:ring-2 focus:ring-red-300" />
-          </td>
-        )
-      case 'categoria':
-        return (
-          <td key={col} className={base}>
-            <CategoriaSelector modulo="egresos" value={form.categoria}
-              onChange={v => setForm(p => ({ ...p, categoria: v }))}
-              categorias={categoriasCustom} categoriasBase={tiposBase}
-              onCategoriasChange={refetchCats} />
-          </td>
-        )
-      case 'quien':
-        return (
-          <td key={col} className={base}>
-            <select value={form.quien}
-              onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
-              className="input-field py-1 text-xs">
-              <option value="ambos">Ambos</option>
-              <option value="Mati">Mati</option>
-              <option value="Dani">Dani</option>
-            </select>
-          </td>
-        )
-      case 'monto':
-        return (
-          <td key={col} className={`${base} text-right`}>
-            <MontoInput value={form.monto}
-              onChange={raw => setForm(p => ({ ...p, monto: raw }))}
-              onFocus={() => setActive(true)} onKeyDown={handleKeyDown}
-              className="py-1 text-xs text-right focus:ring-2 focus:ring-red-300" />
-          </td>
-        )
-      default: return null
-    }
+  if (!active) {
+    return (
+      <tr>
+        <td colSpan={cols.length + 1} className="py-2.5 px-3 border-b border-slate-100">
+          <button onClick={() => setActive(true)}
+            className="text-xs font-semibold text-red-500 hover:text-red-700 border-none bg-transparent cursor-pointer flex items-center gap-1.5 transition-colors">
+            <span className="text-sm font-bold">+</span> Nuevo egreso
+          </button>
+        </td>
+      </tr>
+    )
   }
 
   return (
-    <tr className={`transition-colors ${active ? 'bg-red-50' : 'bg-red-50/30 hover:bg-red-50'}`}>
-      {cols.map(col => cellFor(col))}
-      <td className="py-1.5 px-2 border-b border-red-100 text-right">
-        {active ? (
-          <div className="flex gap-1 justify-end">
-            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
-              className="text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
-              {saving ? '...' : '+ Guardar'}
-            </button>
-            <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
-              className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
-              ✕
-            </button>
-          </div>
-        ) : (
-          <span className="text-[10px] text-red-400 font-medium select-none">↵ nueva fila</span>
-        )}
+    <tr className="bg-red-50/40">
+      <td className="py-2 px-2 border-b border-red-100" style={{width:72}}>
+        <input type="date" value={form.fecha}
+          onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
+          onKeyDown={handleKeyDown}
+          className="input-field py-1 text-xs w-full" />
+      </td>
+      <td className="py-2 px-2 border-b border-red-100">
+        <input value={form.descripcion}
+          onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
+          onKeyDown={handleKeyDown}
+          placeholder="Descripción..."
+          autoFocus
+          className="input-field py-1 text-xs w-full" />
+      </td>
+      <td className="py-2 px-2 border-b border-red-100 w-36">
+        <CategoriaSelector modulo="egresos" value={form.categoria}
+          onChange={v => setForm(p => ({ ...p, categoria: v }))}
+          categorias={categoriasCustom} categoriasBase={tiposBase}
+          onCategoriasChange={refetchCats} />
+      </td>
+      <td className="py-2 px-2 border-b border-red-100 w-28">
+        <select value={form.quien}
+          onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
+          onKeyDown={handleKeyDown}
+          className="input-field py-1 text-xs w-full px-2">
+          <option value="ambos">Ambos</option>
+          <option value="Mati">Mati</option>
+          <option value="Dani">Dani</option>
+        </select>
+      </td>
+      <td className="py-2 px-2 border-b border-red-100 text-right" style={{width:116}}>
+        <MontoInput value={form.monto}
+          onChange={raw => setForm(p => ({ ...p, monto: raw }))}
+          onKeyDown={handleKeyDown}
+          className="py-1 text-xs text-right" />
+      </td>
+      <td className="py-2 px-2 border-b border-red-100 text-right">
+        <div className="flex gap-1 justify-end">
+          <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
+            className="text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
+            {saving ? '...' : 'Guardar'}
+          </button>
+          <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
+            className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
+            ✕
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -258,8 +247,8 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
       <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className="py-1 text-xs text-right" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100 text-right">
         <div className="flex gap-1 justify-end">
-          <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
-          <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
+          <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : ''}</button>
+          <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer"></button>
         </div>
       </td>
     </tr>
@@ -288,6 +277,7 @@ export default function EgresosPage() {
   const [sortDir, setSortDir]         = useState<SortDir>('desc')
   const [cols, setCols]               = useState<SortKey[]>(COLS_DEFAULT)
   const [page, setPage]               = useState(1)
+  const [expandedChart, setExpandedChart] = useState<'evolucion'|'composicion'|null>(null)
   const dragCol  = useRef<number|null>(null)
   const dragOver = useRef<number|null>(null)
 
@@ -308,7 +298,7 @@ export default function EgresosPage() {
   }, [categoriasCustom, tiposBase])
 
   const getTipoInfo = (cat: string) =>
-    allTipos.find(t => t.key === cat) ?? { key: cat, label: cat, icon: '📦', color: '#888780' }
+    allTipos.find(t => t.key === cat) ?? { key: cat, label: cat, icon: '', color: '#888780' }
 
   const chartData = useMemo(() => MESES_CORTOS.map((month, i) => {
     const mes = i + 1
@@ -350,6 +340,10 @@ export default function EgresosPage() {
   const hasMore     = filtered.length > visibleRows.length
 
   const total         = (egresos ?? []).reduce((s, e) => s + e.monto, 0)
+  const mesActual     = HOY.getMonth() + 1
+  const totalMesAct   = (egresos ?? []).filter(e => e.mes === mesActual).reduce((s, e) => s + e.monto, 0)
+  const totalMesAnt   = (egresos ?? []).filter(e => e.mes === mesActual - 1).reduce((s, e) => s + e.monto, 0)
+  const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
   const totalTarjetas = (egresos ?? []).filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
   const totalUSD      = (egresos ?? []).filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
   const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
@@ -405,15 +399,15 @@ export default function EgresosPage() {
 
   return (
     <div>
-      <PageHeader title="Egresos" subtitle={`Control detallado de gastos — ${añoActivo}`}
+      <PageHeader title="Egresos"
         action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo egreso</button>} />
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#C0392B" icon="📤" sub="Acumulado" />
-        <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" icon="💳" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
-        <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#2D7D2D" icon="💵" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
-        <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" icon="📅" sub="Sobre meses con datos" />
+        <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#C0392B" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
+        <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
+        <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#2D7D2D" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
+        <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" sub="Sobre meses con datos" />
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
@@ -442,7 +436,7 @@ export default function EgresosPage() {
             </div>
 
             {filtered.length === 0 ? (
-              <EmptyState icon="💸" title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
+              <EmptyState title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
             ) : (
               <>
                 <div className="overflow-x-auto">
@@ -480,11 +474,11 @@ export default function EgresosPage() {
 
                         const cellFor = (col: SortKey) => {
                           switch (col) {
-                            case 'fecha':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-500 text-xs font-mono">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><div className="flex items-center gap-2"><span>{cfg.icon}</span><span className="text-slate-700 font-medium">{egreso.descripcion || cfg.label}</span></div></td>
+                            case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg}`} style={{width:72}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
+                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-700 font-medium">{egreso.descripcion || cfg.label}</span></td>
                             case 'categoria':   return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
-                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
+                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`} style={{width:116}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
                             default: return null
                           }
                         }
@@ -494,8 +488,8 @@ export default function EgresosPage() {
                             {cols.map(col => cellFor(col))}
                             <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
                               <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
-                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
+                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm"></button>
+                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm"></button>
                               </div>
                             </td>
                           </tr>
@@ -521,8 +515,8 @@ export default function EgresosPage() {
         <div className="col-span-1 flex flex-col gap-5">
 
           {/* Gráfico evolución */}
-          <Card>
-            <CardTitle action={<ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />}>
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all group" onClick={()=>setExpandedChart('evolucion')}>
+            <CardTitle action={<div onClick={e=>e.stopPropagation()}><ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} /></div>}>
               Evolución {añoActivo}
             </CardTitle>
             <div className="flex gap-2 flex-wrap mb-3">
@@ -549,8 +543,8 @@ export default function EgresosPage() {
           </Card>
 
           {/* Composición / Top */}
-          <Card>
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>{ if(sidePanel==='composicion') setExpandedChart('composicion') }}>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4" onClick={e=>e.stopPropagation()}>
               {(['composicion', 'top'] as const).map(v => (
                 <button key={v} onClick={() => setSidePanel(v)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
@@ -561,7 +555,7 @@ export default function EgresosPage() {
 
             {sidePanel === 'composicion' && (
               <>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3" onClick={e=>e.stopPropagation()}>
                   <span className="text-slate-500 text-xs font-medium">Mes</span>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
@@ -661,6 +655,81 @@ export default function EgresosPage() {
           </div>
         </div>
       </Modal>
+      {/* ── Modal gráfico expandido ── */}
+      {expandedChart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
+
+            {expandedChart==='evolucion' && <>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-slate-900 font-semibold text-lg">Evolución {añoActivo}</div>
+                <ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />
+              </div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {tiposBase.map(({ key, label, color }) => (
+                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
+                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
+                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                    <span className="text-slate-500 text-xs">{label}</span>
+                  </button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
+                  <Tooltip content={renderTooltip} />
+                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
+                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </>}
+
+            {expandedChart==='composicion' && <>
+              <div className="flex items-center justify-between mb-5">
+                <div className="text-slate-900 font-semibold text-lg">Composición {añoActivo}</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-400 text-xs">Mes:</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-3">
+                  {compData.map((d, i) => (
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
