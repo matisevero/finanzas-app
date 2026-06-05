@@ -287,13 +287,15 @@ export default function CashFlowPage() {
   // Pre-cargar eventos del mes en el simulador (solo la primera vez que cargan, o al cambiar mes)
   useEffect(() => {
     if (!eventos) return
-    const items: SimItem[] = eventos.map((ev, i) => ({
-      id: i + 1,
-      label: ev.descripcion,
-      monto: ev.monto ?? 0,
-      tipo: (ev.tipo === 'ingreso' ? 'ingreso' : 'deuda') as SimItem['tipo'],
-      dia: ev.dia,
-    })).filter(it => it.monto > 0)
+    const items = eventos
+      .filter(ev => (ev.monto ?? 0) > 0)
+      .map((ev, i): SimItem => ({
+        id: i + 1,
+        label: ev.descripcion,
+        monto: ev.monto ?? 0,
+        tipo: ev.tipo === 'ingreso' ? 'ingreso' : 'deuda',
+        dia: ev.dia,
+      }))
     setSimItems(items)
     setSimInited(true)
   }, [eventos])
