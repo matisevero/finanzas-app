@@ -247,8 +247,8 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
       <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className="py-1 text-xs text-right" /></td>
       <td className="py-1.5 px-2 border-b border-blue-100 text-right">
         <div className="flex gap-1 justify-end">
-          <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : ''}</button>
-          <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer"></button>
+          <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
+          <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
         </div>
       </td>
     </tr>
@@ -488,8 +488,8 @@ export default function EgresosPage() {
                             {cols.map(col => cellFor(col))}
                             <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
                               <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm"></button>
-                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm"></button>
+                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
+                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
                               </div>
                             </td>
                           </tr>
