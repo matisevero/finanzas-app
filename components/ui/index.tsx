@@ -5,9 +5,9 @@ import { usePageHeader } from '@/context/PageHeaderContext'
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 interface StatCardProps {
   label: string; value: string | number; sub?: string
-  trend?: number; trendInvert?: boolean; color?: string; icon?: string
+  trend?: number; trendInvert?: boolean; trendLabel?: string; color?: string; icon?: string
 }
-export function StatCard({ label, value, sub, trend, trendInvert = false, color = '#1A5E9E', icon }: StatCardProps) {
+export function StatCard({ label, value, sub, trend, trendInvert = false, trendLabel = 'vs año anterior', color = '#1A5E9E', icon }: StatCardProps) {
   const up   = trend !== undefined && trend >= 0
   const good = trendInvert ? !up : up
   return (
@@ -23,7 +23,7 @@ export function StatCard({ label, value, sub, trend, trendInvert = false, color 
           <span className={`text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
             {up ? '▲' : '▼'} {Math.abs(trend)}%
           </span>
-          <span className="text-slate-400 text-xs">vs año anterior</span>
+          <span className="text-slate-400 text-xs">{trendLabel}</span>
         </div>
       )}
     </div>
