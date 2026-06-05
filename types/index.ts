@@ -154,6 +154,7 @@ export interface EventoCalendario {
   recurrente: boolean
   pagado: boolean
   egreso_id?: string | null
+  gasto_fijo?: boolean
   created_at: string
 }
 export type EventoInsert = Omit<EventoCalendario, 'id' | 'user_id' | 'created_at'>
