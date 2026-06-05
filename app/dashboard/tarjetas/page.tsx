@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
-import { fmt, fmtDate } from '@/lib/utils/formatters'
+import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
 import type { Moneda, Quien } from '@/types'
@@ -26,7 +26,20 @@ export default function TarjetasPage() {
   const [selTC, setSelTC]         = useState<string|null>(null)
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal]   = useState(false)
+  const [showPDFModal, setShowPDFModal] = useState(false)
+  const [pdfTarjetaId, setPdfTarjetaId] = useState<string|null>(null)
+  const [pdfLoading, setPdfLoading]   = useState(false)
+  const [pdfError, setPdfError]       = useState('')
+  const [pdfTxns, setPdfTxns]         = useState<any[]>([])
+  const [pdfStep, setPdfStep]         = useState<'upload'|'review'|'done'>('upload')
+  const [savingPdf, setSavingPdf]     = useState(false)
+  const [comercios, setComercios]     = useState<any[]>([])
+
+  // Cargar historial de comercios al montar
+  useState(() => {
+    import('@/lib/queries').then(q => q.getTarjetasComercios()).then(setComercios).catch(()=>{})
+  })
   const [saving, setSaving]       = useState(false)
   const [form, setForm]           = useState(FORM_INIT)
 
@@ -78,7 +91,22 @@ export default function TarjetasPage() {
 
   if (lt||lp||lx) return <LoadingSpinner />
 
-  const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId)
+  // Split tarjetas by moneda if they have txns in both
+  const tarjetasConMoneda = useMemo(() => {
+    const result: { tarjeta: typeof (tarjetas??[])[0]; moneda: string }[] = []
+    ;(tarjetas??[]).forEach(t => {
+      const monedas = [...new Set((txns??[]).filter(x=>x.tarjeta_id===t.id).map(x=>x.moneda))]
+      if (monedas.length <= 1) {
+        result.push({ tarjeta: t, moneda: t.moneda })
+      } else {
+        monedas.forEach(mon => result.push({ tarjeta: t, moneda: mon }))
+      }
+    })
+    return result
+  }, [tarjetas, txns])
+
+  const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
+  const monedaActiva = activaId==='todas' ? null : activaId.includes('|') ? activaId.split('|')[1] : null
 
   const kpiPagos   = activaId==='todas'
     ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+(pagosPorTC[t.id]?.[i+1]??0),0))
@@ -93,7 +121,10 @@ export default function TarjetasPage() {
   return (
     <div>
       <PageHeader title="Tarjetas de crédito" subtitle="Seguimiento de pagos y transacciones"
-        action={<button className="btn-primary" onClick={()=>setShowModal(true)}>+ Nueva tarjeta</button>} />
+        action={<div className="flex gap-2">
+          <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfError('') }}>Importar PDF</button>
+          <button className="btn-primary" onClick={()=>setShowModal(true)}>+ Nueva tarjeta</button>
+        </div>} />
 
       {/* ── Selector de tarjetas — full width ── */}
       <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
@@ -104,25 +135,34 @@ export default function TarjetasPage() {
           <div className="text-xs text-slate-400 mt-1">total 2026</div>
           <div className="text-lg font-bold font-mono text-slate-700 mt-1">{fmt(totalGlobal,m)}</div>
         </div>
-        {(tarjetas??[]).map((t,i)=>{
-          const ultPago = pagosPorTC[t.id]?.[new Date().getMonth()+1] ?? pagosPorTC[t.id]?.[new Date().getMonth()] ?? 0
-          const total   = totalPorTC[t.id]||0
-          const isActive = activaId===t.id
+        {tarjetasConMoneda.map(({tarjeta: t, moneda: mon})=>{
+          const cardId   = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1 ? `${t.id}|${mon}` : t.id
+          const isActive = activaId===cardId
+          const txnsMes  = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
+          const totalMon = txnsMes.reduce((s,x)=>s+x.monto,0)
+          const ultMes   = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon && new Date(x.fecha).getMonth()===new Date().getMonth()).reduce((s,x)=>s+x.monto,0)
+          const multiMoneda = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1
           return (
-            <div key={t.id} onClick={()=>setSelTC(t.id)}
+            <div key={cardId} onClick={()=>setSelTC(cardId)}
               className="flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[155px]"
               style={{borderColor: isActive ? t.color : '#f1f5f9'}}>
               <div className="flex justify-between items-start mb-2">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{background:t.color}}>{t.icono}</div>
-                {t.quien!=='ambos' && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.quien==='Mati'?'bg-blue-50 text-blue-700':'bg-pink-50 text-pink-700'}`}>{t.quien}</span>
-                )}
+                <div className="flex flex-col items-end gap-1">
+                  {t.quien!=='ambos' && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.quien==='Mati'?'bg-blue-50 text-blue-700':'bg-pink-50 text-pink-700'}`}>{t.quien}</span>
+                  )}
+                  {multiMoneda && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{mon}</span>
+                  )}
+                </div>
               </div>
               <div className="text-sm font-semibold text-slate-900">{t.nombre}</div>
               <div className="text-xs text-slate-400">{t.banco}</div>
-              <div className="text-lg font-bold font-mono mt-1" style={{color:t.color}}>{fmt(ultPago||total,m)}</div>
-              <div className="text-[10px] text-slate-400">{ultPago?'últ. pago':'total 2026'}</div>
-              {ultPago>0 && <div className="mt-2"><ProgressBar value={Math.min(100,Math.round(ultPago/2000000*100))} color={t.color} height={3} /></div>}
+              <div className="text-lg font-bold font-mono mt-1" style={{color:t.color}}>
+                {mon==='USD'?'US$':mon==='EUR'?'€':'$'}{(ultMes||totalMon).toLocaleString('es-AR',{maximumFractionDigits:0})}
+              </div>
+              <div className="text-[10px] text-slate-400">{ultMes?`últ. mes · ${mon}`:`total · ${mon}`}</div>
             </div>
           )
         })}
@@ -259,7 +299,7 @@ export default function TarjetasPage() {
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: VISA Galicia" className="input-field" /></div>
           <div><FieldLabel>Banco / titular</FieldLabel><input value={form.banco} onChange={e=>setForm(p=>({...p,banco:e.target.value}))} placeholder="Ej: Galicia · Mati" className="input-field" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Límite</FieldLabel><input type="number" value={form.limite} onChange={e=>setForm(p=>({...p,limite:e.target.value}))} placeholder="0" className="input-field" /></div>
+            <div><FieldLabel>Monto</FieldLabel><input type="number" value={form.limite} onChange={e=>setForm(p=>({...p,limite:e.target.value}))} placeholder="0" className="input-field" /></div>
             <div><FieldLabel>Moneda</FieldLabel><select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">{['ARS','USD'].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -289,6 +329,173 @@ export default function TarjetasPage() {
           </div>
         </div>
       </Modal>
+      {/* ── Modal importar PDF tarjeta ── */}
+      <Modal open={showPDFModal} onClose={()=>setShowPDFModal(false)} title="Importar resumen de tarjeta">
+        {pdfStep==='upload' && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <FieldLabel>Tarjeta</FieldLabel>
+              <select value={pdfTarjetaId||''} onChange={e=>setPdfTarjetaId(e.target.value)} className="input-field">
+                <option value="">Seleccioná una tarjeta</option>
+                {(tarjetas??[]).map(t=><option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Archivo PDF</FieldLabel>
+              <input type="file" accept=".pdf"
+                onChange={async e => {
+                  const file = e.target.files?.[0]
+                  if (!file || !pdfTarjetaId) return
+                  setPdfLoading(true); setPdfError('')
+                  try {
+                    const base64 = await new Promise<string>((res,rej)=>{
+                      const r = new FileReader()
+                      r.onload = ()=>res((r.result as string).split(',')[1])
+                      r.onerror = ()=>rej(new Error('Error leyendo archivo'))
+                      r.readAsDataURL(file)
+                    })
+                    // Build learning context from previous corrections
+                    const tarjetaActual = (tarjetas??[]).find(t=>t.id===pdfTarjetaId)
+                    const comerciosCtx = comercios.length > 0
+                      ? `\n\nREGLAS APRENDIDAS DE CORRECCIONES PREVIAS (usá estas categorías para estos comercios):\n` +
+                        comercios.slice(0,50).map(co =>
+                          `- "${co.descripcion_raw}" → descripcion_limpia: "${co.descripcion_limpia||co.descripcion_raw}", categoria: "${co.categoria}"`
+                        ).join('\n')
+                      : ''
+
+                    const tarjetaCtx = tarjetaActual
+                      ? `\n\nDATOS DE LA TARJETA:\n- Nombre: ${tarjetaActual.nombre}\n- Banco: ${tarjetaActual.banco}\n- Red: detectar del PDF (VISA/Mastercard/Amex)\n- Titular: ${tarjetaActual.quien}`
+                      : ''
+
+                    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+                      method:'POST',
+                      headers:{'Content-Type':'application/json'},
+                      body: JSON.stringify({
+                        model:'claude-sonnet-4-20250514',
+                        max_tokens:4000,
+                        messages:[{
+                          role:'user',
+                          content:[
+                            {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},
+                            {type:'text',text:`Extraé todas las transacciones de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
+
+Respondé SOLO con un JSON array, sin texto extra, sin backticks, sin markdown.
+Cada transacción debe tener estos campos exactos:
+{
+  "descripcion": "nombre legible del comercio (no el código interno del extracto)",
+  "descripcion_raw": "nombre exacto como aparece en el extracto",
+  "categoria": "una de: Alimentación|Tecnología|Ropa|Hogar|Viajes|Entretenimiento|Salud|Otros",
+  "fecha": "YYYY-MM-DD",
+  "monto": número positivo,
+  "moneda": "ARS" o "USD",
+  "cuota_actual": número o null,
+  "cuota_total": número o null,
+  "tipo": "debito",
+  "ultimos_4": "últimos 4 dígitos de la tarjeta si aparecen en el PDF, sino null",
+  "red": "VISA|Mastercard|Amex|otra, detectado del PDF"
+}
+Solo incluí gastos/compras, no pagos ni resúmenes de cuenta.
+Para el campo descripcion, usá el nombre real del negocio, no el código técnico del extracto.`}
+                          ]
+                        }]
+                      })
+                    })
+                    const data = await resp.json()
+                    const text = data.content?.map((b:any)=>b.text||'').join('')
+                    const clean = text.replace(/\`\`\`json|\`\`\`/g,'').trim()
+                    const parsed = JSON.parse(clean)
+                    setPdfTxns(parsed.map((t:any,i:number)=>({...t,id:i,selected:true,tarjeta_id:pdfTarjetaId})))
+                    setPdfStep('review')
+                  } catch(err:any){
+                    setPdfError('No se pudo procesar el PDF: '+(err.message||'Error'))
+                  } finally { setPdfLoading(false) }
+                }}
+                className="input-field py-2 text-sm cursor-pointer" />
+            </div>
+            {pdfLoading && <div className="text-center py-4 text-slate-400 text-sm">Analizando PDF con IA...</div>}
+            {pdfError && <div className="text-red-500 text-sm bg-red-50 px-4 py-3 rounded-xl">{pdfError}</div>}
+          </div>
+        )}
+
+        {pdfStep==='review' && (
+          <div className="flex flex-col gap-4">
+            <div className="text-slate-600 text-sm">{pdfTxns.filter(t=>t.selected).length} de {pdfTxns.length} transacciones seleccionadas</div>
+            <div className="overflow-y-auto max-h-[50vh] flex flex-col gap-1.5">
+              {pdfTxns.map((t,i)=>(
+                <div key={i} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${t.selected?'border-blue-200 bg-blue-50':'border-slate-100 bg-slate-50 opacity-50'}`}
+                  onClick={()=>setPdfTxns(prev=>prev.map((x,j)=>j===i?{...x,selected:!x.selected}:x))}>
+                  <input type="checkbox" checked={t.selected} onChange={()=>{}} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-slate-700 truncate">{t.descripcion}</div>
+                    <div className="text-xs text-slate-400">{t.fecha} · {t.categoria}</div>
+                    {t.descripcion_raw && t.descripcion_raw !== t.descripcion && <div className="text-[10px] text-slate-300 truncate">{t.descripcion_raw}</div>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <select value={t.categoria}
+                      onClick={e=>e.stopPropagation()}
+                      onChange={e=>setPdfTxns(prev=>prev.map((x,j)=>j===i?{...x,categoria:e.target.value}:x))}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white cursor-pointer">
+                      {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <span className={`font-mono font-bold text-sm ${t.moneda==='USD'?'text-blue-700':'text-red-600'}`}>
+                      {t.moneda==='USD'?'US$':'$'}{Number(t.monto).toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={()=>setPdfStep('upload')} className="btn-ghost flex-1">Volver</button>
+              <button onClick={async()=>{
+                setSavingPdf(true)
+                try {
+                  const {createClient}=await import('@/lib/supabase/client')
+                  const sb=createClient()
+                  const tarjetaActual = (tarjetas??[]).find(t=>t.id===pdfTarjetaId)
+                  const toInsert = pdfTxns.filter(t=>t.selected).map(({id:_,selected:__,descripcion_raw:___,ultimos_4:____,red:_____,...t})=>t)
+                  const {error}=await sb.from('tarjeta_transacciones').insert(toInsert)
+                  if(error) throw error
+
+                  // Guardar aprendizaje: cada transacción corregida
+                  const { upsertTarjetaComercios } = await import('@/lib/queries')
+                  const aprendizaje = pdfTxns.filter(t=>t.selected && t.descripcion_raw).map(t=>({
+                    descripcion_raw: t.descripcion_raw || t.descripcion,
+                    descripcion_limpia: t.descripcion,
+                    categoria: t.categoria,
+                    tarjeta_id: pdfTarjetaId,
+                    ultimos_4: t.ultimos_4 || null,
+                    red: t.red || null,
+                    banco: tarjetaActual?.banco || null,
+                    quien: tarjetaActual?.quien || null,
+                  }))
+                  if (aprendizaje.length > 0) {
+                    await upsertTarjetaComercios(aprendizaje).catch(()=>{})
+                    setComercios(prev => {
+                      const map = new Map(prev.map(c=>[c.descripcion_raw, c]))
+                      aprendizaje.forEach(a => map.set(a.descripcion_raw, {...a, id:'', user_id:'', created_at:'', updated_at:''}))
+                      return [...map.values()]
+                    })
+                  }
+                  setPdfStep('done')
+                } catch(err:any){ setPdfError('Error guardando: '+(err.message||'')) }
+                finally { setSavingPdf(false) }
+              }} disabled={savingPdf||pdfTxns.filter(t=>t.selected).length===0}
+                className="btn-primary flex-1 disabled:opacity-50">{savingPdf?'Guardando...':'Guardar transacciones'}</button>
+            </div>
+            {pdfError && <div className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{pdfError}</div>}
+          </div>
+        )}
+
+        {pdfStep==='done' && (
+          <div className="text-center py-8">
+            <div className="text-4xl mb-3">✓</div>
+            <div className="text-slate-900 font-semibold text-lg mb-1">Transacciones importadas</div>
+            <div className="text-slate-400 text-sm mb-5">Ya aparecen en la tabla de transacciones.</div>
+            <button onClick={()=>{ setShowPDFModal(false); setPdfStep('upload'); setPdfTxns([]) }} className="btn-primary">Cerrar</button>
+          </div>
+        )}
+      </Modal>
+
     </div>
   )
 }
