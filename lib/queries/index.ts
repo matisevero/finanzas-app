@@ -219,6 +219,51 @@ export async function togglePagado(id: string, pagado: boolean) {
   if (error) throw error
 }
 
+// Marcar evento como pagado + crear egreso vinculado
+export async function pagarEvento(ev: {
+  id: string; descripcion: string; monto: number; moneda: string;
+  dia: number; mes: number; año: number; tipo: string;
+}): Promise<void> {
+  const userId = await uid()
+  const fecha = `${ev.año}-${String(ev.mes).padStart(2,'0')}-${String(ev.dia).padStart(2,'0')}`
+  const { data: egreso, error: errEg } = await sb().from('egresos')
+    .insert({
+      user_id: userId,
+      año: ev.año,
+      mes: ev.mes,
+      categoria: ev.tipo === 'tarjeta' ? 'tarjeta'
+                : ev.tipo === 'casa'    ? 'casa'
+                : ev.tipo === 'servicio'? 'servicios'
+                : ev.tipo === 'expensa' ? 'expensas'
+                : ev.tipo === 'edu'     ? 'educacion'
+                : 'otro',
+      descripcion: ev.descripcion,
+      monto: ev.monto,
+      moneda: ev.moneda,
+      fecha,
+      quien: 'ambos',
+      recurrente: false,
+    })
+    .select('id')
+    .single()
+  if (errEg) throw errEg
+  const { error: errEv } = await sb().from('eventos_calendario')
+    .update({ pagado: true, egreso_id: egreso.id })
+    .eq('id', ev.id)
+  if (errEv) throw errEv
+}
+
+// Desmarcar evento como pagado + eliminar egreso vinculado
+export async function despagarEvento(id: string, egresoId: string | null | undefined): Promise<void> {
+  if (egresoId) {
+    await sb().from('egresos').delete().eq('id', egresoId)
+  }
+  const { error } = await sb().from('eventos_calendario')
+    .update({ pagado: false, egreso_id: null })
+    .eq('id', id)
+  if (error) throw error
+}
+
 // ─── SALDO INICIAL ────────────────────────────────────────────────────────────
 export async function getSaldoInicial(año: number, mes: number): Promise<SaldoInicial | null> {
   const userId = await uid()
