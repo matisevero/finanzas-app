@@ -196,6 +196,13 @@ export async function getEventosByMes(año: number, mes: number): Promise<Evento
   return data ?? []
 }
 
+export async function getEventosByAño(año: number): Promise<EventoCalendario[]> {
+  const { data, error } = await sb().from('eventos_calendario')
+    .select('*').eq('año', año).order('mes').order('dia')
+  if (error) throw error
+  return data ?? []
+}
+
 export async function createEvento(form: EventoInsert): Promise<EventoCalendario> {
   const userId = await uid()
   const { data, error } = await sb().from('eventos_calendario')
