@@ -93,7 +93,8 @@ export default function TarjetasPage() {
 
   // Split tarjetas by moneda if they have txns in both
   const tarjetasConMoneda = useMemo(() => {
-    const result: { tarjeta: typeof (tarjetas??[])[0]; moneda: string }[] = []
+    type TarjetaItem = NonNullable<typeof tarjetas>[0]
+    const result: { tarjeta: TarjetaItem; moneda: string }[] = []
     ;(tarjetas??[]).forEach(t => {
       const monedas = [...new Set((txns??[]).filter(x=>x.tarjeta_id===t.id).map(x=>x.moneda))]
       if (monedas.length <= 1) {
