@@ -2,7 +2,7 @@
 import { useState, useMemo, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { useDeudas, useEventosMes } from '@/hooks'
-import { createDeuda, updateDeuda, deleteDeuda, togglePagado, updateEvento, deleteEvento } from '@/lib/queries'
+import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, Tabs } from '@/components/ui'
@@ -173,7 +173,21 @@ export default function DeudasPage() {
   const pagadoMes      = (eventos??[]).filter(e=>e.pagado&&e.monto).reduce((s,e)=>s+(e.monto??0),0)
   const pendientes     = (eventos??[]).filter(e=>!e.pagado).length
 
-  const handleToggle = async (id:string, pagado:boolean) => { await togglePagado(id, !pagado); refEventos() }
+  const handleToggle = async (ev: any) => {
+    if (!ev.pagado) {
+      // Marcar como pagado → crear egreso
+      if (!ev.monto) {
+        // Sin monto: solo marcar pagado sin crear egreso
+        await import('@/lib/queries').then(q => q.togglePagado(ev.id, true))
+      } else {
+        await pagarEvento({ id: ev.id, descripcion: ev.descripcion, monto: ev.monto, moneda: ev.moneda ?? 'ARS', dia: ev.dia, mes: ev.mes, año: ev.año, tipo: ev.tipo })
+      }
+    } else {
+      // Desmarcar → borrar egreso si existe
+      await despagarEvento(ev.id, ev.egreso_id)
+    }
+    refEventos()
+  }
 
   const handleUpdateEvento = async (id: string, data: any) => {
     await updateEvento(id, data); setEditingEventoId(null); refEventos()
@@ -311,7 +325,7 @@ export default function DeudasPage() {
                       <button onClick={() => handleDeleteEvento(ev.id)}
                         className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
                     </div>
-                    <button onClick={()=>handleToggle(ev.id,ev.pagado)}
+                    <button onClick={()=>handleToggle(ev)}
                       className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
                       {ev.pagado&&<span className="text-[10px]">✓</span>}
                     </button>
@@ -355,7 +369,7 @@ export default function DeudasPage() {
                       {visible.map(ev=>{
                         const t = TIPOS_EVENTO[ev.tipo]||TIPOS_EVENTO.egreso
                         return (
-                          <div key={ev.id} onClick={()=>handleToggle(ev.id,ev.pagado)}
+                          <div key={ev.id} onClick={()=>handleToggle(ev)}
                             className={`text-[9px] font-medium px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer transition-opacity ${ev.pagado?'opacity-40 line-through':''}`}
                             style={{background:t.color+'18',color:t.color}}>
                             {ev.descripcion}
@@ -415,7 +429,7 @@ export default function DeudasPage() {
                             <button onClick={() => handleDeleteEvento(ev.id)}
                               className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
                           </div>
-                          <button onClick={()=>handleToggle(ev.id,ev.pagado)}
+                          <button onClick={()=>handleToggle(ev)}
                             className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 cursor-pointer transition-all ${ev.pagado?'bg-emerald-600 border-emerald-600 text-white':'border-slate-300 bg-transparent'}`}>
                             {ev.pagado&&<span className="text-[10px]">✓</span>}
                           </button>
