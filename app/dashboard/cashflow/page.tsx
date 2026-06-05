@@ -291,9 +291,7 @@ export default function CashFlowPage() {
       id: i + 1,
       label: ev.descripcion,
       monto: ev.monto ?? 0,
-      tipo: ev.tipo === 'tarjeta' || ev.tipo === 'casa' || ev.tipo === 'servicio' ||
-            ev.tipo === 'expensa' || ev.tipo === 'edu' || ev.tipo === 'egreso'
-            ? 'deuda' : ev.tipo === 'ingreso' ? 'ingreso' : 'deuda',
+      tipo: (ev.tipo === 'ingreso' ? 'ingreso' : 'deuda') as SimItem['tipo'],
       dia: ev.dia,
     })).filter(it => it.monto > 0)
     setSimItems(items)
