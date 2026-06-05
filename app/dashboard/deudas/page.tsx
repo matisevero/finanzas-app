@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useDeudas, useEventosMes, useEventosAño, useIngresos } from '@/hooks'
 import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento } from '@/lib/queries'
@@ -513,22 +513,21 @@ export default function DeudasPage() {
       <div className="mt-6">
         <div className="mb-3">
           <div className="text-slate-900 font-semibold text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
-          <div className="text-slate-400 text-xs mt-0.5">Total deudas del mes como % de tus ingresos</div>
+          <div className="text-slate-400 text-xs mt-0.5">Qué % de tus ingresos del mes se va en pago de deudas</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <p className="text-slate-400 text-xs mb-4">Barras = ingresos del mes · Línea = cuota fija mensual · % = proporción</p>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={chartAnual} barCategoryGap="30%">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartAnual} barCategoryGap="35%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : (v/1000).toFixed(0)+'k'} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v+'%'} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v+'%'} domain={[0, 100]} />
                 <Tooltip contentStyle={{ border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number, name: string) => name === 'pct' ? [v+'%', '% deuda/ingreso'] : [new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(v), name === 'ingresos' ? 'Ingresos' : 'Deuda fija']} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#64748b' }} />
-                <Bar yAxisId="left" dataKey="ingresos" name="Ingresos" fill="#2D7D2D" radius={[3,3,0,0]} maxBarSize={32} opacity={0.7} />
-                <Bar yAxisId="left" dataKey="deudas" name="Deuda fija" fill="#C0392B" radius={[3,3,0,0]} maxBarSize={32} opacity={0.7} />
-                <Line yAxisId="right" type="monotone" dataKey="pct" name="% deuda/ingreso" stroke="#5B3FA6" strokeWidth={2} dot={{ r: 3, fill: '#5B3FA6' }} />
+                  formatter={(v: number) => [`${v}%`, '% de ingresos']}
+                  labelFormatter={(l: string) => l} />
+                <Bar dataKey="pct" name="% deudas/ingresos" radius={[3,3,0,0]} maxBarSize={40}
+                  fill="#C0392B"
+                  label={{ position: 'top', fontSize: 10, fill: '#94a3b8', formatter: (v: number) => v > 0 ? `${v}%` : '' }} />
               </BarChart>
             </ResponsiveContainer>
         </div>
