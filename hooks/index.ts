@@ -36,6 +36,9 @@ export function useCategoriasCustom(modulo: string) { return useAsync(() => Q.ge
 export function useEventosMes(año: number, mes: number) {
   return useAsync(() => Q.getEventosByMes(año, mes), [año, mes])
 }
+export function useEventosAño(año: number) {
+  return useAsync(() => Q.getEventosByAño(año), [año])
+}
 export function useSaldoInicial(año: number, mes: number) {
   return useAsync(() => Q.getSaldoInicial(año, mes), [año, mes])
 }
