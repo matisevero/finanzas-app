@@ -180,7 +180,7 @@ export default function DashboardPage() {
         {/* Flujo — 2 columnas */}
         <Card className="col-span-2 transition-all hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer group" onClick={()=>setExpandedChart('flujo')}>
           <CardTitle action={<div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
-            <span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>
+            
             <ChartToggle
               options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]}
               value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></div>}
@@ -224,7 +224,7 @@ export default function DashboardPage() {
 
         {/* Distribución Egresos — 1 columna */}
         <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('egresos')}>
-          <CardTitle action={<span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>}>Distribución Gastos</CardTitle>
+          <CardTitle action={}>Distribución Gastos</CardTitle>
           {pieEgresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -251,7 +251,7 @@ export default function DashboardPage() {
 
         {/* Distribución Ingresos — 1 columna */}
         <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('ingresos')}>
-          <CardTitle action={<span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium uppercase tracking-wider">clic para ampliar</span>}>Distribución Ingresos</CardTitle>
+          <CardTitle action={}>Distribución Ingresos</CardTitle>
           {pieIngresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -279,23 +279,21 @@ export default function DashboardPage() {
 
       {/* ── Deudas y Tarjetas ── */}
       <div className="grid grid-cols-2 gap-5">
-        <Card className="hover:border-slate-300 transition-all">
-          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('deudas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/deudas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Deudas activas</CardTitle>
-          {(deudas??[]).length===0?(
-            <div className="text-slate-400 text-sm text-center py-4">Sin deudas registradas</div>
-          ):(deudas??[]).map(d=>{
-            const pct = Math.round(((d.total_original-d.pendiente)/d.total_original)*100)
-            return (
-              <div key={d.id} className="mb-4">
-                <div className="flex justify-between mb-1.5">
-                  <span className="text-slate-700 text-sm font-medium">{d.nombre}</span>
-                  <span className="font-mono text-sm font-bold" style={{color:d.color}}>{fmt(d.pendiente,m)}</span>
+        <Card className="hover:border-slate-300 transition-all cursor-pointer" onClick={()=>router.push('/dashboard/deudas')}>
+          <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>Vencimientos del mes</CardTitle>
+          {(eventosMes??[]).filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
+            <div className="text-slate-400 text-sm text-center py-4">Sin vencimientos pendientes 🎉</div>
+          ):(eventosMes??[]).filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).sort((a,b)=>a.dia-b.dia).slice(0,6).map(ev=>(
+            <div key={ev.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-bold text-slate-500">{ev.dia}</span>
                 </div>
-                <ProgressBar value={pct} color={d.color} />
-                <div className="text-slate-400 text-xs mt-1">{pct}% pagado · cuota {fmt(d.cuota_mensual,m)}/mes</div>
+                <span className="text-slate-700 text-sm truncate max-w-[160px]">{ev.descripcion}</span>
               </div>
-            )
-          })}
+              <span className="font-mono text-sm font-bold text-red-500 flex-shrink-0">{fmt(ev.monto??0,m)}</span>
+            </div>
+          ))}
         </Card>
 
         <Card className="hover:border-slate-300 transition-all">
