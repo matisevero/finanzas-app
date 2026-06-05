@@ -1,10 +1,9 @@
 'use client'
 import { useAppStore } from '@/store/appStore'
 import { usePageHeader } from '@/context/PageHeaderContext'
-import { MONEDAS_INFO } from '@/lib/utils/constants'
 
 export default function TopBar() {
-  const { añoActivo, setAñoActivo, monedaPrincipal, monedasAhorro, monedasCripto } = useAppStore()
+  const { añoActivo, setAñoActivo, monedaPrincipal } = useAppStore()
   const { title, subtitle, action } = usePageHeader()
 
   return (
@@ -19,29 +18,6 @@ export default function TopBar() {
       </div>
 
       {action && <div className="flex-shrink-0">{action}</div>}
-
-      <div className="w-px h-5 bg-slate-200 flex-shrink-0" />
-
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg px-3 py-1.5">
-          <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Principal</span>
-          <span className="text-slate-900 text-xs font-bold font-mono">
-            {MONEDAS_INFO[monedaPrincipal].flag} {monedaPrincipal}
-          </span>
-        </div>
-        {monedasAhorro.length > 0 && (
-          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5">
-            <span className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider">Ahorro</span>
-            <span className="text-emerald-700 text-xs font-bold font-mono">{monedasAhorro.join(' · ')}</span>
-          </div>
-        )}
-        {monedasCripto.length > 0 && (
-          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
-            <span className="text-amber-600 text-[10px] font-bold uppercase tracking-wider">Cripto</span>
-            <span className="text-amber-700 text-xs font-bold font-mono">{monedasCripto.join(' · ')}</span>
-          </div>
-        )}
-      </div>
 
       <div className="w-px h-5 bg-slate-200 flex-shrink-0" />
 
