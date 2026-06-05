@@ -72,67 +72,6 @@ function MultiDropdown({ label, options, selected, onChange }: {
           </div>
         </div>
       )}
-      {/* ── Modal gráfico expandido ── */}
-      {expandedChart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
-            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
-
-            {expandedChart==='evolucion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
-              <div className="flex gap-2 flex-wrap mb-4">
-                {tiposBase.map(({ key, label, color }) => (
-                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
-                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
-                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-                    <span className="text-slate-500 text-xs">{label}</span>
-                  </button>
-                ))}
-              </div>
-              <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
-                  <Tooltip content={renderTooltip} />
-                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
-                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </>}
-
-            {expandedChart==='composicion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
-              <div className="grid grid-cols-2 gap-8 items-center">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
-                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-col gap-3">
-                  {compData.map((d, i) => (
-                    <div key={d.name} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-slate-600 text-sm">{d.name}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
-                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>}
-          </div>
-        </div>
-      )}
 
     </div>
   )
@@ -170,67 +109,6 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
         <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, marginTop: 6, borderTop: '1px solid #f1f5f9' }}>
           <span style={{ fontSize: 10, color: '#94a3b8' }}>Total</span>
           <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#334155' }}>{fmt(total, m)}</span>
-        </div>
-      )}
-      {/* ── Modal gráfico expandido ── */}
-      {expandedChart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
-            <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
-
-            {expandedChart==='evolucion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
-              <div className="flex gap-2 flex-wrap mb-4">
-                {tiposBase.map(({ key, label, color }) => (
-                  <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
-                    className="flex items-center gap-1.5 border-none bg-transparent cursor-pointer p-0 transition-opacity"
-                    style={{ opacity: hiddenKeys.includes(key) ? 0.3 : 1 }}>
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-                    <span className="text-slate-500 text-xs">{label}</span>
-                  </button>
-                ))}
-              </div>
-              <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={chartData} barCategoryGap="28%" barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => v === 0 ? '' : fmtFull(v, m)} width={120} />
-                  <Tooltip content={renderTooltip} />
-                  {tiposBase.filter(({ key }) => !hiddenKeys.includes(key)).map(({ key, color }) => (
-                    <Bar key={key} dataKey={key} name={key} fill={color} radius={0} maxBarSize={36} stackId={chartType === 'apilado' ? 'stack' : undefined} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </>}
-
-            {expandedChart==='composicion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
-              <div className="grid grid-cols-2 gap-8 items-center">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
-                      {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-col gap-3">
-                  {compData.map((d, i) => (
-                    <div key={d.name} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-slate-600 text-sm">{d.name}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-slate-400 text-xs">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
-                        <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value, m)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>}
-          </div>
         </div>
       )}
 
