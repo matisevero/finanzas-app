@@ -242,7 +242,7 @@ export default function DeudasPage() {
         })
       }
       setShowEvModal(false)
-      setEvForm({ descripcion: '', tipo: 'egreso', dia: String(HOY_DIA), monto: '', moneda: 'ARS', recurrente: false, cuotas: '1' })
+      setEvForm({ descripcion: '', tipo: 'egreso', dia: String(HOY_DIA), monto: '', moneda: 'ARS', recurrente: false, cuotas: '1', gastoFijo: false })
       refEventos()
     } catch(e) { console.error(e) } finally { setSaving(false) }
   }
