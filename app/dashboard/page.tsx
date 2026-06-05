@@ -179,11 +179,7 @@ export default function DashboardPage() {
 
         {/* Flujo — 2 columnas */}
         <Card className="col-span-2 transition-all hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer group" onClick={()=>setExpandedChart('flujo')}>
-          <CardTitle action={<div className="flex items-center gap-2" onClick={e=>e.stopPropagation()}>
-            
-            <ChartToggle
-              options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]}
-              value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></div>}
+          <CardTitle action={<div onClick={e=>e.stopPropagation()}><ChartToggle options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]} value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></div>}
           >
             Flujo Financiero {añoActivo}
           </CardTitle>
@@ -224,7 +220,7 @@ export default function DashboardPage() {
 
         {/* Distribución Egresos — 1 columna */}
         <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('egresos')}>
-          <CardTitle action={}>Distribución Gastos</CardTitle>
+          <CardTitle>Distribución Gastos</CardTitle>
           {pieEgresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
@@ -251,7 +247,7 @@ export default function DashboardPage() {
 
         {/* Distribución Ingresos — 1 columna */}
         <Card className="hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group" onClick={()=>setExpandedChart('ingresos')}>
-          <CardTitle action={}>Distribución Ingresos</CardTitle>
+          <CardTitle>Distribución Ingresos</CardTitle>
           {pieIngresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
