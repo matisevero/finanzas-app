@@ -1,12 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { fmt } from '@/lib/utils/formatters'
-import { MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
+import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, ChartToggle, ProgressBar, LoadingSpinner } from '@/components/ui'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a', boxShadow:'0 4px 12px rgba(0,0,0,0.08)' }
@@ -35,6 +35,7 @@ export default function DashboardPage() {
   // Widget config
   const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS)
   const [editingWidgets, setEditingWidgets] = useState(false)
+  const [expandedChart, setExpandedChart] = useState<'flujo'|'egresos'|'ingresos'|'deudas'|'tarjetas'|null>(null)
 
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
@@ -108,7 +109,6 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Panel Financiero"
-        subtitle={`Resumen anual — ${añoActivo}`}
         action={
           <button
             onClick={() => setEditingWidgets(v => !v)}
@@ -149,7 +149,7 @@ export default function DashboardPage() {
                 className={`bg-white border border-slate-200 rounded-2xl p-5 relative overflow-hidden transition-all shadow-card ${
                   editingWidgets
                     ? 'ring-2 ring-blue-400 ring-offset-1 cursor-default opacity-80'
-                    : 'hover:shadow-card-hover hover:border-slate-300 cursor-pointer'
+                    : 'hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer'
                 }`}
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
@@ -178,12 +178,13 @@ export default function DashboardPage() {
       <div className="grid grid-cols-4 gap-5 mb-5">
 
         {/* Flujo — 2 columnas */}
-        <Card className="col-span-2">
-          <CardTitle action={
+        <Card className="col-span-2 transition-all hover:shadow-lg hover:border-slate-300">
+          <CardTitle action={<>
+            <button onClick={()=>setExpandedChart('flujo')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button>
             <ChartToggle
               options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]}
-              value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} />
-          }>
+              value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></>}
+          >
             Flujo Financiero {añoActivo}
           </CardTitle>
           <ResponsiveContainer width="100%" height={220}>
@@ -192,7 +193,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} />
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v/1000,m).replace(/[^0-9kKMm.,]/g,'')+'k'} />
-                <Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,m)]} />
+                <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                 <Legend wrapperStyle={{color:'#64748b',fontSize:12}} />
                 <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={28} />
                 <Bar dataKey="Gastos"   fill="#C0392B" radius={[4,4,0,0]} maxBarSize={28} />
@@ -212,7 +213,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} />
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,m)]} />
+                <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                 <Legend wrapperStyle={{color:'#64748b',fontSize:12}} />
                 <Area type="monotone" dataKey="Ingresos" stroke="#2D7D2D" fill="url(#gI)" strokeWidth={2.5} />
                 <Area type="monotone" dataKey="Gastos"   stroke="#C0392B" fill="url(#gE)" strokeWidth={2.5} />
@@ -223,15 +224,14 @@ export default function DashboardPage() {
 
         {/* Distribución Egresos — 1 columna */}
         <Card
-          className="cursor-pointer hover:border-slate-300 transition-all"
-          onClick={() => router.push('/dashboard/egresos')}>
-          <CardTitle>Distribución Gastos</CardTitle>
+          className="hover:border-slate-300 transition-all">
+          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('egresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/egresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Distribución Gastos</CardTitle>
           {pieEgresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3} dataKey="value">
                   {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
-                </Pie><Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,m)]} /></PieChart>
+                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1 mt-2">
                 {pieEgresoData.slice(0,5).map((d,i)=>(
@@ -252,15 +252,14 @@ export default function DashboardPage() {
 
         {/* Distribución Ingresos — 1 columna */}
         <Card
-          className="cursor-pointer hover:border-slate-300 transition-all"
-          onClick={() => router.push('/dashboard/ingresos')}>
-          <CardTitle>Distribución Ingresos</CardTitle>
+          className="hover:border-slate-300 transition-all">
+          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('ingresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/ingresos')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Distribución Ingresos</CardTitle>
           {pieIngresoData.length>0?(
             <>
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3} dataKey="value">
                   {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
-                </Pie><Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,m)]} /></PieChart>
+                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1 mt-2">
                 {pieIngresoData.map((d,i)=>(
@@ -282,8 +281,8 @@ export default function DashboardPage() {
 
       {/* ── Deudas y Tarjetas ── */}
       <div className="grid grid-cols-2 gap-5">
-        <Card className="cursor-pointer hover:border-slate-300 transition-all" onClick={() => router.push('/dashboard/deudas')}>
-          <CardTitle>Deudas activas</CardTitle>
+        <Card className="hover:border-slate-300 transition-all">
+          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('deudas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/deudas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Deudas activas</CardTitle>
           {(deudas??[]).length===0?(
             <div className="text-slate-400 text-sm text-center py-4">Sin deudas registradas</div>
           ):(deudas??[]).map(d=>{
@@ -301,8 +300,8 @@ export default function DashboardPage() {
           })}
         </Card>
 
-        <Card className="cursor-pointer hover:border-slate-300 transition-all" onClick={() => router.push('/dashboard/tarjetas')}>
-          <CardTitle>Tarjetas de crédito</CardTitle>
+        <Card className="hover:border-slate-300 transition-all">
+          <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Tarjetas de crédito</CardTitle>
           {(tarjetas??[]).length===0?(
             <div className="text-slate-400 text-sm text-center py-4">Sin tarjetas registradas</div>
           ):(tarjetas??[]).map(t=>(
@@ -326,6 +325,118 @@ export default function DashboardPage() {
           ))}
         </Card>
       </div>
+      {/* ── Modal expandido ── */}
+      {expandedChart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative">
+            <button onClick={()=>setExpandedChart(null)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
+
+            {expandedChart==='flujo' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Flujo Financiero {añoActivo}</div>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartFlowData} barCategoryGap="30%" barGap={3}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} />
+                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v/1000,m)+'k'} />
+                  <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
+                  <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
+                  <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={36} />
+                  <Bar dataKey="Gastos"   fill="#C0392B" radius={[4,4,0,0]} maxBarSize={36} />
+                </BarChart>
+              </ResponsiveContainer>
+            </>}
+
+            {expandedChart==='egresos' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Distribución Gastos {añoActivo}</div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                    {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-2.5">
+                  {pieEgresoData.map((d,i)=>(
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{fmt(d.value,m)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+
+            {expandedChart==='ingresos' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Distribución Ingresos {añoActivo}</div>
+              <div className="grid grid-cols-2 gap-8 items-center">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
+                    {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-2.5">
+                  {pieIngresoData.map((d,i)=>(
+                    <div key={d.name} className="flex justify-between items-center">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
+                        <span className="text-slate-600 text-sm">{d.name}</span>
+                      </div>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{fmt(d.value,m)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>}
+
+            {expandedChart==='deudas' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Deudas activas</div>
+              <div className="flex flex-col gap-5">
+                {(deudas??[]).map(d=>{
+                  const pct = Math.round(((d.total_original-d.pendiente)/d.total_original)*100)
+                  return (
+                    <div key={d.id}>
+                      <div className="flex justify-between mb-2">
+                        <span className="text-slate-700 font-medium">{d.nombre}</span>
+                        <span className="font-mono font-bold text-lg" style={{color:d.color}}>{fmt(d.pendiente,m)}</span>
+                      </div>
+                      <ProgressBar value={pct} color={d.color} height={8} />
+                      <div className="flex justify-between mt-1 text-xs text-slate-400">
+                        <span>{pct}% pagado</span>
+                        <span>Cuota: {fmt(d.cuota_mensual,m)}/mes</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>}
+
+            {expandedChart==='tarjetas' && <>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Tarjetas de crédito</div>
+              <div className="flex flex-col gap-5">
+                {(tarjetas??[]).map(t=>(
+                  <div key={t.id} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{background:t.color}}>
+                      {t.icono}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-slate-800 font-semibold">{t.nombre}</div>
+                      <div className="text-slate-400 text-sm">{t.banco} · {t.quien}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono text-lg font-bold text-slate-700">{fmt(t.limite,m)}</div>
+                      <div className="text-slate-400 text-xs">límite</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
