@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
@@ -37,9 +37,9 @@ export default function TarjetasPage() {
   const [comercios, setComercios]     = useState<any[]>([])
 
   // Cargar historial de comercios al montar
-  useState(() => {
+  useEffect(() => {
     import('@/lib/queries').then(q => q.getTarjetasComercios()).then(setComercios).catch(()=>{})
-  })
+  }, [])
   const [saving, setSaving]       = useState(false)
   const [form, setForm]           = useState(FORM_INIT)
 
