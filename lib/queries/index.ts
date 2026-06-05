@@ -331,3 +331,50 @@ export async function upsertPrecioHistorial(itemId: string, mes: string, valor: 
     .upsert({ item_id: itemId, mes, valor, moneda }, { onConflict: 'item_id,mes' })
   if (error) throw error
 }
+
+// ─── TARJETA COMERCIOS (aprendizaje) ─────────────────────────────────────────
+export interface TarjetaComercio {
+  id: string
+  user_id: string
+  descripcion_raw: string
+  descripcion_limpia: string | null
+  categoria: string
+  tarjeta_id: string | null
+  ultimos_4: string | null
+  red: string | null
+  banco: string | null
+  quien: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function getTarjetasComercios(): Promise<TarjetaComercio[]> {
+  const userId = await uid()
+  const { data, error } = await sb()
+    .from('tarjeta_comercios')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function upsertTarjetaComercio(row: Omit<TarjetaComercio, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<void> {
+  const userId = await uid()
+  const { error } = await sb()
+    .from('tarjeta_comercios')
+    .upsert(
+      { ...row, user_id: userId, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,descripcion_raw' }
+    )
+  if (error) throw error
+}
+
+export async function upsertTarjetaComercios(rows: Omit<TarjetaComercio, 'id' | 'user_id' | 'created_at' | 'updated_at'>[]): Promise<void> {
+  const userId = await uid()
+  const toUpsert = rows.map(r => ({ ...r, user_id: userId, updated_at: new Date().toISOString() }))
+  const { error } = await sb()
+    .from('tarjeta_comercios')
+    .upsert(toUpsert, { onConflict: 'user_id,descripcion_raw' })
+  if (error) throw error
+}
