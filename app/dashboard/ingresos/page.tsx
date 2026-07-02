@@ -278,6 +278,7 @@ export default function IngresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
+  const [modalEditId, setModalEditId] = useState<string|null>(null)
   const [saving, setSaving]           = useState(false)
   const [form, setForm]               = useState(FORM_INIT)
   const [editingId, setEditingId]     = useState<string|null>(null)
@@ -381,9 +382,22 @@ export default function IngresosPage() {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
-      await createIngreso({ tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
-      setShowModal(false); setForm(FORM_INIT); refetch()
+      if (modalEditId) {
+        await updateIngreso(modalEditId, { tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+      } else {
+        await createIngreso({ tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+      }
+      setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const openEditModal = (ingreso: Ingreso) => {
+    setForm({
+      tipo: ingreso.tipo, monto: String(ingreso.monto), descripcion: ingreso.descripcion,
+      fecha: ingreso.fecha, moneda: ingreso.moneda as Moneda, quien: ingreso.quien, recurrente: ingreso.recurrente,
+    })
+    setModalEditId(ingreso.id)
+    setShowModal(true)
   }
 
   // Fila Sheet — guardar nuevo ingreso rápido
@@ -430,7 +444,7 @@ export default function IngresosPage() {
   return (
     <div>
       <PageHeader title="Ingresos"
-        action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo ingreso</button>} />
+        action={<button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>} />
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -505,7 +519,7 @@ export default function IngresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg}`} style={{width:72}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-700 font-medium">{ingreso.descripcion || cfg.label}</span></td>
+                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span></td>
                             case 'tipo':        return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
                             case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`} style={{width:116}}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
@@ -576,7 +590,7 @@ export default function IngresosPage() {
           <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>setExpandedChart('composicion')}>
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
               {(['composicion', 'top'] as const).map(v => (
-                <button key={v} onClick={() => setSidePanel(v)}
+                <button key={v} onClick={(e) => { e.stopPropagation(); setSidePanel(v) }}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
                   {v === 'composicion' ? 'Composición' : 'Top categorías'}
                 </button>
@@ -653,7 +667,7 @@ export default function IngresosPage() {
         </div>
       </div>
 
-      <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT) }} title="Nuevo ingreso">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} title={modalEditId ? 'Editar ingreso' : 'Nuevo ingreso'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Tipo</FieldLabel>
             <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
@@ -683,8 +697,8 @@ export default function IngresosPage() {
             <span className="text-slate-600 text-sm">Ingreso recurrente</span>
           </label>
           <div className="flex gap-3 pt-2">
-            <button onClick={() => { setShowModal(false); setForm(FORM_INIT) }} className="btn-ghost flex-1">Cancelar</button>
-            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
         </div>
       </Modal>

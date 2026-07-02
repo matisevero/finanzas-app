@@ -277,6 +277,7 @@ export default function EgresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
+  const [modalEditId, setModalEditId] = useState<string|null>(null)
   const [saving, setSaving]           = useState(false)
   const [form, setForm]               = useState(FORM_INIT)
   const [editingId, setEditingId]     = useState<string|null>(null)
@@ -374,9 +375,22 @@ export default function EgresosPage() {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
-      await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
-      setShowModal(false); setForm(FORM_INIT); refetch()
+      if (modalEditId) {
+        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+      } else {
+        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+      }
+      setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const openEditModal = (egreso: Egreso) => {
+    setForm({
+      categoria: egreso.categoria, monto: String(egreso.monto), descripcion: egreso.descripcion,
+      fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
+    })
+    setModalEditId(egreso.id)
+    setShowModal(true)
   }
 
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
@@ -421,7 +435,7 @@ export default function EgresosPage() {
   return (
     <div>
       <PageHeader title="Egresos"
-        action={<button className="btn-primary" onClick={() => setShowModal(true)}>+ Nuevo egreso</button>} />
+        action={<button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo egreso</button>} />
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -496,7 +510,7 @@ export default function EgresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg}`} style={{width:72}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="text-slate-700 font-medium">{egreso.descripcion || cfg.label}</span></td>
+                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span></td>
                             case 'categoria':   return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
                             case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`} style={{width:116}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
@@ -567,7 +581,7 @@ export default function EgresosPage() {
           <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>{ if(sidePanel==='composicion') setExpandedChart('composicion') }}>
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4" onClick={e=>e.stopPropagation()}>
               {(['composicion', 'top'] as const).map(v => (
-                <button key={v} onClick={() => setSidePanel(v)}
+                <button key={v} onClick={(e) => { e.stopPropagation(); setSidePanel(v) }}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border-none cursor-pointer ${sidePanel === v ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
                   {v === 'composicion' ? 'Composición' : 'Top categorías'}
                 </button>
@@ -641,7 +655,7 @@ export default function EgresosPage() {
         </div>
       </div>
 
-      <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT) }} title="Nuevo egreso">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} title={modalEditId ? 'Editar egreso' : 'Nuevo egreso'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Categoría</FieldLabel>
             <CategoriaSelector modulo="egresos" value={form.categoria} onChange={v => setForm(p => ({ ...p, categoria: v }))}
@@ -671,8 +685,8 @@ export default function EgresosPage() {
             <span className="text-slate-600 text-sm">Egreso recurrente</span>
           </label>
           <div className="flex gap-3 pt-2">
-            <button onClick={() => { setShowModal(false); setForm(FORM_INIT) }} className="btn-ghost flex-1">Cancelar</button>
-            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
         </div>
       </Modal>
