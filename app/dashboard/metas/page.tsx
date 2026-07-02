@@ -81,7 +81,7 @@ export default function MetasPage() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
           {l:'Metas activas',      v:String(kpis.total),              s:kpis.compl>0?kpis.compl+' completadas':'',          c:'#1A5E9E'},
-          {l:'Completadas',        v:`${kpis.compl}/${kpis.total}`,   s:'Objetivos alcanzados',                              c:'#2D7D2D'},
+          {l:'Completadas',        v:`${kpis.compl}/${kpis.total}`,   s:'Objetivos alcanzados',                              c:'#40B046'},
           {l:'Próximo vencimiento',v:kpis.proxMeses!=null?kpis.proxMeses+' meses':'—', s:kpis.proxMeta?.nombre||'Sin metas activas', c:'#E8A020'},
           {l:'En progreso',        v:String((metas??[]).filter(m=>!m.completada).length), s:'Metas sin completar',           c:'#5B3FA6'},
         ].map(k=>(
@@ -130,7 +130,7 @@ export default function MetasPage() {
                   <ProgressBar value={pct} color={meta.color} height={8} />
                   <div className="flex justify-between mt-1.5 mb-4">
                     <span className="text-slate-400 text-xs">Falta {fmt(falta,mon)}</span>
-                    <span className="text-xs font-bold" style={{color:meta.completada?'#2D7D2D':meta.color}}>
+                    <span className="text-xs font-bold" style={{color:meta.completada?'#40B046':meta.color}}>
                       {meta.completada?'✓ Completada':pct+'% alcanzado'}
                     </span>
                   </div>

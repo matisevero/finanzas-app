@@ -14,7 +14,7 @@ import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import type { Moneda, Quien, Ingreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
-const PIE_COLORS = ['#2D7D2D','#52A852','#BA7517','#1A5E9E','#5B3FA6','#E8A020','#1D9E75','#888780']
+const PIE_COLORS = ['#40B046','#52A852','#BA7517','#1A5E9E','#5B3FA6','#E8A020','#1D9E75','#888780']
 const HOY = new Date()
 const PAGE_SIZE = 30
 
@@ -413,8 +413,8 @@ export default function IngresosPage() {
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#2D7D2D" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
-        <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#2D7D2D" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
+        <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#40B046" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
+        <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#40B046" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
         <StatCard label="Ingresos extra"        value={fmt(total - salarios, m)} color="#52A852" sub="Freelance + alquiler + otros" />
         <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" sub="Sobre meses con datos" />
       </div>

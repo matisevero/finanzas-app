@@ -16,7 +16,7 @@ const HOY_AÑO = HOY.getFullYear()
 
 const CATEGORIAS_EVENTO = [
   { key: 'tarjeta',  label: 'Tarjeta',    color: '#1A5E9E' },
-  { key: 'casa',     label: 'Casa',        color: '#2D7D2D' },
+  { key: 'casa',     label: 'Casa',        color: '#40B046' },
   { key: 'servicio', label: 'Servicios',   color: '#E8A020' },
   { key: 'expensa',  label: 'Expensas',    color: '#5B3FA6' },
   { key: 'edu',      label: 'Educación',   color: '#D4537E' },
@@ -99,7 +99,7 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
           </div>
           <div><label className="label mb-1.5 block">Color</label>
             <div className="flex gap-2 mt-1">
-              {['#5B3FA6','#C0392B','#1D9E75','#2D7D2D','#1A5E9E','#E8A020','#D4537E'].map(col => (
+              {['#5B3FA6','#F54927','#1D9E75','#40B046','#1A5E9E','#E8A020','#D4537E'].map(col => (
                 <button key={col} type="button" onClick={() => setForm(p => ({ ...p, color: col }))}
                   className={"w-7 h-7 rounded-full border-2 cursor-pointer transition-all " + (form.color === col ? 'border-slate-900 scale-110' : 'border-transparent')}
                   style={{ background: col }} />
@@ -296,9 +296,9 @@ export default function DeudasPage() {
 
       {/* ── StatCards ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label="Vence este mes"     value={fmt(venceMes, m)}           color="#C0392B" sub={`${pendientes} pendientes`} />
-        <StatCard label="Pagado este mes"    value={fmt(pagadoMes, m)}           color="#2D7D2D" sub="del mes actual" />
-        <StatCard label="% sobre ingresos"   value={`${pctDeudaIngresos}%`}      color={pctDeudaIngresos > 40 ? '#C0392B' : pctDeudaIngresos > 25 ? '#E8A020' : '#2D7D2D'} sub="deudas / ingresos del mes" />
+        <StatCard label="Vence este mes"     value={fmt(venceMes, m)}           color="#F54927" sub={`${pendientes} pendientes`} />
+        <StatCard label="Pagado este mes"    value={fmt(pagadoMes, m)}           color="#40B046" sub="del mes actual" />
+        <StatCard label="% sobre ingresos"   value={`${pctDeudaIngresos}%`}      color={pctDeudaIngresos > 40 ? '#F54927' : pctDeudaIngresos > 25 ? '#E8A020' : '#40B046'} sub="deudas / ingresos del mes" />
         <StatCard label="Deudas LP activas"  value={String((deudas ?? []).length)} color="#5B3FA6" sub={`Cuota fija: ${fmt(cuotaMensual, m)}`} />
       </div>
 
@@ -526,7 +526,7 @@ export default function DeudasPage() {
                   formatter={(v: number) => [`${v}%`, '% de ingresos']}
                   labelFormatter={(l: string) => l} />
                 <Bar dataKey="pct" name="% deudas/ingresos" radius={[3,3,0,0]} maxBarSize={40}
-                  fill="#C0392B"
+                  fill="#F54927"
                   label={{ position: 'top', fontSize: 10, fill: '#94a3b8', formatter: (v: number) => v > 0 ? `${v}%` : '' }} />
               </BarChart>
             </ResponsiveContainer>
@@ -642,7 +642,7 @@ export default function DeudasPage() {
             </div>
             <div><FieldLabel>Color</FieldLabel>
               <div className="flex gap-2 mt-1">
-                {['#5B3FA6','#C0392B','#1D9E75','#2D7D2D','#1A5E9E','#E8A020','#D4537E'].map(c => (
+                {['#5B3FA6','#F54927','#1D9E75','#40B046','#1A5E9E','#E8A020','#D4537E'].map(c => (
                   <button key={c} onClick={() => setDeudaForm(p => ({ ...p, color: c }))}
                     className={`w-7 h-7 rounded-full border-2 cursor-pointer transition-all ${deudaForm.color === c ? 'border-slate-900 scale-110' : 'border-transparent'}`}
                     style={{ background: c }} />

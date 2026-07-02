@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createCategoriaCustom } from '@/lib/queries'
 import type { CategoriaCustom } from '@/types'
 
-const COLORES = ['#888780','#2D7D2D','#C0392B','#1A5E9E','#E8A020','#5B3FA6','#D4537E','#1D9E75','#E05A22','#BA7517']
+const COLORES = ['#888780','#40B046','#F54927','#1A5E9E','#E8A020','#5B3FA6','#D4537E','#1D9E75','#E05A22','#BA7517']
 
 function flattenCats(cats: CategoriaCustom[], indent = 0): { id: string; label: string; icono: string; color: string; indent: number }[] {
   const result: { id: string; label: string; icono: string; color: string; indent: number }[] = []

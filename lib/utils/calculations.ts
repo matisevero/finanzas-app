@@ -46,7 +46,7 @@ export function calcularSalud(
       valorActual: `${(ratioDeuda*100).toFixed(1)}% del ingreso`, valorIdeal: '< 36%',
       descripcion: 'Cuotas mensuales vs ingreso', ok: ratioDeuda < 0.36,
       tip: ratioDeuda < 0.36 ? 'Tus cuotas están dentro del rango saludable.' : 'Tus cuotas superan el 36%. Considerá reducir deuda.' },
-    { nombre: 'Tasa de ahorro', score: scores.ahorro, peso: 25, color: '#2D7D2D', icono: '💰',
+    { nombre: 'Tasa de ahorro', score: scores.ahorro, peso: 25, color: '#40B046', icono: '💰',
       valorActual: `${(ratioAhorro*100).toFixed(1)}% del ingreso`, valorIdeal: '> 20%',
       descripcion: 'Dinero libre después de todo', ok: ratioAhorro >= 0.20,
       tip: ratioAhorro >= 0.20 ? 'Excelente tasa de ahorro. Considerá invertir el excedente.' : 'Tu tasa de ahorro es baja. Revisá gastos en tarjetas.' },
@@ -67,7 +67,7 @@ export function calcularSalud(
   return {
     total,
     label: total >= 75 ? 'Saludable' : total >= 50 ? 'Moderado' : 'Atención',
-    color: total >= 75 ? '#2D7D2D' : total >= 50 ? '#E8A020' : '#C0392B',
+    color: total >= 75 ? '#40B046' : total >= 50 ? '#E8A020' : '#F54927',
     categorias,
   }
 }

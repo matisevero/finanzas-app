@@ -10,12 +10,12 @@ import type { Moneda, Quien } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10' }
-const CHART_COLORS = ['#1A5E9E','#C0392B','#2D7D2D','#5B3FA6','#E8A020','#D4537E','#1D9E75']
+const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75']
 const CAT_COLORS: Record<string,{bg:string,c:string}> = {
-  'Alimentación':{bg:'#EAF3DE',c:'#3B6D11'},'Tecnología':{bg:'#E6F1FB',c:'#185FA5'},
+  'Alimentación':{bg:'#E9F6EA',c:'#3B6D11'},'Tecnología':{bg:'#E6F1FB',c:'#185FA5'},
   'Ropa':{bg:'#FBEAF0',c:'#72243E'},'Hogar':{bg:'#EEEDFE',c:'#3C3489'},
   'Viajes':{bg:'#E1F5EE',c:'#0F6E56'},'Entretenimiento':{bg:'#FAEEDA',c:'#854F0B'},
-  'Salud':{bg:'#FCEBEB',c:'#A32D2D'},'Otros':{bg:'#F1EFE8',c:'#5F5E5A'},
+  'Salud':{bg:'#FEF0EE',c:'#D03E21'},'Otros':{bg:'#F1EFE8',c:'#5F5E5A'},
 }
 
 export default function TarjetasPage() {
@@ -252,7 +252,7 @@ export default function TarjetasPage() {
             <div className="flex flex-col gap-3">
               {[
                 {l:'Total pagado 2026', v:fmt(kpiTotal,m), s:activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||''},
-                {l:`Último pago (${MESES_CORTOS[new Date().getMonth()]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#C0392B':'#2D7D2D'},
+                {l:`Último pago (${MESES_CORTOS[new Date().getMonth()]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
                 {l:'Mes más caro', v:fmt(kpiMayor,m), s:kpiMayorMes},
               ].map(k=>(
                 <div key={k.l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
@@ -308,7 +308,7 @@ export default function TarjetasPage() {
           </div>
           <div><FieldLabel>Color</FieldLabel>
             <div className="flex gap-2 mt-1">
-              {['#1A5E9E','#C0392B','#7F77DD','#EF9F27','#D4537E','#1D9E75','#639922'].map(c=>(
+              {['#1A5E9E','#F54927','#7F77DD','#EF9F27','#D4537E','#1D9E75','#639922'].map(c=>(
                 <button key={c} onClick={()=>setForm(p=>({...p,color:c}))} className={`w-7 h-7 rounded-full border-2 cursor-pointer ${form.color===c?'border-slate-900 scale-110':'border-transparent'}`} style={{background:c}} />
               ))}
             </div>

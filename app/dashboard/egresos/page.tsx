@@ -14,7 +14,7 @@ import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import type { Moneda, Quien, Egreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
-const PIE_COLORS = ['#1A5E9E','#C0392B','#2D7D2D','#E8A020','#D4537E','#5B3FA6','#1D9E75','#888780']
+const PIE_COLORS = ['#1A5E9E','#F54927','#40B046','#E8A020','#D4537E','#5B3FA6','#1D9E75','#888780']
 const HOY = new Date()
 const PAGE_SIZE = 30
 
@@ -404,9 +404,9 @@ export default function EgresosPage() {
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#C0392B" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
+        <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#F54927" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
         <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
-        <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#2D7D2D" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
+        <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#40B046" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
         <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" sub="Sobre meses con datos" />
       </div>
 

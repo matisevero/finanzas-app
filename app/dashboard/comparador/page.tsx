@@ -9,8 +9,8 @@ import { PageHeader, Card, LoadingSpinner } from '@/components/ui'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 
-const ING_COLORS = ['#2D7D2D','#52A852','#85C985','#B8E0B8','#D4EDD4','#1A6B1A','#3D9E3D']
-const EGR_COLORS = ['#C0392B','#E05A22','#F28B30','#F5B042','#F7C96A','#D9776C','#C94E42','#A83228','#E8A598','#F0C4BE']
+const ING_COLORS = ['#40B046','#52A852','#85C985','#B8E0B8','#D4EDD4','#1A6B1A','#3D9E3D']
+const EGR_COLORS = ['#F54927','#E05A22','#F28B30','#F5B042','#F7C96A','#D9776C','#C94E42','#A83228','#E8A598','#F0C4BE']
 const DEU_COLORS = ['#5B3FA6','#8462CC','#A988D8','#CBAFE6','#7B5FC4','#9B7FD4','#DDD0F4']
 const TAR_COLORS = ['#1A5E9E','#2E7EC2','#4D9AD4','#72B3E0','#97CCE8','#BCDFF2','#0D4A82','#3A90D0']
 

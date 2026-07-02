@@ -10,7 +10,7 @@ import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel } from 
 import type { PrecioItem, PrecioHistorial } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
-const CHART_COLORS = ['#1A5E9E','#C0392B','#2D7D2D','#5B3FA6','#E8A020','#D4537E','#1D9E75','#888780']
+const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75','#888780']
 const ICONOS = ['💧','🏠','⚡','🔥','🌐','🚗','🛒','💊','📺','🎵','📦','💳','📱','✈️','🏋️','📚','👔','👩','🌿','🏢']
 
 export default function PreciosPage() {

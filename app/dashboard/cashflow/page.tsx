@@ -22,8 +22,8 @@ interface SimItem {
 }
 
 const CHIP_STYLE: Record<string, { bg: string; border: string; text: string }> = {
-  ingreso: { bg: '#EAF3DE', border: '#97C459', text: '#27500A' },
-  egreso:  { bg: '#FCEBEB', border: '#F09595', text: '#791F1F' },
+  ingreso: { bg: '#E9F6EA', border: '#97C459', text: '#27500A' },
+  egreso:  { bg: '#FEF0EE', border: '#F09595', text: '#791F1F' },
   deuda:   { bg: '#FAEEDA', border: '#EF9F27', text: '#633806' },
 }
 
@@ -418,10 +418,10 @@ export default function CashFlowPage() {
       {/* ── KPIs ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          { l: 'Saldo inicial',          v: fmt(saldoInicial, m), s: 'Ingresos − Egresos − Deudas',    c: saldoInicial >= 0 ? '#1A5E9E' : '#C0392B' },
-          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Proyección con eventos del mes', c: saldoFin >= 0 ? '#1A5E9E' : '#C0392B' },
-          { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#C0392B' },
-          { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasEnMes} días del mes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#2D7D2D' : '#C0392B' },
+          { l: 'Saldo inicial',          v: fmt(saldoInicial, m), s: 'Ingresos − Egresos − Deudas',    c: saldoInicial >= 0 ? '#1A5E9E' : '#F54927' },
+          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Proyección con eventos del mes', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
+          { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#F54927' },
+          { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasEnMes} días del mes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#40B046' : '#F54927' },
         ].map(k => (
           <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
             <div className="label mb-1">{k.l}</div>
@@ -499,11 +499,11 @@ export default function CashFlowPage() {
             {diasConEvs.map(d => {
               const isHoy = d.dia === HOY.getDate() && mes === HOY.getMonth() && año === HOY.getFullYear()
               const isNeg = d.saldo < 0
-              const saldoC = isNeg ? '#C0392B' : d.saldo < saldoInicial * 0.3 ? '#E8A020' : '#1A5E9E'
+              const saldoC = isNeg ? '#F54927' : d.saldo < saldoInicial * 0.3 ? '#E8A020' : '#1A5E9E'
               const badge = isHoy ? { l: 'hoy', bg: '#1A5E9E', c: '#fff' }
-                          : isNeg ? { l: 'déficit', bg: '#FEF2F2', c: '#C0392B' }
-                          : d.entradas > d.salidas ? { l: 'cobro', bg: '#EAF3DE', c: '#2D7D2D' }
-                          : { l: 'pago', bg: '#FEF2F2', c: '#C0392B' }
+                          : isNeg ? { l: 'déficit', bg: '#FEF2F2', c: '#F54927' }
+                          : d.entradas > d.salidas ? { l: 'cobro', bg: '#E9F6EA', c: '#40B046' }
+                          : { l: 'pago', bg: '#FEF2F2', c: '#F54927' }
               return (
                 <div key={d.dia} className={`bg-white border rounded-2xl p-5 shadow-card ${isHoy ? 'border-blue-200 bg-blue-50/30' : isNeg ? 'border-red-100' : 'border-slate-200'}`}>
                   <div className="flex justify-between items-center mb-3">

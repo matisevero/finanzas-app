@@ -10,8 +10,8 @@ import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/co
 import { PageHeader, Card, CardTitle, ChartToggle, ProgressBar, LoadingSpinner } from '@/components/ui'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a', boxShadow:'0 4px 12px rgba(0,0,0,0.08)' }
-const PIE_COLORS_EGRESO  = ['#1A5E9E','#2D7D2D','#E8A020','#D4537E','#5B3FA6','#1D9E75','#C0392B','#888780']
-const PIE_COLORS_INGRESO = ['#2D7D2D','#52A852','#BA7517','#888780']
+const PIE_COLORS_EGRESO  = ['#1A5E9E','#40B046','#E8A020','#D4537E','#5B3FA6','#1D9E75','#F54927','#888780']
+const PIE_COLORS_INGRESO = ['#40B046','#52A852','#BA7517','#888780']
 
 // ─── Opciones de widgets ───────────────────────────────────────────────────────
 const WIDGET_OPTIONS = [
@@ -66,8 +66,8 @@ export default function DashboardPage() {
 
   const getWidgetValue = (id: string) => {
     switch(id) {
-      case 'ingresos_anuales':  return { value: fmt(r.totalIngresos,m),  sub: `Acumulado ${añoActivo}`,    trend:  8.2,  color: '#2D7D2D', trendInvert: false }
-      case 'egresos_anuales':   return { value: fmt(r.totalEgresos,m),   sub: `Acumulado ${añoActivo}`,    trend: -3.1,  color: '#C0392B', trendInvert: false }
+      case 'ingresos_anuales':  return { value: fmt(r.totalIngresos,m),  sub: `Acumulado ${añoActivo}`,    trend:  8.2,  color: '#40B046', trendInvert: false }
+      case 'egresos_anuales':   return { value: fmt(r.totalEgresos,m),   sub: `Acumulado ${añoActivo}`,    trend: -3.1,  color: '#F54927', trendInvert: false }
       case 'ahorro_acumulado':  return { value: fmt(r.totalIngresos-r.totalEgresos,m), sub: `Balance ${añoActivo}`, trend: 12.4, color: '#1A5E9E', trendInvert: false }
       case 'deuda_total':       return { value: fmt(r.totalDeuda,m),     sub: 'Obligaciones activas',      trend: -2.8,  color: '#5B3FA6', trendInvert: true  }
       case 'tarjetas':          return { value: fmt(totalTarjetas,m),    sub: `Pagado ${añoActivo}`,       trend: undefined, color: '#1A5E9E', trendInvert: false }
@@ -191,19 +191,19 @@ export default function DashboardPage() {
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v/1000,m).replace(/[^0-9kKMm.,]/g,'')+'k'} />
                 <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                 <Legend wrapperStyle={{color:'#64748b',fontSize:12}} />
-                <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={28} />
-                <Bar dataKey="Gastos"   fill="#C0392B" radius={[4,4,0,0]} maxBarSize={28} />
+                <Bar dataKey="Ingresos" fill="#40B046" radius={[4,4,0,0]} maxBarSize={28} />
+                <Bar dataKey="Gastos"   fill="#F54927" radius={[4,4,0,0]} maxBarSize={28} />
               </BarChart>
             ):(
               <AreaChart data={chartFlowData}>
                 <defs>
                   <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#2D7D2D" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#2D7D2D" stopOpacity={0}/>
+                    <stop offset="5%"  stopColor="#40B046" stopOpacity={0.15}/>
+                    <stop offset="95%" stopColor="#40B046" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="gE" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#C0392B" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#C0392B" stopOpacity={0}/>
+                    <stop offset="5%"  stopColor="#F54927" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#F54927" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -211,8 +211,8 @@ export default function DashboardPage() {
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                 <Legend wrapperStyle={{color:'#64748b',fontSize:12}} />
-                <Area type="monotone" dataKey="Ingresos" stroke="#2D7D2D" fill="url(#gI)" strokeWidth={2.5} />
-                <Area type="monotone" dataKey="Gastos"   stroke="#C0392B" fill="url(#gE)" strokeWidth={2.5} />
+                <Area type="monotone" dataKey="Ingresos" stroke="#40B046" fill="url(#gI)" strokeWidth={2.5} />
+                <Area type="monotone" dataKey="Gastos"   stroke="#F54927" fill="url(#gE)" strokeWidth={2.5} />
               </AreaChart>
             )}
           </ResponsiveContainer>
@@ -333,8 +333,8 @@ export default function DashboardPage() {
                   <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
                   <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={(l:string)=>{ const idx=MESES_CORTOS.indexOf(l); return idx>=0?MESES[idx]:l }} />
                   <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
-                  <Bar dataKey="Ingresos" fill="#2D7D2D" radius={[4,4,0,0]} maxBarSize={36} />
-                  <Bar dataKey="Gastos"   fill="#C0392B" radius={[4,4,0,0]} maxBarSize={36} />
+                  <Bar dataKey="Ingresos" fill="#40B046" radius={[4,4,0,0]} maxBarSize={36} />
+                  <Bar dataKey="Gastos"   fill="#F54927" radius={[4,4,0,0]} maxBarSize={36} />
                 </BarChart>
               </ResponsiveContainer>
             </>}

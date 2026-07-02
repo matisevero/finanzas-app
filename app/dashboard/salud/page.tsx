@@ -65,7 +65,7 @@ export default function SaludPage() {
     ctx.strokeStyle=trackC; ctx.lineWidth=lw; ctx.lineCap='round'; ctx.stroke()
 
     const grad = ctx.createLinearGradient(cx-r,cy,cx+r,cy)
-    grad.addColorStop(0,'#C0392B'); grad.addColorStop(0.5,'#E8A020'); grad.addColorStop(1,'#2D7D2D')
+    grad.addColorStop(0,'#F54927'); grad.addColorStop(0.5,'#E8A020'); grad.addColorStop(1,'#40B046')
     ctx.beginPath(); ctx.arc(cx,cy,r,startA,fillA)
     ctx.strokeStyle=grad; ctx.lineWidth=lw; ctx.lineCap='round'; ctx.stroke()
   }, [salud])
@@ -102,7 +102,7 @@ export default function SaludPage() {
             {salud.total>=75?'Tu situación financiera está en buen estado.':salud.total>=50?'Hay aspectos a mejorar. Revisá las categorías en rojo.':'Hay alertas importantes que necesitás atender.'}
           </div>
           <div className="flex gap-4 mt-4">
-            {[{l:'0–49',c:'#C0392B'},{l:'50–74',c:'#E8A020'},{l:'75–100',c:'#2D7D2D'}].map(x=>(
+            {[{l:'0–49',c:'#F54927'},{l:'50–74',c:'#E8A020'},{l:'75–100',c:'#40B046'}].map(x=>(
               <div key={x.l} className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full" style={{background:x.c}} />
                 <span className="text-slate-400 text-xs">{x.l}</span>
@@ -116,7 +116,7 @@ export default function SaludPage() {
           <div className="text-slate-900 font-semibold text-[15px] mb-5">Desglose por categoría</div>
           <div className="flex flex-col gap-4">
             {salud.categorias.map(cat=>{
-              const bc = cat.score>=75?'#2D7D2D':cat.score>=50?'#E8A020':'#C0392B'
+              const bc = cat.score>=75?'#40B046':cat.score>=50?'#E8A020':'#F54927'
               return (
                 <div key={cat.nombre} className="flex items-center gap-4">
                   <span className="text-xl w-7 flex-shrink-0">{cat.icono}</span>
@@ -141,9 +141,9 @@ export default function SaludPage() {
       {/* Cards detalle */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {salud.categorias.map(cat=>{
-          const bc   = cat.score>=75?'#2D7D2D':cat.score>=50?'#E8A020':'#C0392B'
-          const tipBg = cat.ok?'#EAF3DE':'#FEF2F2'
-          const tipC  = cat.ok?'#3B6D11':'#A32D2D'
+          const bc   = cat.score>=75?'#40B046':cat.score>=50?'#E8A020':'#F54927'
+          const tipBg = cat.ok?'#E9F6EA':'#FEF2F2'
+          const tipC  = cat.ok?'#3B6D11':'#D03E21'
           return (
             <Card key={cat.nombre} className={cat.ok?'':'border-red-100'}>
               <div className="flex justify-between items-start mb-3">
@@ -186,13 +186,13 @@ export default function SaludPage() {
         <div className="text-slate-900 font-semibold text-[15px] mb-4">Métricas clave — {MESES_N[mesActual-1]}</div>
         <div className="grid grid-cols-4 gap-4">
           {[
-            {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:MESES_N[mesActual-1],           c:'#2D7D2D'},
-            {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#C0392B'},
+            {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:MESES_N[mesActual-1],           c:'#40B046'},
+            {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#F54927'},
             {l:'Cuotas fijas',        v:fmt(cuotaTotal,m),         s:'Comprometido/mes',             c:'#5B3FA6'},
-            {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#C0392B'},
-            {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<0.36?'✓ Saludable (<36%)':'✗ Alto (>36%)', c:cuotaTotal/ingresoMensual<0.36?'#2D7D2D':'#C0392B'},
-            {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<0.70?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<0.70?'#2D7D2D':'#C0392B'},
-            {l:'Fondo emergencia',    v:fmt(fondoEmergencia,m),    s:((fondoEmergencia/egresoMensual)||0).toFixed(1)+' meses cubiertos', c:fondoEmergencia/egresoMensual>=6?'#2D7D2D':'#E8A020'},
+            {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#F54927'},
+            {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<0.36?'✓ Saludable (<36%)':'✗ Alto (>36%)', c:cuotaTotal/ingresoMensual<0.36?'#40B046':'#F54927'},
+            {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<0.70?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<0.70?'#40B046':'#F54927'},
+            {l:'Fondo emergencia',    v:fmt(fondoEmergencia,m),    s:((fondoEmergencia/egresoMensual)||0).toFixed(1)+' meses cubiertos', c:fondoEmergencia/egresoMensual>=6?'#40B046':'#E8A020'},
             {l:'Pagos TC este mes',   v:fmt(tarjetaUsado,m),       s:'Resumen tarjetas',             c:'#1A5E9E'},
           ].map(k=>(
             <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
