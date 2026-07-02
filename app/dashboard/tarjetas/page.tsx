@@ -19,10 +19,12 @@ const CAT_COLORS: Record<string,{bg:string,c:string}> = {
 }
 
 export default function TarjetasPage() {
-  const { monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const esMensual = vistaTipo === 'mensual'
+  const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()
-  const { data: pagos,    loading: lp } = usePagosTarjeta()
-  const { data: txns,     loading: lx } = useTarjetaTransacciones()
+  const { data: pagosRaw, loading: lp } = usePagosTarjeta()
+  const { data: txnsRaw,  loading: lx } = useTarjetaTransacciones()
   const [selTC, setSelTC]         = useState<string|null>(null)
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
@@ -44,7 +46,21 @@ export default function TarjetasPage() {
   const [form, setForm]           = useState(FORM_INIT)
 
   const activaId   = selTC ?? 'todas'
-  const MESES_DISP = MESES_CORTOS.slice(0,6)
+
+  // Todo lo que sigue queda acotado al año activo (y, si esMensual, además al mes activo)
+  const pagos = useMemo(() =>
+    (pagosRaw ?? []).filter(p => p.año === añoActivo && (!esMensual || p.mes === mesActivo))
+  , [pagosRaw, añoActivo, esMensual, mesActivo])
+
+  const txns = useMemo(() =>
+    (txnsRaw ?? []).filter(t => {
+      const año = Number(t.fecha.slice(0,4))
+      const mes = Number(t.fecha.slice(5,7))
+      return año === añoActivo && (!esMensual || mes === mesActivo)
+    })
+  , [txnsRaw, añoActivo, esMensual, mesActivo])
+
+  const MESES_DISP = esMensual ? [MESES_CORTOS[mesActivo-1]] : MESES_CORTOS
 
   const pagosPorTC = useMemo(() => {
     const map: Record<string, Record<number,number>> = {}
@@ -55,8 +71,8 @@ export default function TarjetasPage() {
     return map
   }, [pagos])
 
-  const chartData = useMemo(() => MESES_DISP.map((month,i) => {
-    const mes = i+1
+  const chartData = useMemo(() => MESES_DISP.map((month) => {
+    const mes = MESES_CORTOS.indexOf(month) + 1
     const point: Record<string,number|string> = { month }
     if (activaId==='todas') {
       ;(tarjetas??[]).forEach(t => { point[t.id] = pagosPorTC[t.id]?.[mes]??0 })
@@ -64,7 +80,7 @@ export default function TarjetasPage() {
       point['pago'] = pagosPorTC[activaId]?.[mes]??0
     }
     return point
-  }), [tarjetas, pagosPorTC, activaId])
+  }), [tarjetas, pagosPorTC, activaId, MESES_DISP])
 
   const filteredTxns = useMemo(() => (txns??[])
     .filter(t => activaId==='todas' || t.tarjeta_id===activaId)
@@ -132,7 +148,7 @@ export default function TarjetasPage() {
           className={`flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[140px] ${activaId==='todas'?'border-slate-400':'border-slate-100 hover:border-slate-200'}`}>
           <div className="text-2xl mb-2">★</div>
           <div className="text-sm font-semibold text-slate-900">Todas</div>
-          <div className="text-xs text-slate-400 mt-1">total 2026</div>
+          <div className="text-xs text-slate-400 mt-1">total {periodoLabel}</div>
           <div className="text-lg font-bold font-mono text-slate-700 mt-1">{fmt(totalGlobal,m)}</div>
         </div>
         {tarjetasConMoneda.map(({tarjeta: t, moneda: mon})=>{

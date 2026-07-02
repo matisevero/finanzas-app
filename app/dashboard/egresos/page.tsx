@@ -257,10 +257,17 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function EgresosPage() {
-  const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('egresos')
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
+
+  const data = useMemo(() =>
+    esMensual ? (egresos ?? []).filter(e => e.mes === mesActivo) : (egresos ?? [])
+  , [egresos, esMensual, mesActivo])
+
+  const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
   const [chartType, setChartType]     = useState<'apilado'|'agrupado'>('apilado')
   const [sidePanel, setSidePanel]     = useState<'composicion'|'top'>('composicion')
@@ -300,7 +307,7 @@ export default function EgresosPage() {
   const getTipoInfo = (cat: string) =>
     allTipos.find(t => t.key === cat) ?? { key: cat, label: cat, icon: '', color: '#888780' }
 
-  const chartData = useMemo(() => MESES_CORTOS.map((month, i) => {
+  const chartDataAnual = useMemo(() => MESES_CORTOS.map((month, i) => {
     const mes = i + 1
     const point: Record<string, number|string> = { month }
     tiposBase.forEach(({ key }) => {
@@ -309,21 +316,35 @@ export default function EgresosPage() {
     return point
   }), [egresos, tiposBase])
 
+  const chartDataMensual = useMemo(() => {
+    const diasEnMes = new Date(añoActivo, mesActivo, 0).getDate()
+    return Array.from({ length: diasEnMes }, (_, i) => {
+      const dia = i + 1
+      const point: Record<string, number|string> = { month: String(dia) }
+      tiposBase.forEach(({ key }) => {
+        point[key] = data.filter(x => Number(x.fecha.slice(8,10)) === dia && x.categoria === key).reduce((s, x) => s + x.monto, 0)
+      })
+      return point
+    })
+  }, [data, tiposBase, añoActivo, mesActivo])
+
+  const chartData = esMensual ? chartDataMensual : chartDataAnual
+
   const compData = useMemo(() => {
-    const src = compMes === -1 ? (egresos ?? []) : (egresos ?? []).filter(x => x.mes === compMes + 1)
+    const src = esMensual ? data : (compMes === -1 ? (egresos ?? []) : (egresos ?? []).filter(x => x.mes === compMes + 1))
     return allTipos
       .map(t => ({ name: t.label, color: t.color, value: src.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value)
-  }, [egresos, compMes, allTipos])
+  }, [egresos, data, esMensual, compMes, allTipos])
 
   const topAño = useMemo(() =>
     allTipos
-      .map(t => ({ label: t.label, color: t.color, value: (egresos ?? []).filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
+      .map(t => ({ label: t.label, color: t.color, value: data.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 8)
-  , [egresos, allTipos])
+  , [data, allTipos])
 
   const filtered = useMemo(() => {
-    const rows = (egresos ?? [])
+    const rows = data
       .filter(e => filterCats.length === 0 || filterCats.includes(e.categoria))
       .filter(e => filterQuien.length === 0 || filterQuien.includes(e.quien))
       .filter(e => !search || e.descripcion.toLowerCase().includes(search.toLowerCase()))
@@ -334,20 +355,20 @@ export default function EgresosPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [egresos, filterCats, filterQuien, search, sortKey, sortDir])
+  }, [data, filterCats, filterQuien, search, sortKey, sortDir])
 
   const visibleRows = filtered.slice(0, page * PAGE_SIZE)
   const hasMore     = filtered.length > visibleRows.length
 
-  const total         = (egresos ?? []).reduce((s, e) => s + e.monto, 0)
+  const total         = data.reduce((s, e) => s + e.monto, 0)
   const mesActual     = HOY.getMonth() + 1
   const totalMesAct   = (egresos ?? []).filter(e => e.mes === mesActual).reduce((s, e) => s + e.monto, 0)
   const totalMesAnt   = (egresos ?? []).filter(e => e.mes === mesActual - 1).reduce((s, e) => s + e.monto, 0)
   const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
-  const totalTarjetas = (egresos ?? []).filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
-  const totalUSD      = (egresos ?? []).filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
+  const totalTarjetas = data.filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
+  const totalUSD      = data.filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
   const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
-  const promedio      = mesesConDatos > 0 ? Math.round(total / mesesConDatos) : 0
+  const promedio      = mesesConDatos > 0 ? Math.round((egresos??[]).reduce((s,e)=>s+e.monto,0) / mesesConDatos) : 0
 
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
@@ -404,7 +425,7 @@ export default function EgresosPage() {
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`}  value={fmt(total, m)}         color="#F54927" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
+        <StatCard label={`Total ${periodoLabel}`}  value={fmt(total, m)}         color="#F54927" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
         <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
         <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#40B046" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
         <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" sub="Sobre meses con datos" />
@@ -517,7 +538,7 @@ export default function EgresosPage() {
           {/* Gráfico evolución */}
           <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all group" onClick={()=>setExpandedChart('evolucion')}>
             <CardTitle action={<div onClick={e=>e.stopPropagation()}><ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} /></div>}>
-              Evolución {añoActivo}
+              Evolución {periodoLabel}
             </CardTitle>
             <div className="flex gap-2 flex-wrap mb-3">
               {tiposBase.map(({ key, label, color }) => (
@@ -591,7 +612,7 @@ export default function EgresosPage() {
 
             {sidePanel === 'top' && (
               <>
-                <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
+                <div className="text-xs text-slate-400 mb-3 font-medium">{esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `Año ${añoActivo}`} — por categoría</div>
                 {topAño.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {topAño.map((d, i) => {
@@ -663,7 +684,7 @@ export default function EgresosPage() {
 
             {expandedChart==='evolucion' && <>
               <div className="flex items-center justify-between mb-4">
-                <div className="text-slate-900 font-semibold text-lg">Evolución {añoActivo}</div>
+                <div className="text-slate-900 font-semibold text-lg">Evolución {periodoLabel}</div>
                 <ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />
               </div>
               <div className="flex gap-2 flex-wrap mb-4">
@@ -691,7 +712,7 @@ export default function EgresosPage() {
 
             {expandedChart==='composicion' && <>
               <div className="flex items-center justify-between mb-5">
-                <div className="text-slate-900 font-semibold text-lg">Composición {añoActivo}</div>
+                <div className="text-slate-900 font-semibold text-lg">Composición {periodoLabel}</div>
                 <div className="flex items-center gap-3">
                   <span className="text-slate-400 text-xs">Mes:</span>
                   <div className="flex items-center gap-1">

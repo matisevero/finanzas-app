@@ -258,10 +258,17 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function IngresosPage() {
-  const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading, refetch } = useIngresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('ingresos')
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
+
+  const data = useMemo(() =>
+    esMensual ? (ingresos ?? []).filter(i => i.mes === mesActivo) : (ingresos ?? [])
+  , [ingresos, esMensual, mesActivo])
+
+  const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
   const [chartType, setChartType]     = useState<'apilado'|'agrupado'>('apilado')
   const [sidePanel, setSidePanel]     = useState<'composicion'|'top'>('composicion')
@@ -301,7 +308,7 @@ export default function IngresosPage() {
   const getTipoInfo = (tipo: string) =>
     allTipos.find(t => t.key === tipo) ?? { key: tipo, label: tipo, icon: '', color: '#888780' }
 
-  const chartData = useMemo(() => MESES_CORTOS.map((month, i) => {
+  const chartDataAnual = useMemo(() => MESES_CORTOS.map((month, i) => {
     const mes = i + 1
     const point: Record<string, number|string> = { month }
     tiposBase.forEach(({ key }) => {
@@ -310,21 +317,35 @@ export default function IngresosPage() {
     return point
   }), [ingresos, tiposBase])
 
+  const chartDataMensual = useMemo(() => {
+    const diasEnMes = new Date(añoActivo, mesActivo, 0).getDate()
+    return Array.from({ length: diasEnMes }, (_, i) => {
+      const dia = i + 1
+      const point: Record<string, number|string> = { month: String(dia) }
+      tiposBase.forEach(({ key }) => {
+        point[key] = data.filter(x => Number(x.fecha.slice(8,10)) === dia && x.tipo === key).reduce((s, x) => s + x.monto, 0)
+      })
+      return point
+    })
+  }, [data, tiposBase, añoActivo, mesActivo])
+
+  const chartData = esMensual ? chartDataMensual : chartDataAnual
+
   const compData = useMemo(() => {
-    const src = compMes === -1 ? (ingresos ?? []) : (ingresos ?? []).filter(x => x.mes === compMes + 1)
+    const src = esMensual ? data : (compMes === -1 ? (ingresos ?? []) : (ingresos ?? []).filter(x => x.mes === compMes + 1))
     return allTipos
       .map(t => ({ name: t.label, color: t.color, value: src.filter(i => i.tipo === t.key).reduce((s, i) => s + i.monto, 0) }))
       .filter(d => d.value > 0)
-  }, [ingresos, compMes, allTipos])
+  }, [ingresos, data, esMensual, compMes, allTipos])
 
   const topAño = useMemo(() =>
     allTipos
-      .map(t => ({ label: t.label, color: t.color, value: (ingresos ?? []).filter(i => i.tipo === t.key).reduce((s, i) => s + i.monto, 0) }))
+      .map(t => ({ label: t.label, color: t.color, value: data.filter(i => i.tipo === t.key).reduce((s, i) => s + i.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 8)
-  , [ingresos, allTipos])
+  , [data, allTipos])
 
   const filtered = useMemo(() => {
-    const rows = (ingresos ?? [])
+    const rows = data
       .filter(i => filterTipos.length === 0 || filterTipos.includes(i.tipo))
       .filter(i => filterQuien.length === 0 || filterQuien.includes(i.quien))
       .filter(i => !search || i.descripcion.toLowerCase().includes(search.toLowerCase()))
@@ -335,7 +356,7 @@ export default function IngresosPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [ingresos, filterTipos, filterQuien, search, sortKey, sortDir])
+  }, [data, filterTipos, filterQuien, search, sortKey, sortDir])
 
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set([HOY.getMonth() + 1]))
   const rowsByMonth = useMemo(() => {
@@ -347,14 +368,14 @@ export default function IngresosPage() {
   const visibleRows = filtered.slice(0, page * PAGE_SIZE)
   const hasMore     = filtered.length > visibleRows.length
 
-  const total         = (ingresos ?? []).reduce((s, i) => s + i.monto, 0)
+  const total         = data.reduce((s, i) => s + i.monto, 0)
   const mesActual     = HOY.getMonth() + 1
   const totalMesAct   = (ingresos ?? []).filter(i => i.mes === mesActual).reduce((s, i) => s + i.monto, 0)
   const totalMesAnt   = (ingresos ?? []).filter(i => i.mes === mesActual - 1).reduce((s, i) => s + i.monto, 0)
   const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
-  const salarios      = (ingresos ?? []).filter(i => i.tipo === 'salario').reduce((s, i) => s + i.monto, 0)
+  const salarios      = data.filter(i => i.tipo === 'salario').reduce((s, i) => s + i.monto, 0)
   const mesesConDatos = new Set((ingresos ?? []).map(i => i.mes)).size
-  const promedio      = mesesConDatos > 0 ? Math.round(total / mesesConDatos) : 0
+  const promedio      = mesesConDatos > 0 ? Math.round((ingresos??[]).reduce((s,i)=>s+i.monto,0) / mesesConDatos) : 0
 
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
@@ -413,7 +434,7 @@ export default function IngresosPage() {
 
       {/* ── StatCards full width ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${añoActivo}`} value={fmt(total, m)}            color="#40B046" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
+        <StatCard label={`Total ${periodoLabel}`} value={fmt(total, m)}            color="#40B046" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
         <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#40B046" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
         <StatCard label="Ingresos extra"        value={fmt(total - salarios, m)} color="#52A852" sub="Freelance + alquiler + otros" />
         <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" sub="Sobre meses con datos" />
@@ -603,7 +624,7 @@ export default function IngresosPage() {
 
             {sidePanel === 'top' && (
               <>
-                <div className="text-xs text-slate-400 mb-3 font-medium">Año {añoActivo} — por categoría</div>
+                <div className="text-xs text-slate-400 mb-3 font-medium">{esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `Año ${añoActivo}`} — por categoría</div>
                 {topAño.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {topAño.map((d, i) => {
@@ -674,7 +695,7 @@ export default function IngresosPage() {
             <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
             {expandedChart==='evolucion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {añoActivo}</div>
+              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {periodoLabel}</div>
               <div className="flex gap-2 flex-wrap mb-4">
                 {tiposBase.map(({ key, label, color }) => (
                   <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
@@ -699,7 +720,7 @@ export default function IngresosPage() {
             </>}
 
             {expandedChart==='composicion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {añoActivo}</div>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {periodoLabel}</div>
               <div className="grid grid-cols-2 gap-8 items-center">
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
