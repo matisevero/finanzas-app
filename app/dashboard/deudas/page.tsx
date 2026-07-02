@@ -142,6 +142,7 @@ export default function DeudasPage() {
 
   // Modal nueva deuda largo plazo
   const [showDeudaModal, setShowDeudaModal] = useState(false)
+  const [modalEditDeudaId, setModalEditDeudaId] = useState<string|null>(null)
   const [deudaForm, setDeudaForm] = useState({
     nombre: '', banco: '', total_original: '', cuota_mensual: '',
     fecha_inicio: new Date().toISOString().split('T')[0],
@@ -253,18 +254,42 @@ export default function DeudasPage() {
     if (!deudaForm.nombre || !deudaForm.total_original || !deudaForm.fecha_vencimiento) return
     setSaving(true)
     try {
-      await createDeuda({
-        nombre: deudaForm.nombre, banco: deudaForm.banco,
-        total_original: parseFloat(deudaForm.total_original),
-        pendiente: parseFloat(deudaForm.total_original),
-        cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
-        tasa_interes: 0, moneda: deudaForm.moneda,
-        fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
-        cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
-        color: deudaForm.color, activa: true,
-      })
-      setShowDeudaModal(false); refDeudas()
+      if (modalEditDeudaId) {
+        await updateDeuda(modalEditDeudaId, {
+          nombre: deudaForm.nombre, banco: deudaForm.banco,
+          cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
+          moneda: deudaForm.moneda,
+          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
+          cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
+          color: deudaForm.color,
+        })
+      } else {
+        await createDeuda({
+          nombre: deudaForm.nombre, banco: deudaForm.banco,
+          total_original: parseFloat(deudaForm.total_original),
+          pendiente: parseFloat(deudaForm.total_original),
+          cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
+          tasa_interes: 0, moneda: deudaForm.moneda,
+          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
+          cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
+          color: deudaForm.color, activa: true,
+        })
+      }
+      setShowDeudaModal(false); setModalEditDeudaId(null); refDeudas()
     } catch(e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const openEditDeudaModal = (d: any) => {
+    setDeudaForm({
+      nombre: d.nombre ?? '', banco: d.banco ?? '',
+      total_original: String(d.total_original ?? ''), cuota_mensual: String(d.cuota_mensual ?? ''),
+      fecha_inicio: d.fecha_inicio ?? new Date().toISOString().split('T')[0],
+      fecha_vencimiento: d.fecha_vencimiento ?? '',
+      cuota_actual: String(d.cuota_actual ?? '1'), cuota_total: String(d.cuota_total ?? '1'),
+      moneda: d.moneda ?? 'ARS', color: d.color ?? '#5B3FA6',
+    })
+    setModalEditDeudaId(d.id)
+    setShowDeudaModal(true)
   }
 
   const handleUpdateDeuda = async (id: string, data: any) => {
@@ -290,7 +315,7 @@ export default function DeudasPage() {
         action={
           <div className="flex gap-2">
             <button className="btn-ghost text-sm" onClick={() => setShowEvModal(true)}>+ Vencimiento</button>
-            <button className="btn-primary" onClick={() => setShowDeudaModal(true)}>+ Deuda largo plazo</button>
+            <button className="btn-primary" onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
           </div>
         } />
 
@@ -450,7 +475,7 @@ export default function DeudasPage() {
               <div className="text-4xl mb-3">📋</div>
               <div className="font-semibold text-slate-600 mb-1">Sin deudas de largo plazo</div>
               <div className="text-sm mb-4">Agregá préstamos, créditos o cuotas fijas.</div>
-              <button onClick={() => setShowDeudaModal(true)} className="btn-primary">+ Nueva deuda LP</button>
+              <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6' }); setShowDeudaModal(true) }} className="btn-primary">+ Nueva deuda LP</button>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-5">
@@ -465,7 +490,7 @@ export default function DeudasPage() {
                   <Card key={d.id}>
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1 min-w-0">
-                        <div className="text-base font-semibold text-slate-900 truncate">{d.nombre}</div>
+                        <div onClick={() => openEditDeudaModal(d)} className="text-base font-semibold text-slate-900 truncate cursor-pointer hover:underline hover:font-bold">{d.nombre}</div>
                         {d.banco && <div className="text-slate-400 text-xs mt-0.5">{d.banco}</div>}
                       </div>
                       <div className="flex items-start gap-2 flex-shrink-0 ml-3">
@@ -594,7 +619,7 @@ export default function DeudasPage() {
       </Modal>
 
       {/* ── Modal nueva deuda LP ── */}
-      <Modal open={showDeudaModal} onClose={() => setShowDeudaModal(false)} title="Nueva deuda — Largo plazo">
+      <Modal open={showDeudaModal} onClose={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} title={modalEditDeudaId ? 'Editar deuda' : 'Nueva deuda — Largo plazo'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel>
             <input value={deudaForm.nombre} onChange={e => setDeudaForm(p => ({ ...p, nombre: e.target.value }))}
@@ -605,9 +630,9 @@ export default function DeudasPage() {
               placeholder="Ej: Banco Galicia" className="input-field" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Monto total</FieldLabel>
-              <input type="number" step="0.01" value={deudaForm.total_original}
-                onChange={e => setDeudaForm(p => ({ ...p, total_original: e.target.value }))} placeholder="0" className="input-field" />
+            <div><FieldLabel>Monto total{modalEditDeudaId ? ' (no editable)' : ''}</FieldLabel>
+              <input type="number" step="0.01" value={deudaForm.total_original} disabled={!!modalEditDeudaId}
+                onChange={e => setDeudaForm(p => ({ ...p, total_original: e.target.value }))} placeholder="0" className="input-field disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div><FieldLabel>Cuota mensual</FieldLabel>
               <input type="number" step="0.01" value={deudaForm.cuota_mensual}
@@ -651,9 +676,9 @@ export default function DeudasPage() {
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowDeudaModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSaveDeuda} disabled={saving || !deudaForm.nombre || !deudaForm.total_original}
-              className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+              className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditDeudaId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
         </div>
       </Modal>

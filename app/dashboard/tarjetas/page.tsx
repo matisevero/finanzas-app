@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
+import { updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
@@ -24,7 +25,7 @@ export default function TarjetasPage() {
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()
   const { data: pagosRaw, loading: lp } = usePagosTarjeta()
-  const { data: txnsRaw,  loading: lx } = useTarjetaTransacciones()
+  const { data: txnsRaw,  loading: lx, refetch: refTxns } = useTarjetaTransacciones()
   const [selTC, setSelTC]         = useState<string|null>(null)
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
@@ -37,6 +38,46 @@ export default function TarjetasPage() {
   const [pdfStep, setPdfStep]         = useState<'upload'|'review'|'done'>('upload')
   const [savingPdf, setSavingPdf]     = useState(false)
   const [comercios, setComercios]     = useState<any[]>([])
+
+  // Modal edición de transacción
+  const [showTxnModal, setShowTxnModal] = useState(false)
+  const [txnEditId, setTxnEditId]       = useState<string|null>(null)
+  const [txnForm, setTxnForm]           = useState({ descripcion:'', categoria:'Otros', fecha:'', monto:'', moneda:'ARS' as Moneda, cuota_actual:'', cuota_total:'' })
+  const [savingTxn, setSavingTxn]       = useState(false)
+
+  const openEditTxnModal = (t: any) => {
+    setTxnForm({
+      descripcion: t.descripcion ?? '', categoria: t.categoria ?? 'Otros',
+      fecha: t.fecha ?? '', monto: String(t.monto ?? ''), moneda: (t.moneda ?? 'ARS') as Moneda,
+      cuota_actual: t.cuota_actual ? String(t.cuota_actual) : '', cuota_total: t.cuota_total ? String(t.cuota_total) : '',
+    })
+    setTxnEditId(t.id)
+    setShowTxnModal(true)
+  }
+
+  const handleSaveTxn = async () => {
+    if (!txnEditId || !txnForm.descripcion || !txnForm.monto || !txnForm.fecha) return
+    setSavingTxn(true)
+    try {
+      await updateTarjetaTransaccion(txnEditId, {
+        descripcion: txnForm.descripcion, categoria: txnForm.categoria,
+        fecha: txnForm.fecha, monto: parseFloat(txnForm.monto), moneda: txnForm.moneda,
+        cuota_actual: txnForm.cuota_actual ? parseInt(txnForm.cuota_actual) : undefined,
+        cuota_total: txnForm.cuota_total ? parseInt(txnForm.cuota_total) : undefined,
+      })
+      setShowTxnModal(false); setTxnEditId(null); refTxns()
+    } catch (e) { console.error(e) } finally { setSavingTxn(false) }
+  }
+
+  const handleDeleteTxn = async () => {
+    if (!txnEditId) return
+    if (!confirm('¿Eliminar esta transacción?')) return
+    setSavingTxn(true)
+    try {
+      await deleteTarjetaTransaccion(txnEditId)
+      setShowTxnModal(false); setTxnEditId(null); refTxns()
+    } catch (e) { console.error(e) } finally { setSavingTxn(false) }
+  }
 
   // Cargar historial de comercios al montar
   useEffect(() => {
@@ -220,7 +261,7 @@ export default function TarjetasPage() {
                       <tr key={t.id}>
                         <Td className="text-slate-400 text-xs font-mono">{fmtDate(t.fecha)}</Td>
                         <Td>
-                          <div className="text-slate-700 font-medium">{t.descripcion}</div>
+                          <div onClick={() => openEditTxnModal(t)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{t.descripcion}</div>
                           {tc && <div className="text-slate-400 text-xs">{tc.nombre} · {tc.banco}</div>}
                         </Td>
                         <Td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.bg,color:cc.c}}>{t.categoria}</span></Td>
@@ -510,6 +551,46 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
             <button onClick={()=>{ setShowPDFModal(false); setPdfStep('upload'); setPdfTxns([]) }} className="btn-primary">Cerrar</button>
           </div>
         )}
+      </Modal>
+
+      <Modal open={showTxnModal} onClose={() => { setShowTxnModal(false); setTxnEditId(null) }} title="Editar transacción">
+        <div className="flex flex-col gap-4">
+          <div><FieldLabel>Descripción</FieldLabel>
+            <input value={txnForm.descripcion} onChange={e => setTxnForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field" />
+          </div>
+          <div><FieldLabel>Categoría</FieldLabel>
+            <select value={txnForm.categoria} onChange={e => setTxnForm(p => ({ ...p, categoria: e.target.value }))} className="input-field">
+              {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><FieldLabel>Monto</FieldLabel>
+              <input type="number" step="0.01" value={txnForm.monto} onChange={e => setTxnForm(p => ({ ...p, monto: e.target.value }))} className="input-field" />
+            </div>
+            <div><FieldLabel>Moneda</FieldLabel>
+              <select value={txnForm.moneda} onChange={e => setTxnForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
+                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-1"><FieldLabel>Fecha</FieldLabel>
+              <input type="date" value={txnForm.fecha} onChange={e => setTxnForm(p => ({ ...p, fecha: e.target.value }))} className="input-field" />
+            </div>
+            <div><FieldLabel>Cuota actual</FieldLabel>
+              <input type="number" value={txnForm.cuota_actual} onChange={e => setTxnForm(p => ({ ...p, cuota_actual: e.target.value }))} placeholder="—" className="input-field" />
+            </div>
+            <div><FieldLabel>Cuotas totales</FieldLabel>
+              <input type="number" value={txnForm.cuota_total} onChange={e => setTxnForm(p => ({ ...p, cuota_total: e.target.value }))} placeholder="—" className="input-field" />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={handleDeleteTxn} disabled={savingTxn} className="text-red-500 hover:text-red-600 border-none bg-transparent cursor-pointer text-sm px-2 disabled:opacity-50">Eliminar</button>
+            <div className="flex-1" />
+            <button onClick={() => { setShowTxnModal(false); setTxnEditId(null) }} className="btn-ghost">Cancelar</button>
+            <button onClick={handleSaveTxn} disabled={savingTxn || !txnForm.descripcion || !txnForm.monto || !txnForm.fecha} className="btn-primary disabled:opacity-50">{savingTxn ? 'Guardando...' : 'Guardar cambios'}</button>
+          </div>
+        </div>
       </Modal>
 
     </div>

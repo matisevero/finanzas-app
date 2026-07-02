@@ -174,6 +174,17 @@ export async function getTarjetaTransacciones(tarjetaId?: string): Promise<Tarje
   return data ?? []
 }
 
+export async function updateTarjetaTransaccion(id: string, form: Partial<Omit<TarjetaTransaccion, 'id'>>): Promise<TarjetaTransaccion> {
+  const { data, error } = await sb().from('tarjeta_transacciones').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteTarjetaTransaccion(id: string) {
+  const { error } = await sb().from('tarjeta_transacciones').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function getPagosTarjeta(tarjetaId?: string): Promise<PagoTarjeta[]> {
   let q = sb().from('pagos_tarjeta').select('*').order('año, mes')
   if (tarjetaId) q = q.eq('tarjeta_id', tarjetaId)
