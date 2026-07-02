@@ -7,7 +7,8 @@ import { calcularSalud } from '@/lib/utils/calculations'
 import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
 
 export default function SaludPage() {
-  const { monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
@@ -15,27 +16,32 @@ export default function SaludPage() {
   const { data: metas,    loading: lm } = useMetas()
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Tomar el mes más reciente con datos
-  const mesActual = useMemo(()=>{
-    const meses = [...new Set((ingresos??[]).map(i=>i.mes))].sort((a,b)=>b-a)
-    return meses[0] ?? new Date().getMonth()+1
-  }, [ingresos])
+  const mesesConDatos = useMemo(()=>
+    [...new Set((ingresos??[]).map(i=>i.mes))]
+  , [ingresos])
 
-  const ingresoMensual = useMemo(()=>
-    (ingresos??[]).filter(i=>i.mes===mesActual).reduce((s,i)=>s+i.monto,0)
-  , [ingresos, mesActual])
+  const ingresoMensual = useMemo(()=>{
+    if (esMensual) return (ingresos??[]).filter(i=>i.mes===mesActivo).reduce((s,i)=>s+i.monto,0)
+    const total = (ingresos??[]).reduce((s,i)=>s+i.monto,0)
+    return mesesConDatos.length>0 ? Math.round(total/mesesConDatos.length) : 0
+  }, [ingresos, esMensual, mesActivo, mesesConDatos])
 
-  const egresoMensual = useMemo(()=>
-    (egresos??[]).filter(e=>e.mes===mesActual).reduce((s,e)=>s+e.monto,0)
-  , [egresos, mesActual])
+  const egresoMensual = useMemo(()=>{
+    if (esMensual) return (egresos??[]).filter(e=>e.mes===mesActivo).reduce((s,e)=>s+e.monto,0)
+    const total = (egresos??[]).reduce((s,e)=>s+e.monto,0)
+    return mesesConDatos.length>0 ? Math.round(total/mesesConDatos.length) : 0
+  }, [egresos, esMensual, mesActivo, mesesConDatos])
 
   const cuotaTotal = useMemo(()=>
     (deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.cuota_mensual,0)
   , [deudas])
 
-  const tarjetaUsado = useMemo(()=>
-    (pagos??[]).filter(p=>p.mes===mesActual).reduce((s,p)=>s+p.monto,0)
-  , [pagos, mesActual])
+  const tarjetaUsado = useMemo(()=>{
+    if (esMensual) return (pagos??[]).filter(p=>p.mes===mesActivo).reduce((s,p)=>s+p.monto,0)
+    const total = (pagos??[]).reduce((s,p)=>s+p.monto,0)
+    const mesesConPago = new Set((pagos??[]).map(p=>p.mes)).size
+    return mesesConPago>0 ? Math.round(total/mesesConPago) : 0
+  }, [pagos, esMensual, mesActivo])
 
   const tarjetaLimite = tarjetaUsado * 2.5
 
@@ -71,6 +77,7 @@ export default function SaludPage() {
   }, [salud])
 
   const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const periodoLabel = esMensual ? `${MESES_N[mesActivo-1]} ${añoActivo}` : `Promedio mensual ${añoActivo}`
 
   if (li||le||ld||lp||lm) return <LoadingSpinner />
 
@@ -89,7 +96,7 @@ export default function SaludPage() {
 
   return (
     <div>
-      <PageHeader title="Salud Financiera" subtitle={`Diagnóstico integral — ${MESES_N[mesActual-1]} ${new Date().getFullYear()}`} />
+      <PageHeader title="Salud Financiera" subtitle={`Diagnóstico integral — ${periodoLabel}`} />
 
       {/* Hero */}
       <div className="grid grid-cols-3 gap-5 mb-6">
@@ -183,10 +190,10 @@ export default function SaludPage() {
 
       {/* Métricas clave */}
       <div>
-        <div className="text-slate-900 font-semibold text-[15px] mb-4">Métricas clave — {MESES_N[mesActual-1]}</div>
+        <div className="text-slate-900 font-semibold text-[15px] mb-4">Métricas clave — {periodoLabel}</div>
         <div className="grid grid-cols-4 gap-4">
           {[
-            {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:MESES_N[mesActual-1],           c:'#40B046'},
+            {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:periodoLabel,           c:'#40B046'},
             {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#F54927'},
             {l:'Cuotas fijas',        v:fmt(cuotaTotal,m),         s:'Comprometido/mes',             c:'#5B3FA6'},
             {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#F54927'},

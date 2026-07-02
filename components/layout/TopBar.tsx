@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/appStore'
 import { usePageHeader } from '@/context/PageHeaderContext'
 import { MESES } from '@/lib/utils/constants'
 
-const RUTAS_CON_PERIODO = ['/dashboard', '/dashboard/ingresos', '/dashboard/egresos', '/dashboard/tarjetas']
+const RUTAS_CON_PERIODO = ['/dashboard', '/dashboard/ingresos', '/dashboard/egresos', '/dashboard/tarjetas', '/dashboard/salud']
 
 export default function TopBar() {
   const {
