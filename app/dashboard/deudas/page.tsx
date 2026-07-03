@@ -7,6 +7,7 @@ import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, upd
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
+import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda } from '@/types'
 
 const HOY     = new Date()
@@ -89,7 +90,7 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
         <div className="grid grid-cols-3 gap-2">
           <div><label className="label mb-1.5 block">Cuota actual</label><input type="number" value={form.cuota_actual} onChange={e => setForm(p => ({ ...p, cuota_actual: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
           <div><label className="label mb-1.5 block">Total cuotas</label><input type="number" value={form.cuota_total} onChange={e => setForm(p => ({ ...p, cuota_total: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
-          <div><label className="label mb-1.5 block">Vencimiento</label><input type="date" value={form.fecha_vencimiento} onChange={e => setForm(p => ({ ...p, fecha_vencimiento: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
+          <div><label className="label mb-1.5 block">Vencimiento</label><FechaInput value={form.fecha_vencimiento} onChange={iso => setForm(p => ({ ...p, fecha_vencimiento: iso }))} className="py-1.5 text-sm" /></div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div><label className="label mb-1.5 block">Moneda</label>
@@ -651,12 +652,12 @@ export default function DeudasPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Fecha inicio</FieldLabel>
-              <input type="date" value={deudaForm.fecha_inicio}
-                onChange={e => setDeudaForm(p => ({ ...p, fecha_inicio: e.target.value }))} className="input-field" />
+              <FechaInput value={deudaForm.fecha_inicio}
+                onChange={iso => setDeudaForm(p => ({ ...p, fecha_inicio: iso }))} />
             </div>
             <div><FieldLabel>Fecha vencimiento</FieldLabel>
-              <input type="date" value={deudaForm.fecha_vencimiento}
-                onChange={e => setDeudaForm(p => ({ ...p, fecha_vencimiento: e.target.value }))} className="input-field" />
+              <FechaInput value={deudaForm.fecha_vencimiento}
+                onChange={iso => setDeudaForm(p => ({ ...p, fecha_vencimiento: iso }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

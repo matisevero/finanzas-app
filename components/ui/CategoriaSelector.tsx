@@ -21,9 +21,12 @@ interface Props {
   categorias: CategoriaCustom[]
   categoriasBase: { key: string; label: string; icon: string; color: string }[]
   onCategoriasChange: () => void
+  onPaste?: (e: React.ClipboardEvent<HTMLButtonElement>) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLButtonElement>) => void
+  bare?: boolean
 }
 
-export default function CategoriaSelector({ modulo, value, onChange, categorias, categoriasBase, onCategoriasChange }: Props) {
+export default function CategoriaSelector({ modulo, value, onChange, categorias, categoriasBase, onCategoriasChange, onPaste, onKeyDown, bare = false }: Props) {
   const [open, setOpen]           = useState(false)
   const [showNew, setShowNew]     = useState(false)
   const [newNombre, setNewNombre] = useState('')
@@ -31,6 +34,7 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
   const [newParent, setNewParent] = useState('')
   const [saving, setSaving]       = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const customFlat = flattenCats(categorias)
 
@@ -64,6 +68,7 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
       onCategoriasChange()
       onChange(created.id)
       setNewNombre(''); setNewParent(''); setShowNew(false); setOpen(false)
+      triggerRef.current?.focus()
     } finally { setSaving(false) }
   }
 
@@ -71,10 +76,18 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
     <div ref={ref} className="relative">
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => { setOpen(v => !v); setShowNew(false) }}
-        style={{borderRadius:2}}
-        className="input-field flex items-center justify-between gap-2 text-left w-full text-xs py-1 px-2">
+        onPaste={onPaste}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && onKeyDown) { e.preventDefault(); onKeyDown(e); return }
+          onKeyDown?.(e)
+        }}
+        style={bare ? undefined : {borderRadius:2}}
+        className={bare
+          ? 'flex items-center justify-between gap-2 text-left w-full h-8 text-xs px-2 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-400/40'
+          : 'input-field flex items-center justify-between gap-2 text-left w-full text-xs py-1 px-2'}>
         <span className="truncate">{selected?.label ?? 'Seleccioná'}</span>
         <span className="text-slate-400 text-xs flex-shrink-0">{open ? '▲' : '▼'}</span>
       </button>
@@ -91,7 +104,7 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
             )}
             {categoriasBase.map(c => (
               <button key={c.key} type="button"
-                onClick={() => { onChange(c.key); setOpen(false) }}
+                onClick={() => { onChange(c.key); setOpen(false); triggerRef.current?.focus() }}
                 className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.key ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}>
                 <span>{c.label}</span>
               </button>
@@ -104,7 +117,7 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
             )}
             {customFlat.map(c => (
               <button key={c.id} type="button"
-                onClick={() => { onChange(c.id); setOpen(false) }}
+                onClick={() => { onChange(c.id); setOpen(false); triggerRef.current?.focus() }}
                 className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.id ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}
                 style={{ paddingLeft: `${12 + c.indent * 16}px` }}>
                 <span>{c.label}</span>

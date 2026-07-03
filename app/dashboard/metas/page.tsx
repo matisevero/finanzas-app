@@ -7,6 +7,7 @@ import { fmt } from '@/lib/utils/formatters'
 import { calcularMeta } from '@/lib/utils/calculations'
 import { META_COLORS, ICONOS_GENERALES } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
+import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda } from '@/types'
 
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
@@ -201,7 +202,7 @@ export default function MetasPage() {
                 {['ARS','USD','EUR'].map(c=><option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <div><FieldLabel>Fecha límite</FieldLabel><input type="date" value={form.fecha_limite} onChange={e=>setForm(p=>({...p,fecha_limite:e.target.value}))} className="input-field" /></div>
+            <div><FieldLabel>Fecha límite</FieldLabel><FechaInput value={form.fecha_limite} onChange={iso=>setForm(p=>({...p,fecha_limite:iso}))} /></div>
           </div>
           <div><FieldLabel>Ícono</FieldLabel>
             <div className="flex flex-wrap gap-2 mt-1">

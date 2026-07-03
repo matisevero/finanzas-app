@@ -7,6 +7,7 @@ import { updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/querie
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
+import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda, Quien } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
@@ -575,7 +576,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-1"><FieldLabel>Fecha</FieldLabel>
-              <input type="date" value={txnForm.fecha} onChange={e => setTxnForm(p => ({ ...p, fecha: e.target.value }))} className="input-field" />
+              <FechaInput value={txnForm.fecha} onChange={iso => setTxnForm(p => ({ ...p, fecha: iso }))} />
             </div>
             <div><FieldLabel>Cuota actual</FieldLabel>
               <input type="number" value={txnForm.cuota_actual} onChange={e => setTxnForm(p => ({ ...p, cuota_actual: e.target.value }))} placeholder="—" className="input-field" />

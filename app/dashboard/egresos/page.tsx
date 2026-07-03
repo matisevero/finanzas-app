@@ -10,7 +10,9 @@ import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
 import MontoInput from '@/components/ui/MontoInput'
+import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
+import { parsePegadoTSV, matchOpcion, celdaFechaISO, parseCeldaMonto } from '@/lib/utils/pegado'
 import type { Moneda, Quien, Egreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
@@ -116,7 +118,14 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
   )
 }
 
-// ─── SheetNewRow — fila colapsable ──────────────────────────────────────────
+// ─── SheetNewRow — fila de carga siempre visible, pegado posicional ─────────
+type DraftRow = { id: string; categoria: string; descripcion: string; fecha: string; monto: string; moneda: Moneda; quien: Quien | '' }
+const cellBase = 'w-full h-8 px-2 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-400/40 focus:relative focus:z-10 text-xs'
+
+function blankDraftRow(): DraftRow {
+  return { id: Math.random().toString(36).slice(2), categoria: '', descripcion: '', fecha: '', monto: '', moneda: 'ARS', quien: '' }
+}
+
 function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
@@ -124,88 +133,125 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
   onSave: (data: typeof FORM_INIT) => Promise<void>
   refetchCats: () => void
 }) {
-  const [form, setForm] = useState(FORM_INIT)
-  const [saving, setSaving] = useState(false)
-  const [active, setActive] = useState(false)
+  const añoActivo = useAppStore(s => s.añoActivo)
+  const [nuevaFila, setNuevaFila] = useState<DraftRow>(blankDraftRow())
+  const [pendientes, setPendientes] = useState<DraftRow[]>([])
+  const [justSaved, setJustSaved] = useState(false)
 
-  const handleSave = async () => {
-    if (!form.monto || !form.fecha) return
-    setSaving(true)
-    await onSave(form)
-    setForm(FORM_INIT)
-    setSaving(false)
-    setActive(false)
+  const categoriasConocidas = [...tiposBase.map(t => ({ key: t.key, label: t.label })), ...categoriasCustom.map(c => ({ key: c.nombre, label: c.nombre }))]
+  const quienOpciones = [{ key: 'ambos', label: 'Ambos' }, { key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }]
+
+  // Enter guarda con lo mínimo: fecha, descripción y monto. Categoría/Quién quedan en "Otro"/"Ambos" si no se eligieron.
+  const puedeGuardar = (r: DraftRow) => !!(r.fecha && r.descripcion.trim() && r.monto)
+  const filaConAlgo  = (r: DraftRow) => !!(r.fecha || r.descripcion.trim() || r.categoria || r.quien || r.monto)
+
+  const commitFila = async (r: DraftRow) => {
+    if (!puedeGuardar(r)) return
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); handleSave() }
-    if (e.key === 'Escape') { setForm(FORM_INIT); setActive(false) }
+  const handleEnterNueva = async () => {
+    if (!puedeGuardar(nuevaFila)) return
+    await commitFila(nuevaFila)
+    setNuevaFila(blankDraftRow())
+    setJustSaved(true)
+    setTimeout(() => setJustSaved(false), 700)
   }
 
-  if (!active) {
+  const handleEnterPendiente = async (idx: number) => {
+    const r = pendientes[idx]
+    if (!puedeGuardar(r)) return
+    await commitFila(r)
+    setPendientes(ps => ps.filter((_, i) => i !== idx))
+  }
+
+  const descartarPendiente = (idx: number) => setPendientes(ps => ps.filter((_, i) => i !== idx))
+
+  // Pegado posicional (Excel/Sheets): cae en la celda donde hiciste click y se expande derecha/abajo.
+  // Nada se guarda solo — todas las filas pegadas quedan como borrador editable, se confirman a mano con Enter.
+  const handlePasteEnCelda = (startRow: number, startCol: number) => (e: React.ClipboardEvent) => {
+    const texto = e.clipboardData.getData('text')
+    if (!texto || !/\t|\n/.test(texto)) return
+    e.preventDefault()
+    const grilla = parsePegadoTSV(texto)
+
+    const virtual = [nuevaFila, ...pendientes]
+    while (virtual.length < startRow + grilla.length) virtual.push(blankDraftRow())
+
+    grilla.forEach((linea, i) => {
+      const rowIdx = startRow + i
+      const row = { ...virtual[rowIdx] }
+      linea.forEach((celdaTexto, j) => {
+        const col = startCol + j
+        if (col > 4) return
+        const val = celdaTexto.trim()
+        if (col === 0) row.fecha = celdaFechaISO(val, añoActivo)
+        else if (col === 1) row.descripcion = val
+        else if (col === 2) row.categoria = matchOpcion(val, categoriasConocidas)
+        else if (col === 3) row.quien = matchOpcion(val, quienOpciones) as Quien | ''
+        else if (col === 4) { const m = parseCeldaMonto(val); row.monto = m !== null ? String(m) : '' }
+      })
+      virtual[rowIdx] = row
+    })
+
+    setNuevaFila(virtual[0] ?? blankDraftRow())
+    setPendientes(virtual.slice(1))
+  }
+
+  const filaHTML = (r: DraftRow, onChange: (patch: Partial<DraftRow>) => void, onEnter: () => void, startRow: number, key: string, onEscape: () => void, onDescartar?: () => void, flash?: boolean) => {
+    const handleKey = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') onEnter()
+      if (e.key === 'Escape') onEscape()
+    }
     return (
-      <tr>
-        <td colSpan={cols.length + 1} className="py-2.5 px-3 border-b border-slate-100">
-          <button onClick={() => setActive(true)}
-            className="text-xs font-semibold text-red-500 hover:text-red-700 border-none bg-transparent cursor-pointer flex items-center gap-1.5 transition-colors">
-            <span className="text-sm font-bold">+</span> Nuevo egreso
-          </button>
-        </td>
-      </tr>
-    )
-  }
-
-  return (
-    <tr className="bg-red-50/40">
-      <td className="py-2 px-2 border-b border-red-100" style={{width:72}}>
-        <input type="date" value={form.fecha}
-          onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
-          onKeyDown={handleKeyDown}
-          className="input-field py-1 text-xs w-full" />
+    <tr key={key} className={`transition-colors duration-500 ${flash ? 'bg-emerald-100' : filaConAlgo(r) ? 'bg-amber-50/50' : ''}`}>
+      <td className="border border-slate-200" style={{width:100}}>
+        <FechaInput bare value={r.fecha} onChange={iso => onChange({ fecha: iso })} onPaste={handlePasteEnCelda(startRow, 0)}
+          onKeyDown={handleKey} className={cellBase} />
       </td>
-      <td className="py-2 px-2 border-b border-red-100">
-        <input value={form.descripcion}
-          onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-          onKeyDown={handleKeyDown}
-          placeholder="Descripción..."
-          autoFocus
-          className="input-field py-1 text-xs w-full" />
+      <td className="border border-slate-200">
+        <input value={r.descripcion} onChange={e => onChange({ descripcion: e.target.value })} onPaste={handlePasteEnCelda(startRow, 1)}
+          onKeyDown={handleKey} className={cellBase} />
       </td>
-      <td className="py-2 px-2 border-b border-red-100 w-36">
-        <CategoriaSelector modulo="egresos" value={form.categoria}
-          onChange={v => setForm(p => ({ ...p, categoria: v }))}
-          categorias={categoriasCustom} categoriasBase={tiposBase}
-          onCategoriasChange={refetchCats} />
+      <td className="border border-slate-200" style={{width:150}}>
+        <CategoriaSelector bare modulo="egresos" value={r.categoria} onChange={v => onChange({ categoria: v })} onPaste={handlePasteEnCelda(startRow, 2)}
+          onKeyDown={handleKey}
+          categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
-      <td className="py-2 px-2 border-b border-red-100 w-28">
-        <select value={form.quien}
-          onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))}
-          onKeyDown={handleKeyDown}
-          className="input-field py-1 text-xs w-full px-2">
+      <td className="border border-slate-200" style={{width:100}}>
+        <select value={r.quien} onChange={e => onChange({ quien: e.target.value as Quien })} onPaste={handlePasteEnCelda(startRow, 3)}
+          onKeyDown={handleKey} className={cellBase}>
+          <option value="">—</option>
           <option value="ambos">Ambos</option>
           <option value="Mati">Mati</option>
           <option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-2 px-2 border-b border-red-100 text-right" style={{width:116}}>
-        <MontoInput value={form.monto}
-          onChange={raw => setForm(p => ({ ...p, monto: raw }))}
-          onKeyDown={handleKeyDown}
-          className="py-1 text-xs text-right" />
+      <td className="border border-slate-200" style={{width:130}}>
+        <MontoInput bare value={r.monto} onChange={raw => onChange({ monto: raw })} onPaste={handlePasteEnCelda(startRow, 4)}
+          onKeyDown={handleKey} className={cellBase} />
       </td>
-      <td className="py-2 px-2 border-b border-red-100 text-right">
-        <div className="flex gap-1 justify-end">
-          <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha}
-            className="text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg border-none cursor-pointer disabled:opacity-40 font-medium">
-            {saving ? '...' : 'Guardar'}
-          </button>
-          <button onClick={() => { setForm(FORM_INIT); setActive(false) }}
-            className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg border-none cursor-pointer">
-            ✕
-          </button>
-        </div>
+      <td className="border border-slate-200 text-right px-1" style={{width:32}}>
+        {onDescartar && (
+          <button onClick={onDescartar} title="Descartar" className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer">✕</button>
+        )}
       </td>
     </tr>
+  )}
+
+  return (
+    <>
+      {filaHTML(nuevaFila, patch => setNuevaFila(p => ({ ...p, ...patch })), handleEnterNueva, 0, 'nueva', () => setNuevaFila(blankDraftRow()), undefined, justSaved)}
+      {pendientes.map((r, i) => filaHTML(
+        r,
+        patch => setPendientes(ps => ps.map((x, j) => j === i ? { ...x, ...patch } : x)),
+        () => handleEnterPendiente(i),
+        i + 1,
+        `pend-${r.id}`,
+        () => descartarPendiente(i),
+        () => descartarPendiente(i),
+      ))}
+    </>
   )
 }
 
@@ -233,19 +279,19 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
 
   return (
     <tr className="bg-blue-50/60">
-      <td className="py-1.5 px-2 border-b border-blue-100"><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" /></td>
-      <td className="py-1.5 px-2 border-b border-blue-100"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs w-full" placeholder="Descripción" /></td>
-      <td className="py-1.5 px-2 border-b border-blue-100">
-        <CategoriaSelector modulo="egresos" value={form.categoria} onChange={v => setForm(p => ({ ...p, categoria: v }))}
+      <td className="border border-slate-200" style={{width:100}}><FechaInput bare value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} onKeyDown={handleKeyDown} className={cellBase} /></td>
+      <td className="border border-slate-200"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className={cellBase} placeholder="Descripción" /></td>
+      <td className="border border-slate-200" style={{width:150}}>
+        <CategoriaSelector bare modulo="egresos" value={form.categoria} onChange={v => setForm(p => ({ ...p, categoria: v }))} onKeyDown={handleKeyDown}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
-      <td className="py-1.5 px-2 border-b border-blue-100">
-        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className="input-field py-1 text-xs">
+      <td className="border border-slate-200" style={{width:100}}>
+        <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className={cellBase}>
           <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
         </select>
       </td>
-      <td className="py-1.5 px-2 border-b border-blue-100 text-right"><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className="py-1 text-xs text-right" /></td>
-      <td className="py-1.5 px-2 border-b border-blue-100 text-right">
+      <td className="border border-slate-200" style={{width:130}}><MontoInput bare value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className={cellBase} /></td>
+      <td className="border border-slate-200 text-right px-1" style={{width:32}}>
         <div className="flex gap-1 justify-end">
           <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
           <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
@@ -483,7 +529,8 @@ export default function EgresosPage() {
                             onDragStart={() => onDragStart(i)} onDragEnter={() => onDragEnter(i)}
                             onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()}
                             onClick={() => toggleSort(col)}
-                            className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-3 px-3 border-b border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
+                            style={col==='fecha'?{width:100}:col==='categoria'?{width:150}:col==='quien'?{width:100}:col==='monto'?{width:130}:undefined}
+                            className={`text-slate-400 text-[11px] font-bold uppercase tracking-widest py-2.5 px-2 border border-slate-200 cursor-pointer select-none hover:text-slate-600 ${col === 'monto' ? 'text-right' : 'text-left'}`}>
                             <span className="inline-flex items-center gap-1">
                               <span className="cursor-grab opacity-30 hover:opacity-60">⠿</span>
                               {COL_LABEL[col]}
@@ -491,7 +538,7 @@ export default function EgresosPage() {
                             </span>
                           </th>
                         ))}
-                        <th className="py-3 px-3 border-b border-slate-200 w-16" />
+                        <th className="border border-slate-200 bg-slate-50" style={{width:32}} />
                       </tr>
                     </thead>
                     <tbody>
@@ -499,7 +546,7 @@ export default function EgresosPage() {
                       {visibleRows.map((egreso, rowIdx) => {
                         const cfg       = getTipoInfo(egreso.categoria)
                         const isEditing = editingId === egreso.id
-                        const bg        = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-100'
+                        const bg        = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
 
                         if (isEditing) return (
                           <InlineEditRow key={egreso.id} egreso={egreso} tiposBase={tiposBase}
@@ -509,11 +556,11 @@ export default function EgresosPage() {
 
                         const cellFor = (col: SortKey) => {
                           switch (col) {
-                            case 'fecha':       return <td key={col} className={`py-3 px-2 border-b border-slate-200 text-sm ${bg}`} style={{width:72}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span></td>
-                            case 'categoria':   return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
-                            case 'quien':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm ${bg}`}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
-                            case 'monto':       return <td key={col} className={`py-3 px-3 border-b border-slate-200 text-sm text-right ${bg}`} style={{width:116}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
+                            case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span></td>
+                            case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
+                            case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
+                            case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
                             default: return null
                           }
                         }
@@ -521,7 +568,7 @@ export default function EgresosPage() {
                         return (
                           <tr key={egreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
                             {cols.map(col => cellFor(col))}
-                            <td className={`py-3 px-3 border-b border-slate-200 text-right ${bg}`}>
+                            <td className="border border-slate-200 text-right px-1" style={{width:32}}>
                               <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
                                 <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
@@ -673,7 +720,7 @@ export default function EgresosPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Fecha</FieldLabel><input type="date" value={form.fecha} onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))} className="input-field" /></div>
+            <div><FieldLabel>Fecha</FieldLabel><FechaInput value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} /></div>
             <div><FieldLabel>Quién</FieldLabel>
               <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} className="input-field">
                 <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>

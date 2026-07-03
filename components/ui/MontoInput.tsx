@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface MontoInputProps {
   value: string
@@ -8,6 +8,8 @@ interface MontoInputProps {
   className?: string
   onFocus?: () => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
+  bare?: boolean
 }
 
 function toDisplay(raw: string): string {
@@ -21,13 +23,23 @@ function toRaw(display: string): string {
   return display.replace(/\./g, '').replace(',', '.')
 }
 
-export default function MontoInput({ value, onChange, placeholder = '0', className = '', onFocus, onKeyDown }: MontoInputProps) {
-  const [display, setDisplay] = useState(() => {
-    if (!value) return ''
-    const num = parseFloat(value)
-    if (isNaN(num)) return ''
-    return toDisplay(String(num).replace('.', ','))
-  })
+function fromRawValue(value: string): string {
+  if (!value) return ''
+  const num = parseFloat(value)
+  if (isNaN(num)) return ''
+  return toDisplay(String(num).replace('.', ','))
+}
+
+export default function MontoInput({ value, onChange, placeholder = '0', className = '', onFocus, onKeyDown, onPaste, bare = false }: MontoInputProps) {
+  const [display, setDisplay] = useState(() => fromRawValue(value))
+
+  useEffect(() => {
+    const numActual = parseFloat(toRaw(display))
+    const numNuevo  = parseFloat(value)
+    const mismosVacios = toRaw(display) === '' && !value
+    if (mismosVacios || numActual === numNuevo) return
+    setDisplay(fromRawValue(value))
+  }, [value])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input  = e.target.value.replace(/[^\d,]/g, '')
@@ -46,8 +58,11 @@ export default function MontoInput({ value, onChange, placeholder = '0', classNa
       onChange={handleChange}
       onFocus={onFocus}
       onKeyDown={onKeyDown}
+      onPaste={onPaste}
       placeholder={placeholder}
-      className={`input-field font-mono ${className}`}
+      className={bare
+        ? `w-full h-8 px-2 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-400/40 font-mono text-xs text-right ${className}`
+        : `input-field font-mono ${className}`}
     />
   )
 }
