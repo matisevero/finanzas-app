@@ -23,13 +23,25 @@ const PAGE_SIZE = 30
 const FORM_INIT = {
   categoria: 'tarjeta', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
-  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false,
+  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'categoria' | 'descripcion' | 'quien'
 type SortDir = 'asc' | 'desc'
 const COLS_DEFAULT: SortKey[] = ['fecha', 'descripcion', 'categoria', 'quien', 'monto']
 const COL_LABEL: Record<SortKey, string> = { fecha: 'Fecha', descripcion: 'Descripción', categoria: 'Categoría', quien: 'Quién', monto: 'Importe' }
+
+// ─── Widgets personalizables ────────────────────────────────────────────────
+const WIDGET_OPTIONS_EGR = [
+  { id: 'total',        label: 'Total del período', icon: '📤' },
+  { id: 'tarjetas',     label: 'Tarjetas crédito',  icon: '💳' },
+  { id: 'usd',          label: 'Inversiones USD',   icon: '💵' },
+  { id: 'promedio',     label: 'Promedio mensual',  icon: '📅' },
+  { id: 'top_categoria',label: 'Mayor categoría',   icon: '🏆' },
+  { id: 'cantidad',     label: 'Cantidad de egresos',icon: '🔢' },
+]
+const DEFAULT_WIDGETS_EGR = ['total', 'tarjetas', 'usd', 'promedio']
+
 
 // ─── MultiDropdown ────────────────────────────────────────────────────────────
 function MultiDropdown({ label, options, selected, onChange }: {
@@ -147,7 +159,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false })
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -323,6 +335,8 @@ export default function EgresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
+  const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_EGR)
+  const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditId, setModalEditId] = useState<string|null>(null)
   const [saving, setSaving]           = useState(false)
   const [form, setForm]               = useState(FORM_INIT)
@@ -394,7 +408,7 @@ export default function EgresosPage() {
     const rows = data
       .filter(e => filterCats.length === 0 || filterCats.includes(e.categoria))
       .filter(e => filterQuien.length === 0 || filterQuien.includes(e.quien))
-      .filter(e => !search || e.descripcion.toLowerCase().includes(search.toLowerCase()))
+      .filter(e => !search || e.descripcion.toLowerCase().includes(search.toLowerCase()) || (e.etiqueta ?? '').toLowerCase().includes(search.toLowerCase()))
     return [...rows].sort((a, b) => {
       const va = a[sortKey as keyof Egreso] as string|number
       const vb = b[sortKey as keyof Egreso] as string|number
@@ -417,14 +431,32 @@ export default function EgresosPage() {
   const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
   const promedio      = mesesConDatos > 0 ? Math.round((egresos??[]).reduce((s,e)=>s+e.monto,0) / mesesConDatos) : 0
 
+  const getWidgetValue = (id: string) => {
+    switch (id) {
+      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendInvert: true, trendLabel: 'vs mes anterior', color: '#F54927' }
+      case 'tarjetas':      return { value: fmt(totalTarjetas, m), sub: `${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`, color: '#1A5E9E' }
+      case 'usd':           return { value: fmt(totalUSD, m), sub: `${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`, color: '#40B046' }
+      case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', color: '#E8A020' }
+      case 'top_categoria': return { value: topAño[0]?.label ?? '—', sub: topAño[0] ? fmt(topAño[0].value, m) : 'Sin datos', color: topAño[0]?.color ?? '#888780' }
+      case 'cantidad':      return { value: String(data.length), sub: 'Egresos registrados', color: '#5B3FA6' }
+      default: return { value: '—', sub: '', color: '#888780' }
+    }
+  }
+
+  const changeWidget = (index: number, newId: string) => {
+    const next = [...widgets]
+    next[index] = newId
+    setWidgets(next)
+  }
+
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
       if (modalEditId) {
-        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       } else {
-        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -434,13 +466,14 @@ export default function EgresosPage() {
     setForm({
       categoria: egreso.categoria, monto: String(egreso.monto), descripcion: egreso.descripcion,
       fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
+      etiqueta: egreso.etiqueta ?? '',
     })
     setModalEditId(egreso.id)
     setShowModal(true)
   }
 
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
-    await createEgreso({ categoria: data.categoria, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
+    await createEgreso({ categoria: data.categoria, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente, etiqueta: data.etiqueta || null })
     refetch()
   }, [refetch])
 
@@ -481,14 +514,43 @@ export default function EgresosPage() {
   return (
     <div>
       <PageHeader title="Egresos"
-        action={<button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo egreso</button>} />
+        action={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEditingWidgets(v => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
+              {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
+            </button>
+            <button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo egreso</button>
+          </div>
+        } />
 
-      {/* ── StatCards full width ── */}
+      {/* ── StatCards personalizables ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${periodoLabel}`}  value={fmt(total, m)}         color="#F54927" sub="Acumulado" trend={trendMes} trendInvert={true} trendLabel="vs mes anterior" />
-        <StatCard label="Tarjetas crédito"        value={fmt(totalTarjetas, m)} color="#1A5E9E" sub={`${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`} />
-        <StatCard label="Inversiones USD"         value={fmt(totalUSD, m)}      color="#40B046" sub={`${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`} />
-        <StatCard label="Promedio mensual"        value={fmt(promedio, m)}      color="#E8A020" sub="Sobre meses con datos" />
+        {widgets.map((widgetId, index) => {
+          const opt = WIDGET_OPTIONS_EGR.find(o => o.id === widgetId)!
+          const wv  = getWidgetValue(widgetId)
+          const label = widgetId === 'total' ? `Total ${periodoLabel}` : opt.label
+          return (
+            <div key={index} className="relative">
+              {editingWidgets && (
+                <div className="absolute -top-2 -right-2 z-10">
+                  <select
+                    value={widgetId}
+                    onChange={e => changeWidget(index, e.target.value)}
+                    className="text-[10px] bg-slate-900 text-white rounded-lg px-2 py-1 border-none cursor-pointer shadow-lg">
+                    {WIDGET_OPTIONS_EGR.map(o => <option key={o.id} value={o.id}>{o.icon} {o.label}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className={editingWidgets ? 'ring-2 ring-blue-400 ring-offset-1 rounded-2xl' : ''}>
+                <StatCard label={label} value={wv.value} sub={wv.sub} color={wv.color}
+                  trend={'trend' in wv ? wv.trend : undefined} trendInvert={'trendInvert' in wv ? wv.trendInvert : undefined}
+                  trendLabel={'trendLabel' in wv ? wv.trendLabel : undefined} />
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
@@ -557,7 +619,7 @@ export default function EgresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}</td>
                             case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
@@ -726,6 +788,10 @@ export default function EgresosPage() {
                 <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
               </select>
             </div>
+          </div>
+          <div>
+            <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
+            <input value={form.etiqueta} onChange={e => setForm(p => ({ ...p, etiqueta: e.target.value }))} placeholder="Ej: Viaje Brasil" className="input-field" />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />

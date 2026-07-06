@@ -3,7 +3,7 @@ import type { Moneda } from '@/types'
 export function fmt(n: number, moneda: Moneda = 'ARS'): string {
   if (moneda === 'BTC') return `₿${n.toFixed(6)}`
   if (moneda === 'ETH') return `Ξ${n.toFixed(4)}`
-  const sym = moneda === 'USD' ? 'US$' : moneda === 'EUR' ? '€' : '$'
+  const sym = moneda === 'USD' ? 'u$s ' : moneda === 'EUR' ? '€' : '$'
   if (Math.abs(n) >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`
   if (Math.abs(n) >= 1_000)    return `${sym}${Math.round(n / 1000)}k`
   return `${sym}${Math.round(n)}`
@@ -12,10 +12,13 @@ export function fmt(n: number, moneda: Moneda = 'ARS'): string {
 export function fmtFull(n: number, moneda: Moneda = 'ARS'): string {
   if (moneda === 'BTC') return `₿${n.toFixed(6)}`
   if (moneda === 'ETH') return `Ξ${n.toFixed(4)}`
-  const locale = moneda === 'USD' ? 'en-US' : moneda === 'EUR' ? 'de-DE' : 'es-AR'
-  const currency = moneda === 'USDT' ? 'USD' : moneda
+  if (moneda === 'USD' || moneda === 'USDT') {
+    const num = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+    return `u$s ${num}`
+  }
+  const locale = moneda === 'EUR' ? 'de-DE' : 'es-AR'
   return new Intl.NumberFormat(locale, {
-    style: 'currency', currency,
+    style: 'currency', currency: moneda,
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n)
 }

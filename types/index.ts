@@ -45,6 +45,7 @@ export interface Ingreso {
   fecha: string
   quien: Quien
   recurrente: boolean
+  etiqueta?: string | null
   created_at: string
 }
 export type IngresoInsert = Omit<Ingreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -62,6 +63,7 @@ export interface Egreso {
   fecha: string
   quien: Quien
   recurrente: boolean
+  etiqueta?: string | null
   created_at: string
 }
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -83,6 +85,7 @@ export interface Deuda {
   cuota_total: number
   color: string
   activa: boolean
+  etiqueta?: string | null
   created_at: string
 }
 export type DeudaInsert = Omit<Deuda, 'id' | 'user_id' | 'created_at'>
@@ -126,6 +129,7 @@ export interface TarjetaTransaccion {
   cuota_actual?: number
   cuota_total?: number
   tipo: 'debito' | 'credito'
+  etiqueta?: string | null
   created_at: string
 }
 

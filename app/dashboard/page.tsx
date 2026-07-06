@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { fmt, fmtFull } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
   const { data: tarjetas, loading: lt } = useTarjetas()
+  const { data: pagosTC,  loading: lp } = usePagosTarjeta()
 
   const HOY = new Date()
   const { data: eventosMes, loading: lem } = useEventosMes(HOY.getFullYear(), HOY.getMonth() + 1)
@@ -49,7 +50,10 @@ export default function DashboardPage() {
   // Eventos del mes que se está viendo (para el desglose día a día en vista Mes)
   const { data: eventosMesVista, loading: lemv } = useEventosMes(añoActivo, mesActivo)
 
-  if (li || le || ld || lt || lem || lemv) return <LoadingSpinner />
+  // Eventos de todo el año activo (para "Vencimientos" en vista Año)
+  const { data: eventosAño, loading: lea } = useEventosAño(añoActivo)
+
+  if (li || le || ld || lt || lem || lemv || lea || lp) return <LoadingSpinner />
 
   const r = calcularResumen(ingresos??[], egresos??[], deudas??[])
 
@@ -80,6 +84,16 @@ export default function DashboardPage() {
   const metasActivas = (deudas??[]).length
 
   const periodoLabel = esMensual ? `${MESES[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
+
+  // Vencimientos: en vista Mes, los del mes que se está viendo; en vista Año, todos los pendientes del año.
+  const eventosVencimientos = esMensual ? (eventosMesVista ?? []) : (eventosAño ?? [])
+  const vencimientosTitulo  = esMensual ? `Vencimientos de ${MESES[mesActivo-1].toLowerCase()}` : `Vencimientos pendientes ${añoActivo}`
+
+  // Acumulado del año por tarjeta + % sobre los ingresos del año, para la card de Tarjetas de crédito
+  const acumuladoPorTC = (tarjetas ?? []).reduce((acc, t) => {
+    acc[t.id] = (pagosTC ?? []).filter(p => p.tarjeta_id === t.id && p.año === añoActivo).reduce((s, p) => s + p.monto, 0)
+    return acc
+  }, {} as Record<string, number>)
 
   const getWidgetValue = (id: string) => {
     switch(id) {
@@ -312,14 +326,15 @@ export default function DashboardPage() {
       {/* ── Deudas y Tarjetas ── */}
       <div className="grid grid-cols-2 gap-5">
         <Card className="hover:border-slate-300 transition-all cursor-pointer" onClick={()=>router.push('/dashboard/deudas')}>
-          <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>Vencimientos del mes</CardTitle>
-          {(eventosMes??[]).filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
+          <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>{vencimientosTitulo}</CardTitle>
+          {eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
             <div className="text-slate-400 text-sm text-center py-4">Sin vencimientos pendientes 🎉</div>
-          ):(eventosMes??[]).filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).sort((a,b)=>a.dia-b.dia).slice(0,6).map(ev=>(
+          ):eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).sort((a,b)=>(a.mes*100+a.dia)-(b.mes*100+b.dia)).slice(0,6).map(ev=>(
             <div key={ev.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-slate-500">{ev.dia}</span>
+                <div className="w-8 h-8 rounded-lg bg-slate-100 flex flex-col items-center justify-center flex-shrink-0 leading-none">
+                  <span className="text-[9px] font-semibold text-slate-400">{MESES_CORTOS[ev.mes-1]?.toUpperCase()}</span>
+                  <span className="text-xs font-bold text-slate-600">{ev.dia}</span>
                 </div>
                 <span className="text-slate-700 text-sm truncate max-w-[160px]">{ev.descripcion}</span>
               </div>
@@ -332,8 +347,11 @@ export default function DashboardPage() {
           <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Tarjetas de crédito</CardTitle>
           {(tarjetas??[]).length===0?(
             <div className="text-slate-400 text-sm text-center py-4">Sin tarjetas registradas</div>
-          ):(tarjetas??[]).map(t=>(
-            <div key={t.id} className="mb-4">
+          ):(tarjetas??[]).map(t=>{
+            const acumulado = acumuladoPorTC[t.id] ?? 0
+            const pct = r.totalIngresos > 0 ? Math.round(acumulado / r.totalIngresos * 100) : 0
+            return (
+            <div key={t.id} className="mb-4 last:mb-0">
               <div className="flex justify-between items-center mb-1.5">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{background:t.color}}>
@@ -345,12 +363,14 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono text-sm font-bold text-slate-600">{fmt(t.limite,m)}</div>
-                  <div className="text-slate-400 text-xs">límite</div>
+                  <div className="font-mono text-sm font-bold text-slate-600">{fmt(acumulado,m)}</div>
+                  <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
                 </div>
               </div>
+              <ProgressBar value={pct} color={t.color} height={6} />
+              <div className="text-slate-400 text-[11px] mt-1">{pct}% de tus ingresos del año</div>
             </div>
-          ))}
+          )})}
         </Card>
       </div>
       {/* ── Modal expandido ── */}
@@ -442,23 +462,32 @@ export default function DashboardPage() {
             </>}
 
             {expandedChart==='tarjetas' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Tarjetas de crédito</div>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Tarjetas de crédito — acumulado {añoActivo}</div>
               <div className="flex flex-col gap-5">
-                {(tarjetas??[]).map(t=>(
-                  <div key={t.id} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{background:t.color}}>
-                      {t.icono}
+                {(tarjetas??[]).map(t=>{
+                  const acumulado = acumuladoPorTC[t.id] ?? 0
+                  const pct = r.totalIngresos > 0 ? Math.round(acumulado / r.totalIngresos * 100) : 0
+                  return (
+                  <div key={t.id} className="p-4 rounded-xl border border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{background:t.color}}>
+                        {t.icono}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-slate-800 font-semibold">{t.nombre}</div>
+                        <div className="text-slate-400 text-sm">{t.banco} · {t.quien}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono text-lg font-bold text-slate-700">{fmtFull(acumulado,m)}</div>
+                        <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="text-slate-800 font-semibold">{t.nombre}</div>
-                      <div className="text-slate-400 text-sm">{t.banco} · {t.quien}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono text-lg font-bold text-slate-700">{fmtFull(t.limite,m)}</div>
-                      <div className="text-slate-400 text-xs">límite</div>
+                    <div className="mt-3">
+                      <ProgressBar value={pct} color={t.color} height={8} />
+                      <div className="text-slate-400 text-xs mt-1">{pct}% de tus ingresos del año</div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </>}
           </div>

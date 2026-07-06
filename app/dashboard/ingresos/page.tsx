@@ -23,13 +23,24 @@ const PAGE_SIZE = 30
 const FORM_INIT = {
   tipo: 'salario', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
-  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false,
+  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'tipo' | 'descripcion' | 'quien'
 type SortDir = 'asc' | 'desc'
 const COLS_DEFAULT: SortKey[] = ['fecha', 'descripcion', 'tipo', 'quien', 'monto']
 const COL_LABEL: Record<SortKey, string> = { fecha: 'Fecha', descripcion: 'Descripción', tipo: 'Tipo', quien: 'Quién', monto: 'Importe' }
+
+// ─── Widgets personalizables ────────────────────────────────────────────────
+const WIDGET_OPTIONS_ING = [
+  { id: 'total',        label: 'Total del período',   icon: '💰' },
+  { id: 'salarios',     label: 'Salarios',            icon: '👔' },
+  { id: 'extra',        label: 'Ingresos extra',      icon: '➕' },
+  { id: 'promedio',     label: 'Promedio mensual',    icon: '📅' },
+  { id: 'top_categoria',label: 'Mayor categoría',     icon: '🏆' },
+  { id: 'cantidad',     label: 'Cantidad de ingresos',icon: '🔢' },
+]
+const DEFAULT_WIDGETS_ING = ['total', 'salarios', 'extra', 'promedio']
 
 // ─── MultiDropdown ────────────────────────────────────────────────────────────
 function MultiDropdown({ label, options, selected, onChange }: {
@@ -147,7 +158,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ tipo: r.tipo || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false })
+    await onSave({ tipo: r.tipo || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -324,6 +335,8 @@ export default function IngresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
+  const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_ING)
+  const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditId, setModalEditId] = useState<string|null>(null)
   const [saving, setSaving]           = useState(false)
   const [form, setForm]               = useState(FORM_INIT)
@@ -395,7 +408,7 @@ export default function IngresosPage() {
     const rows = data
       .filter(i => filterTipos.length === 0 || filterTipos.includes(i.tipo))
       .filter(i => filterQuien.length === 0 || filterQuien.includes(i.quien))
-      .filter(i => !search || i.descripcion.toLowerCase().includes(search.toLowerCase()))
+      .filter(i => !search || i.descripcion.toLowerCase().includes(search.toLowerCase()) || (i.etiqueta ?? '').toLowerCase().includes(search.toLowerCase()))
     return [...rows].sort((a, b) => {
       const va = a[sortKey as keyof Ingreso] as string|number
       const vb = b[sortKey as keyof Ingreso] as string|number
@@ -424,14 +437,32 @@ export default function IngresosPage() {
   const mesesConDatos = new Set((ingresos ?? []).map(i => i.mes)).size
   const promedio      = mesesConDatos > 0 ? Math.round((ingresos??[]).reduce((s,i)=>s+i.monto,0) / mesesConDatos) : 0
 
+  const getWidgetValue = (id: string) => {
+    switch (id) {
+      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendLabel: 'vs mes anterior', color: '#40B046' }
+      case 'salarios':      return { value: fmt(salarios, m), sub: `${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`, color: '#40B046' }
+      case 'extra':         return { value: fmt(total - salarios, m), sub: 'Freelance + alquiler + otros', color: '#52A852' }
+      case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', color: '#1A5E9E' }
+      case 'top_categoria': return { value: topAño[0]?.label ?? '—', sub: topAño[0] ? fmt(topAño[0].value, m) : 'Sin datos', color: topAño[0]?.color ?? '#888780' }
+      case 'cantidad':      return { value: String(data.length), sub: 'Ingresos registrados', color: '#5B3FA6' }
+      default: return { value: '—', sub: '', color: '#888780' }
+    }
+  }
+
+  const changeWidget = (index: number, newId: string) => {
+    const next = [...widgets]
+    next[index] = newId
+    setWidgets(next)
+  }
+
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
       if (modalEditId) {
-        await updateIngreso(modalEditId, { tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+        await updateIngreso(modalEditId, { tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       } else {
-        await createIngreso({ tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente })
+        await createIngreso({ tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -441,6 +472,7 @@ export default function IngresosPage() {
     setForm({
       tipo: ingreso.tipo, monto: String(ingreso.monto), descripcion: ingreso.descripcion,
       fecha: ingreso.fecha, moneda: ingreso.moneda as Moneda, quien: ingreso.quien, recurrente: ingreso.recurrente,
+      etiqueta: ingreso.etiqueta ?? '',
     })
     setModalEditId(ingreso.id)
     setShowModal(true)
@@ -448,7 +480,7 @@ export default function IngresosPage() {
 
   // Fila Sheet — guardar nuevo ingreso rápido
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
-    await createIngreso({ tipo: data.tipo, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente })
+    await createIngreso({ tipo: data.tipo, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente, etiqueta: data.etiqueta || null })
     refetch()
   }, [refetch])
 
@@ -490,14 +522,43 @@ export default function IngresosPage() {
   return (
     <div>
       <PageHeader title="Ingresos"
-        action={<button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>} />
+        action={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEditingWidgets(v => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
+              {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
+            </button>
+            <button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>
+          </div>
+        } />
 
-      {/* ── StatCards full width ── */}
+      {/* ── StatCards personalizables ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label={`Total ${periodoLabel}`} value={fmt(total, m)}            color="#40B046" sub="Acumulado" trend={trendMes} trendLabel="vs mes anterior" />
-        <StatCard label="Salarios"              value={fmt(salarios, m)}         color="#40B046" sub={`${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`} />
-        <StatCard label="Ingresos extra"        value={fmt(total - salarios, m)} color="#52A852" sub="Freelance + alquiler + otros" />
-        <StatCard label="Promedio mensual"      value={fmt(promedio, m)}         color="#1A5E9E" sub="Sobre meses con datos" />
+        {widgets.map((widgetId, index) => {
+          const opt = WIDGET_OPTIONS_ING.find(o => o.id === widgetId)!
+          const wv  = getWidgetValue(widgetId)
+          const label = widgetId === 'total' ? `Total ${periodoLabel}` : opt.label
+          return (
+            <div key={index} className="relative">
+              {editingWidgets && (
+                <div className="absolute -top-2 -right-2 z-10">
+                  <select
+                    value={widgetId}
+                    onChange={e => changeWidget(index, e.target.value)}
+                    className="text-[10px] bg-slate-900 text-white rounded-lg px-2 py-1 border-none cursor-pointer shadow-lg">
+                    {WIDGET_OPTIONS_ING.map(o => <option key={o.id} value={o.id}>{o.icon} {o.label}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className={editingWidgets ? 'ring-2 ring-blue-400 ring-offset-1 rounded-2xl' : ''}>
+                <StatCard label={label} value={wv.value} sub={wv.sub} color={wv.color}
+                  trend={'trend' in wv ? wv.trend : undefined}
+                  trendLabel={'trendLabel' in wv ? wv.trendLabel : undefined} />
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
@@ -566,7 +627,7 @@ export default function IngresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}</td>
                             case 'tipo':        return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
@@ -738,6 +799,10 @@ export default function IngresosPage() {
                 <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
               </select>
             </div>
+          </div>
+          <div>
+            <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
+            <input value={form.etiqueta} onChange={e => setForm(p => ({ ...p, etiqueta: e.target.value }))} placeholder="Ej: Viaje Brasil" className="input-field" />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />

@@ -24,6 +24,18 @@ const CATEGORIAS_EVENTO = [
   { key: 'egreso',   label: 'Otro egreso', color: '#888780' },
 ]
 
+// ─── Widgets personalizables ────────────────────────────────────────────────
+const WIDGET_OPTIONS_DEU = [
+  { id: 'vence_mes',       label: 'Vence este mes',    icon: '📅' },
+  { id: 'pagado_mes',      label: 'Pagado este mes',   icon: '✅' },
+  { id: 'pct_ingresos',    label: '% sobre ingresos',  icon: '📊' },
+  { id: 'deudas_activas',  label: 'Deudas LP activas', icon: '📋' },
+  { id: 'total_pendiente', label: 'Total pendiente',   icon: '💸' },
+  { id: 'cuota_mensual',   label: 'Cuota mensual fija',icon: '🔁' },
+]
+const DEFAULT_WIDGETS_DEU = ['vence_mes', 'pagado_mes', 'pct_ingresos', 'deudas_activas']
+
+
 // ─── InlineEditEvento ─────────────────────────────────────────────────────────
 function InlineEditEvento({ ev, onSave, onCancel }: { ev: any; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
   const [form, setForm] = useState({
@@ -143,12 +155,14 @@ export default function DeudasPage() {
 
   // Modal nueva deuda largo plazo
   const [showDeudaModal, setShowDeudaModal] = useState(false)
+  const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_DEU)
+  const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditDeudaId, setModalEditDeudaId] = useState<string|null>(null)
   const [deudaForm, setDeudaForm] = useState({
     nombre: '', banco: '', total_original: '', cuota_mensual: '',
     fecha_inicio: new Date().toISOString().split('T')[0],
     fecha_vencimiento: '', cuota_actual: '1', cuota_total: '1',
-    moneda: 'ARS' as Moneda, color: '#5B3FA6',
+    moneda: 'ARS' as Moneda, color: '#5B3FA6', etiqueta: '',
   })
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -189,11 +203,28 @@ export default function DeudasPage() {
   const totalIngresosMes = (ingresos ?? []).filter(i => i.mes === calMes + 1 && i.año === calAño).reduce((s, i) => s + i.monto, 0)
   const pctDeudaIngresos = totalIngresosMes > 0 ? Math.round(venceMes / totalIngresosMes * 100) : 0
 
-  // mes anterior para trend
-  const venceMesAnt = useMemo(() => {
-    // approximate from deudas cuota_mensual (we don't load prev month events here)
-    return cuotaMensual
-  }, [cuotaMensual])
+  // mes anterior para trend — derivado de eventosAño (ya cargado). En enero, al no haber diciembre
+  // del año en curso dentro de este mismo fetch, el trend simplemente no se muestra ese mes.
+  const pagadoMesAnt = (eventosAño ?? []).filter(e => e.mes === calMes && e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const trendPagado  = pagadoMesAnt > 0 ? Math.round((pagadoMes - pagadoMesAnt) / pagadoMesAnt * 100) : undefined
+
+  const getWidgetValue = (id: string) => {
+    switch (id) {
+      case 'vence_mes':       return { value: fmt(venceMes, m), sub: `${pendientes} pendientes`, color: '#F54927' }
+      case 'pagado_mes':      return { value: fmt(pagadoMes, m), sub: 'del mes actual', trend: trendPagado, trendInvert: true, trendLabel: 'vs mes anterior', color: '#40B046' }
+      case 'pct_ingresos':    return { value: `${pctDeudaIngresos}%`, sub: 'deudas / ingresos del mes', color: pctDeudaIngresos > 40 ? '#F54927' : pctDeudaIngresos > 25 ? '#E8A020' : '#40B046' }
+      case 'deudas_activas':  return { value: String((deudas ?? []).length), sub: `Cuota fija: ${fmt(cuotaMensual, m)}`, color: '#5B3FA6' }
+      case 'total_pendiente': return { value: fmt(totalPendiente, m), sub: 'Saldo total de deudas LP', color: '#D4537E' }
+      case 'cuota_mensual':   return { value: fmt(cuotaMensual, m), sub: 'Comprometido cada mes', color: '#1A5E9E' }
+      default: return { value: '—', sub: '', color: '#888780' }
+    }
+  }
+
+  const changeWidget = (index: number, newId: string) => {
+    const next = [...widgets]
+    next[index] = newId
+    setWidgets(next)
+  }
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleToggle = async (ev: any) => {
@@ -262,7 +293,7 @@ export default function DeudasPage() {
           moneda: deudaForm.moneda,
           fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
           cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
-          color: deudaForm.color,
+          color: deudaForm.color, etiqueta: deudaForm.etiqueta || null,
         })
       } else {
         await createDeuda({
@@ -273,7 +304,7 @@ export default function DeudasPage() {
           tasa_interes: 0, moneda: deudaForm.moneda,
           fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
           cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
-          color: deudaForm.color, activa: true,
+          color: deudaForm.color, activa: true, etiqueta: deudaForm.etiqueta || null,
         })
       }
       setShowDeudaModal(false); setModalEditDeudaId(null); refDeudas()
@@ -287,7 +318,7 @@ export default function DeudasPage() {
       fecha_inicio: d.fecha_inicio ?? new Date().toISOString().split('T')[0],
       fecha_vencimiento: d.fecha_vencimiento ?? '',
       cuota_actual: String(d.cuota_actual ?? '1'), cuota_total: String(d.cuota_total ?? '1'),
-      moneda: d.moneda ?? 'ARS', color: d.color ?? '#5B3FA6',
+      moneda: d.moneda ?? 'ARS', color: d.color ?? '#5B3FA6', etiqueta: d.etiqueta ?? '',
     })
     setModalEditDeudaId(d.id)
     setShowDeudaModal(true)
@@ -315,17 +346,41 @@ export default function DeudasPage() {
       <PageHeader title="Deudas"
         action={
           <div className="flex gap-2">
+            <button
+              onClick={() => setEditingWidgets(v => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
+              {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
+            </button>
             <button className="btn-ghost text-sm" onClick={() => setShowEvModal(true)}>+ Vencimiento</button>
-            <button className="btn-primary" onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
+            <button className="btn-primary" onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
           </div>
         } />
 
-      {/* ── StatCards ── */}
+      {/* ── StatCards personalizables ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label="Vence este mes"     value={fmt(venceMes, m)}           color="#F54927" sub={`${pendientes} pendientes`} />
-        <StatCard label="Pagado este mes"    value={fmt(pagadoMes, m)}           color="#40B046" sub="del mes actual" />
-        <StatCard label="% sobre ingresos"   value={`${pctDeudaIngresos}%`}      color={pctDeudaIngresos > 40 ? '#F54927' : pctDeudaIngresos > 25 ? '#E8A020' : '#40B046'} sub="deudas / ingresos del mes" />
-        <StatCard label="Deudas LP activas"  value={String((deudas ?? []).length)} color="#5B3FA6" sub={`Cuota fija: ${fmt(cuotaMensual, m)}`} />
+        {widgets.map((widgetId, index) => {
+          const opt = WIDGET_OPTIONS_DEU.find(o => o.id === widgetId)!
+          const wv  = getWidgetValue(widgetId)
+          return (
+            <div key={index} className="relative">
+              {editingWidgets && (
+                <div className="absolute -top-2 -right-2 z-10">
+                  <select
+                    value={widgetId}
+                    onChange={e => changeWidget(index, e.target.value)}
+                    className="text-[10px] bg-slate-900 text-white rounded-lg px-2 py-1 border-none cursor-pointer shadow-lg">
+                    {WIDGET_OPTIONS_DEU.map(o => <option key={o.id} value={o.id}>{o.icon} {o.label}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className={editingWidgets ? 'ring-2 ring-blue-400 ring-offset-1 rounded-2xl' : ''}>
+                <StatCard label={opt.label} value={wv.value} sub={wv.sub} color={wv.color}
+                  trend={'trend' in wv ? wv.trend : undefined} trendInvert={'trendInvert' in wv ? wv.trendInvert : undefined}
+                  trendLabel={'trendLabel' in wv ? wv.trendLabel : undefined} />
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* ── Tabs ── */}
@@ -476,7 +531,7 @@ export default function DeudasPage() {
               <div className="text-4xl mb-3">📋</div>
               <div className="font-semibold text-slate-600 mb-1">Sin deudas de largo plazo</div>
               <div className="text-sm mb-4">Agregá préstamos, créditos o cuotas fijas.</div>
-              <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6' }); setShowDeudaModal(true) }} className="btn-primary">+ Nueva deuda LP</button>
+              <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }} className="btn-primary">+ Nueva deuda LP</button>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-5">
@@ -491,7 +546,10 @@ export default function DeudasPage() {
                   <Card key={d.id}>
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1 min-w-0">
-                        <div onClick={() => openEditDeudaModal(d)} className="text-base font-semibold text-slate-900 truncate cursor-pointer hover:underline hover:font-bold">{d.nombre}</div>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div onClick={() => openEditDeudaModal(d)} className="text-base font-semibold text-slate-900 truncate cursor-pointer hover:underline hover:font-bold">{d.nombre}</div>
+                          {d.etiqueta && <span className="flex-shrink-0 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{d.etiqueta}</span>}
+                        </div>
                         {d.banco && <div className="text-slate-400 text-xs mt-0.5">{d.banco}</div>}
                       </div>
                       <div className="flex items-start gap-2 flex-shrink-0 ml-3">
@@ -675,6 +733,10 @@ export default function DeudasPage() {
                 ))}
               </div>
             </div>
+          </div>
+          <div>
+            <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
+            <input value={deudaForm.etiqueta} onChange={e => setDeudaForm(p => ({ ...p, etiqueta: e.target.value }))} placeholder="Ej: Viaje Brasil" className="input-field" />
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} className="btn-ghost flex-1">Cancelar</button>
