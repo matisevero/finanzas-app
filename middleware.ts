@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession()
 
   const isAuth      = request.nextUrl.pathname.startsWith('/auth')
-  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard') || request.nextUrl.pathname === '/'
+  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard') || request.nextUrl.pathname.startsWith('/carga-rapida') || request.nextUrl.pathname === '/'
 
   if (!session && isDashboard) {
     const url = request.nextUrl.clone()
