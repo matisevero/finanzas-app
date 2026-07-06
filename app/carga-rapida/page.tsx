@@ -156,7 +156,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
 
       {/* Zona de foto/archivo */}
       <div className="px-4 mb-4">
-        <input ref={fileRef} type="file" accept="image/*,.pdf" capture="environment" hidden
+        <input ref={fileRef} type="file" accept="image/*,.pdf" hidden
           onChange={e => { const f = e.target.files?.[0]; if (f) handleArchivo(f) }} />
         <button onClick={() => fileRef.current?.click()} disabled={analizando}
           className="w-full border-2 border-dashed border-slate-300 rounded-2xl py-6 flex flex-col items-center gap-2 bg-white cursor-pointer disabled:opacity-60">
