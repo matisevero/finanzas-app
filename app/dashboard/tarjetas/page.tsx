@@ -39,6 +39,11 @@ export default function TarjetasPage() {
   const [pdfStep, setPdfStep]         = useState<'upload'|'review'|'done'>('upload')
   const [savingPdf, setSavingPdf]     = useState(false)
   const [comercios, setComercios]     = useState<any[]>([])
+  const [iaDisponible, setIaDisponible] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetch('/api/analizar-comprobante').then(r => r.json()).then(d => setIaDisponible(!!d.disponible)).catch(() => setIaDisponible(false))
+  }, [])
 
   // Modal edición de transacción
   const [showTxnModal, setShowTxnModal] = useState(false)
@@ -400,7 +405,10 @@ export default function TarjetasPage() {
             </div>
             <div>
               <FieldLabel>Archivo PDF</FieldLabel>
-              <input type="file" accept=".pdf"
+              {iaDisponible === false && (
+                <p className="text-xs text-slate-400 mb-1.5">Próximamente — todavía no está activada la lectura automática.</p>
+              )}
+              <input type="file" accept=".pdf" disabled={iaDisponible !== true}
                 onChange={async e => {
                   const file = e.target.files?.[0]
                   if (!file || !pdfTarjetaId) return
@@ -425,17 +433,12 @@ export default function TarjetasPage() {
                       ? `\n\nDATOS DE LA TARJETA:\n- Nombre: ${tarjetaActual.nombre}\n- Banco: ${tarjetaActual.banco}\n- Red: detectar del PDF (VISA/Mastercard/Amex)\n- Titular: ${tarjetaActual.quien}`
                       : ''
 
-                    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+                    const resp = await fetch('/api/analizar-comprobante',{
                       method:'POST',
                       headers:{'Content-Type':'application/json'},
                       body: JSON.stringify({
-                        model:'claude-sonnet-4-20250514',
-                        max_tokens:4000,
-                        messages:[{
-                          role:'user',
-                          content:[
-                            {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},
-                            {type:'text',text:`Extraé todas las transacciones de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
+                        base64, mediaType: 'application/pdf', esPdf: true, maxTokens: 4000,
+                        prompt: `Extraé todas las transacciones de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
 
 Respondé SOLO con un JSON array, sin texto extra, sin backticks, sin markdown.
 Cada transacción debe tener estos campos exactos:
@@ -453,14 +456,12 @@ Cada transacción debe tener estos campos exactos:
   "red": "VISA|Mastercard|Amex|otra, detectado del PDF"
 }
 Solo incluí gastos/compras, no pagos ni resúmenes de cuenta.
-Para el campo descripcion, usá el nombre real del negocio, no el código técnico del extracto.`}
-                          ]
-                        }]
+Para el campo descripcion, usá el nombre real del negocio, no el código técnico del extracto.`
                       })
                     })
                     const data = await resp.json()
-                    const text = data.content?.map((b:any)=>b.text||'').join('')
-                    const clean = text.replace(/\`\`\`json|\`\`\`/g,'').trim()
+                    if (!resp.ok) throw new Error(data?.error || 'Error analizando el PDF')
+                    const clean = (data.text||'').replace(/\`\`\`json|\`\`\`/g,'').trim()
                     const parsed = JSON.parse(clean)
                     setPdfTxns(parsed.map((t:any,i:number)=>({...t,id:i,selected:true,tarjeta_id:pdfTarjetaId})))
                     setPdfStep('review')
@@ -468,7 +469,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
                     setPdfError('No se pudo procesar el PDF: '+(err.message||'Error'))
                   } finally { setPdfLoading(false) }
                 }}
-                className="input-field py-2 text-sm cursor-pointer" />
+                className="input-field py-2 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             {pdfLoading && <div className="text-center py-4 text-slate-400 text-sm">Analizando PDF con IA...</div>}
             {pdfError && <div className="text-red-500 text-sm bg-red-50 px-4 py-3 rounded-xl">{pdfError}</div>}

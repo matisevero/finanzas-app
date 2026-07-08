@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
 import { useCategoriasCustom } from '@/hooks'
@@ -25,6 +25,11 @@ export default function CargaRapidaPage() {
   const [analizando, setAnalizando] = useState(false)
   const [analizError, setAnalizError] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
+  const [iaDisponible, setIaDisponible] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetch('/api/analizar-comprobante').then(r => r.json()).then(d => setIaDisponible(!!d.disponible)).catch(() => setIaDisponible(false))
+  }, [])
   const [guardando, setGuardando] = useState(false)
   const [guardadoOk, setGuardadoOk] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -54,17 +59,7 @@ export default function CargaRapidaPage() {
       const esPdf = file.type === 'application/pdf'
       const categoriasNombres = [...tiposBase.map(t => t.label), ...(categoriasCustom ?? []).map((c: any) => c.nombre)]
 
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: esPdf ? 'document' : 'image', source: { type: 'base64', media_type: esPdf ? 'application/pdf' : (file.type || 'image/jpeg'), data: base64 } },
-              { type: 'text', text: `Esto es un comprobante, ticket, recibo o captura de un ${tipoVista === 'ingreso' ? 'ingreso de dinero' : 'gasto'}. Extraé los datos.
+      const prompt = `Esto es un comprobante, ticket, recibo o captura de un ${tipoVista === 'ingreso' ? 'ingreso de dinero' : 'gasto'}. Extraé los datos.
 
 Categorías disponibles (elegí la que más se acerque, si ninguna calza devolvé ""): ${categoriasNombres.join(', ')}
 
@@ -75,14 +70,16 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
   "fecha": "YYYY-MM-DD" (la fecha del comprobante; si no aparece, usá null),
   "moneda": "ARS" o "USD",
   "categoria": "una de las categorías de la lista, o vacío si ninguna calza"
-}` },
-            ],
-          }],
-        }),
+}`
+
+      const resp = await fetch('/api/analizar-comprobante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mediaType: file.type, esPdf, prompt }),
       })
       const data = await resp.json()
-      const text = data.content?.map((b: any) => b.text || '').join('') ?? ''
-      const clean = text.replace(/```json|```/g, '').trim()
+      if (!resp.ok) throw new Error(data?.error || 'Error analizando el archivo')
+      const clean = (data.text || '').replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
 
       const catMatch = tiposBase.find(t => t.label.toLowerCase() === (parsed.categoria || '').toLowerCase())
@@ -97,7 +94,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
         categoria: catMatch?.key || catCustomMatch?.id || p.categoria,
       }))
     } catch (err: any) {
-      setAnalizError('No pude leer el archivo — completá los datos a mano.')
+      setAnalizError(err?.message ? `No pude leerlo: ${err.message}` : 'No pude leer el archivo — completá los datos a mano.')
     } finally {
       setAnalizando(false)
     }
@@ -160,16 +157,17 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
       <div className="px-4 mb-4">
         <input ref={fileRef} type="file" accept="image/*,.pdf" hidden
           onChange={e => { const f = e.target.files?.[0]; if (f) handleArchivo(f) }} />
-        <button onClick={() => fileRef.current?.click()} disabled={analizando}
-          className="w-full border-2 border-dashed border-slate-300 rounded-2xl py-6 flex flex-col items-center gap-2 bg-white cursor-pointer disabled:opacity-60">
+        <button onClick={() => fileRef.current?.click()} disabled={analizando || !iaDisponible}
+          className="w-full border-2 border-dashed border-slate-300 rounded-2xl py-6 flex flex-col items-center gap-2 bg-white cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
           {preview && !analizando ? (
             <img src={preview} alt="" className="h-20 rounded-lg object-cover" />
           ) : (
             <span className="text-3xl">📷</span>
           )}
           <span className="text-sm font-medium text-slate-600">
-            {analizando ? 'Leyendo el comprobante...' : preview ? 'Cambiar foto o archivo' : 'Sacar foto o subir archivo'}
+            {iaDisponible === false ? 'Próximamente' : analizando ? 'Leyendo el comprobante...' : preview ? 'Cambiar foto o archivo' : 'Sacar foto o subir archivo'}
           </span>
+          {iaDisponible === false && <span className="text-xs text-slate-400">Todavía no está activada — cargá a mano por ahora</span>}
         </button>
         {analizError && <p className="text-xs text-red-500 mt-2 text-center">{analizError}</p>}
       </div>
