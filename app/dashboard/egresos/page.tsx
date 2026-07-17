@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -346,6 +346,13 @@ export default function EgresosPage() {
   const [cols, setCols]               = useState<SortKey[]>(COLS_DEFAULT)
   const [page, setPage]               = useState(1)
   const [expandedChart, setExpandedChart] = useState<'evolucion'|'composicion'|null>(null)
+
+  useEffect(() => {
+    if (!expandedChart) return
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandedChart(null) }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [expandedChart])
   const dragCol  = useRef<number|null>(null)
   const dragOver = useRef<number|null>(null)
 

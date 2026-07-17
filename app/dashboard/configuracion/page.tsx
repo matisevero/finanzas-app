@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
+import PasswordInput from '@/components/ui/PasswordInput'
 import type { Moneda } from '@/types'
 import { useRouter } from 'next/navigation'
 
@@ -309,8 +310,8 @@ export default function ConfiguracionPage() {
         <Card>
           <div className="text-slate-900 font-semibold text-[15px] mb-5">Cambiar contraseña</div>
           <div className="flex flex-col gap-4">
-            <div><FieldLabel>Nueva contraseña</FieldLabel><input type="password" value={passForm.nueva} onChange={e=>setPassForm(p=>({...p,nueva:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
-            <div><FieldLabel>Repetir contraseña</FieldLabel><input type="password" value={passForm.repetir} onChange={e=>setPassForm(p=>({...p,repetir:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
+            <div><FieldLabel>Nueva contraseña</FieldLabel><PasswordInput value={passForm.nueva} onChange={e=>setPassForm(p=>({...p,nueva:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
+            <div><FieldLabel>Repetir contraseña</FieldLabel><PasswordInput value={passForm.repetir} onChange={e=>setPassForm(p=>({...p,repetir:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
             {passMsg&&<div className={`text-sm px-4 py-3 rounded-xl ${passMsg.type==='ok'?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-600'}`}>{passMsg.text}</div>}
             <button onClick={savePassword} disabled={!passForm.nueva||!passForm.repetir} className="btn-primary disabled:opacity-50 w-fit">Actualizar contraseña</button>
           </div>

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import PasswordInput from '@/components/ui/PasswordInput'
 
 type Mode = 'login' | 'register' | 'forgot'
 
@@ -75,7 +76,7 @@ export default function LoginPage() {
           {mode !== 'forgot' && (
             <div>
               <label className="label mb-1.5 block">Contraseña</label>
-              <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              <PasswordInput value={password} onChange={e=>setPassword(e.target.value)}
                 placeholder="••••••••" required minLength={6} className="input-field" />
             </div>
           )}

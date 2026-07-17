@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
@@ -37,6 +37,13 @@ export default function DashboardPage() {
   const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS)
   const [editingWidgets, setEditingWidgets] = useState(false)
   const [expandedChart, setExpandedChart] = useState<'flujo'|'egresos'|'ingresos'|'deudas'|'tarjetas'|null>(null)
+
+  useEffect(() => {
+    if (!expandedChart) return
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandedChart(null) }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [expandedChart])
 
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
@@ -241,8 +248,8 @@ export default function DashboardPage() {
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v/1000,m).replace(/[^0-9kKMm.,]/g,'')+'k'} />
                 <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmt(v,m),name]} labelFormatter={flujoLabelFormatter} />
                 <Legend wrapperStyle={{color:'#64748b',fontSize:12}} />
-                <Bar dataKey="Ingresos" fill="#40B046" radius={[4,4,0,0]} maxBarSize={28} />
-                <Bar dataKey="Gastos"   fill="#F54927" radius={[4,4,0,0]} maxBarSize={28} />
+                <Bar dataKey="Ingresos" fill="#40B046" radius={0} maxBarSize={28} />
+                <Bar dataKey="Gastos"   fill="#F54927" radius={0} maxBarSize={28} />
               </BarChart>
             ):(
               <AreaChart data={chartFlowData}>
@@ -389,8 +396,8 @@ export default function DashboardPage() {
                   <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
                   <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={flujoLabelFormatter} />
                   <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
-                  <Bar dataKey="Ingresos" fill="#40B046" radius={[4,4,0,0]} maxBarSize={36} />
-                  <Bar dataKey="Gastos"   fill="#F54927" radius={[4,4,0,0]} maxBarSize={36} />
+                  <Bar dataKey="Ingresos" fill="#40B046" radius={0} maxBarSize={36} />
+                  <Bar dataKey="Gastos"   fill="#F54927" radius={0} maxBarSize={36} />
                 </BarChart>
               </ResponsiveContainer>
             </>}

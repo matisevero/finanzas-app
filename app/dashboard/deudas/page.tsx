@@ -609,7 +609,7 @@ export default function DeudasPage() {
                 <Tooltip contentStyle={{ border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}
                   formatter={(v: number) => [`${v}%`, '% de ingresos']}
                   labelFormatter={(l: string) => l} />
-                <Bar dataKey="pct" name="% deudas/ingresos" radius={[3,3,0,0]} maxBarSize={40}
+                <Bar dataKey="pct" name="% deudas/ingresos" radius={0} maxBarSize={40}
                   fill="#F54927"
                   label={{ position: 'top', fontSize: 10, fill: '#94a3b8', formatter: (v: number) => v > 0 ? `${v}%` : '' }} />
               </BarChart>
