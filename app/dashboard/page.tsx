@@ -36,6 +36,8 @@ export default function DashboardPage() {
   // Widget config
   const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS)
   const [editingWidgets, setEditingWidgets] = useState(false)
+  const [ahorroIdx, setAhorroIdx] = useState(0)
+  const [deudaMonedaIdx, setDeudaMonedaIdx] = useState(0)
   const [expandedChart, setExpandedChart] = useState<'flujo'|'egresos'|'ingresos'|'deudas'|'tarjetas'|null>(null)
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function DashboardPage() {
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
   const { data: tarjetas, loading: lt } = useTarjetas()
+  const monedasAhorro = useAppStore(s => s.monedasAhorro)
   const { data: pagosTC,  loading: lp } = usePagosTarjeta()
 
   const HOY = new Date()
@@ -63,6 +66,30 @@ export default function DashboardPage() {
   if (li || le || ld || lt || lem || lemv || lea || lp) return <LoadingSpinner />
 
   const r = calcularResumen(ingresos??[], egresos??[], deudas??[])
+
+  // "Ahorro / Inversiones" por moneda: cuenta ítems con etiqueta "ahorro"/"inversión",
+  // o ya categorizados como Inversiones USD (tipo/categoria === 'usd'), dentro del año activo.
+  const esAhorroOInversion = (etiqueta?: string|null, tipoOCategoria?: string) =>
+    (!!etiqueta && /ahorro|inversi/i.test(etiqueta)) || tipoOCategoria === 'usd'
+
+  const monedasConAhorro = Array.from(new Set([
+    ...(ingresos??[]).filter(i => esAhorroOInversion(i.etiqueta, i.tipo)).map(i => i.moneda),
+    ...(egresos??[]).filter(e => esAhorroOInversion(e.etiqueta, e.categoria)).map(e => e.moneda),
+    ...monedasAhorro,
+  ]))
+
+  const ahorroPorMoneda = monedasConAhorro.map(mon => {
+    const ing = (ingresos??[]).filter(i => i.moneda === mon && esAhorroOInversion(i.etiqueta, i.tipo)).reduce((s,i)=>s+i.monto,0)
+    const egr = (egresos??[]).filter(e => e.moneda === mon && esAhorroOInversion(e.etiqueta, e.categoria)).reduce((s,e)=>s+e.monto,0)
+    return { moneda: mon, monto: ing - egr }
+  })
+
+  // Deudas por moneda: agrupa el saldo pendiente real de cada deuda por su moneda.
+  const monedasConDeuda = Array.from(new Set((deudas??[]).map(d => d.moneda)))
+  const deudaPorMoneda = monedasConDeuda.map(mon => ({
+    moneda: mon,
+    monto: (deudas??[]).filter(d => d.moneda === mon).reduce((s,d)=>s+d.pendiente,0),
+  }))
 
   // Cash flow — gasto diario sugerido (siempre sobre el mes calendario real, es una sugerencia hacia adelante)
   const diasEnMes = new Date(HOY.getFullYear(), HOY.getMonth() + 1, 0).getDate()
@@ -380,6 +407,80 @@ export default function DashboardPage() {
           )})}
         </Card>
       </div>
+
+      {/* ── Ahorro / Inversiones y Deudas por moneda ── */}
+      <div className="grid grid-cols-2 gap-5">
+        <Card>
+          <CardTitle>Ahorro e inversiones</CardTitle>
+          {ahorroPorMoneda.length === 0 ? (
+            <div className="text-slate-400 text-sm text-center py-6">
+              Etiquetá un ingreso o egreso con "Ahorro" o "Inversión" para que aparezca acá.
+            </div>
+          ) : (() => {
+            const idx = Math.min(ahorroIdx, ahorroPorMoneda.length - 1)
+            const actual = ahorroPorMoneda[idx]
+            return (
+              <>
+                <div className="flex items-center justify-between">
+                  <button onClick={() => setAhorroIdx(i => (i - 1 + ahorroPorMoneda.length) % ahorroPorMoneda.length)}
+                    disabled={ahorroPorMoneda.length < 2}
+                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
+                  <div className="text-center flex-1">
+                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
+                    <div className={`text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmtFull(actual.monto, actual.moneda)}</div>
+                  </div>
+                  <button onClick={() => setAhorroIdx(i => (i + 1) % ahorroPorMoneda.length)}
+                    disabled={ahorroPorMoneda.length < 2}
+                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">›</button>
+                </div>
+                {ahorroPorMoneda.length > 1 && (
+                  <div className="flex justify-center gap-1.5 mt-3">
+                    {ahorroPorMoneda.map((_, i) => (
+                      <button key={i} onClick={() => setAhorroIdx(i)}
+                        className={`w-1.5 h-1.5 rounded-full border-none cursor-pointer p-0 ${i === idx ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </Card>
+
+        <Card>
+          <CardTitle>Deudas por moneda</CardTitle>
+          {deudaPorMoneda.length === 0 ? (
+            <div className="text-slate-400 text-sm text-center py-6">Sin deudas registradas.</div>
+          ) : (() => {
+            const idx = Math.min(deudaMonedaIdx, deudaPorMoneda.length - 1)
+            const actual = deudaPorMoneda[idx]
+            return (
+              <>
+                <div className="flex items-center justify-between">
+                  <button onClick={() => setDeudaMonedaIdx(i => (i - 1 + deudaPorMoneda.length) % deudaPorMoneda.length)}
+                    disabled={deudaPorMoneda.length < 2}
+                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
+                  <div className="text-center flex-1">
+                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
+                    <div className="text-2xl font-bold font-mono text-red-500">{fmtFull(actual.monto, actual.moneda)}</div>
+                  </div>
+                  <button onClick={() => setDeudaMonedaIdx(i => (i + 1) % deudaPorMoneda.length)}
+                    disabled={deudaPorMoneda.length < 2}
+                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">›</button>
+                </div>
+                {deudaPorMoneda.length > 1 && (
+                  <div className="flex justify-center gap-1.5 mt-3">
+                    {deudaPorMoneda.map((_, i) => (
+                      <button key={i} onClick={() => setDeudaMonedaIdx(i)}
+                        className={`w-1.5 h-1.5 rounded-full border-none cursor-pointer p-0 ${i === idx ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </Card>
+      </div>
+
       {/* ── Modal expandido ── */}
       {expandedChart && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
