@@ -84,13 +84,6 @@ export default function DashboardPage() {
     return { moneda: mon, monto: ing - egr }
   })
 
-  // Deudas por moneda: agrupa el saldo pendiente real de cada deuda por su moneda.
-  const monedasConDeuda = Array.from(new Set((deudas??[]).map(d => d.moneda)))
-  const deudaPorMoneda = monedasConDeuda.map(mon => ({
-    moneda: mon,
-    monto: (deudas??[]).filter(d => d.moneda === mon).reduce((s,d)=>s+d.pendiente,0),
-  }))
-
   // Cash flow — gasto diario sugerido (siempre sobre el mes calendario real, es una sugerencia hacia adelante)
   const diasEnMes = new Date(HOY.getFullYear(), HOY.getMonth() + 1, 0).getDate()
   const flowData  = proyectarCashFlow(0, eventosMes??[], diasEnMes)
@@ -128,6 +121,13 @@ export default function DashboardPage() {
     acc[t.id] = (pagosTC ?? []).filter(p => p.tarjeta_id === t.id && p.año === añoActivo).reduce((s, p) => s + p.monto, 0)
     return acc
   }, {} as Record<string, number>)
+
+  // Páginas del carrusel de Deuda: vencimientos del período activo, y el total a largo plazo.
+  const totalVenceCorto = eventosVencimientos.filter(e => e.tipo !== 'ingreso' && !e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const deudaPages = [
+    { label: esMensual ? 'Vence este mes' : 'Vence este año', value: fmt(totalVenceCorto, m) },
+    { label: 'A largo plazo',                                 value: fmt(r.totalDeuda, m) },
+  ]
 
   const getWidgetValue = (id: string) => {
     switch(id) {
@@ -210,6 +210,18 @@ export default function DashboardPage() {
           const up   = trend !== undefined && trend >= 0
           const good = trendInvert ? !up : up
 
+          // Ahorro/Deuda: si hay más de una "página" (monedas con ahorro, o período/largo plazo),
+          // el widget se vuelve un mini carrusel dentro de la misma card — mismo lugar, misma estética.
+          const paginasCarrusel =
+            widgetId === 'ahorro_acumulado' && ahorroPorMoneda.length > 0
+              ? ahorroPorMoneda.map(a => ({ label: a.moneda, value: fmtFull(a.monto, a.moneda) }))
+              : widgetId === 'deuda_total'
+              ? deudaPages
+              : null
+          const idxCarrusel = widgetId === 'ahorro_acumulado' ? ahorroIdx : deudaMonedaIdx
+          const setIdxCarrusel = widgetId === 'ahorro_acumulado' ? setAhorroIdx : setDeudaMonedaIdx
+          const pagina = paginasCarrusel ? paginasCarrusel[Math.min(idxCarrusel, paginasCarrusel.length - 1)] : null
+
           return (
             <div key={index} className="relative group">
               {/* Selector de widget cuando está en modo edición */}
@@ -229,27 +241,58 @@ export default function DashboardPage() {
 
               {/* Card clickeable */}
               <div
-                onClick={() => !editingWidgets && router.push(opt.href)}
+                onClick={() => !editingWidgets && !paginasCarrusel && router.push(opt.href)}
                 className={`bg-white border border-slate-200 rounded-2xl p-5 relative overflow-hidden transition-all shadow-card ${
                   editingWidgets
                     ? 'ring-2 ring-blue-400 ring-offset-1 cursor-default opacity-80'
+                    : paginasCarrusel
+                    ? 'hover:shadow-lg hover:border-blue-200'
                     : 'hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer'
                 }`}
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
                 <div className="text-xl mb-2">{opt.icon}</div>
                 <div className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1">{widgetLabel(widgetId, opt.label)}</div>
-                <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{value}</div>
-                {sub && <div className="text-slate-400 text-xs mt-1">{sub}</div>}
-                {trend !== undefined && (
-                  <div className="flex items-center gap-1 mt-2">
-                    <span className={`text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
-                      {up ? '▲' : '▼'} {Math.abs(trend)}%
-                    </span>
-                    <span className="text-slate-400 text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
-                  </div>
+
+                {pagina ? (
+                  <>
+                    <div className="flex items-center gap-1">
+                      {paginasCarrusel!.length > 1 && (
+                        <button onClick={e => { e.stopPropagation(); setIdxCarrusel(i => (i - 1 + paginasCarrusel!.length) % paginasCarrusel!.length) }}
+                          className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-sm px-0.5 flex-shrink-0">‹</button>
+                      )}
+                      <div className="text-slate-900 text-xl font-bold font-mono leading-tight flex-1 truncate">{pagina.value}</div>
+                      {paginasCarrusel!.length > 1 && (
+                        <button onClick={e => { e.stopPropagation(); setIdxCarrusel(i => (i + 1) % paginasCarrusel!.length) }}
+                          className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-sm px-0.5 flex-shrink-0">›</button>
+                      )}
+                    </div>
+                    <div className="text-slate-400 text-xs mt-1">{pagina.label}</div>
+                    {paginasCarrusel!.length > 1 && (
+                      <div className="flex gap-1 mt-2">
+                        {paginasCarrusel!.map((_, i) => (
+                          <button key={i} onClick={e => { e.stopPropagation(); setIdxCarrusel(i) }}
+                            className={`w-1.5 h-1.5 rounded-full border-none cursor-pointer p-0 ${i === idxCarrusel ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{value}</div>
+                    {sub && <div className="text-slate-400 text-xs mt-1">{sub}</div>}
+                    {trend !== undefined && (
+                      <div className="flex items-center gap-1 mt-2">
+                        <span className={`text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {up ? '▲' : '▼'} {Math.abs(trend)}%
+                        </span>
+                        <span className="text-slate-400 text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
+                      </div>
+                    )}
+                  </>
                 )}
-                {!editingWidgets && (
+
+                {!editingWidgets && !paginasCarrusel && (
                   <div className="absolute bottom-3 right-3 text-slate-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">→</div>
                 )}
               </div>
@@ -405,79 +448,6 @@ export default function DashboardPage() {
               <div className="text-slate-400 text-[11px] mt-1">{pct}% de tus ingresos del año</div>
             </div>
           )})}
-        </Card>
-      </div>
-
-      {/* ── Ahorro / Inversiones y Deudas por moneda ── */}
-      <div className="grid grid-cols-2 gap-5">
-        <Card>
-          <CardTitle>Ahorro e inversiones</CardTitle>
-          {ahorroPorMoneda.length === 0 ? (
-            <div className="text-slate-400 text-sm text-center py-6">
-              Etiquetá un ingreso o egreso con "Ahorro" o "Inversión" para que aparezca acá.
-            </div>
-          ) : (() => {
-            const idx = Math.min(ahorroIdx, ahorroPorMoneda.length - 1)
-            const actual = ahorroPorMoneda[idx]
-            return (
-              <>
-                <div className="flex items-center justify-between">
-                  <button onClick={() => setAhorroIdx(i => (i - 1 + ahorroPorMoneda.length) % ahorroPorMoneda.length)}
-                    disabled={ahorroPorMoneda.length < 2}
-                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
-                  <div className="text-center flex-1">
-                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className={`text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmtFull(actual.monto, actual.moneda)}</div>
-                  </div>
-                  <button onClick={() => setAhorroIdx(i => (i + 1) % ahorroPorMoneda.length)}
-                    disabled={ahorroPorMoneda.length < 2}
-                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">›</button>
-                </div>
-                {ahorroPorMoneda.length > 1 && (
-                  <div className="flex justify-center gap-1.5 mt-3">
-                    {ahorroPorMoneda.map((_, i) => (
-                      <button key={i} onClick={() => setAhorroIdx(i)}
-                        className={`w-1.5 h-1.5 rounded-full border-none cursor-pointer p-0 ${i === idx ? 'bg-slate-800' : 'bg-slate-200'}`} />
-                    ))}
-                  </div>
-                )}
-              </>
-            )
-          })()}
-        </Card>
-
-        <Card>
-          <CardTitle>Deudas por moneda</CardTitle>
-          {deudaPorMoneda.length === 0 ? (
-            <div className="text-slate-400 text-sm text-center py-6">Sin deudas registradas.</div>
-          ) : (() => {
-            const idx = Math.min(deudaMonedaIdx, deudaPorMoneda.length - 1)
-            const actual = deudaPorMoneda[idx]
-            return (
-              <>
-                <div className="flex items-center justify-between">
-                  <button onClick={() => setDeudaMonedaIdx(i => (i - 1 + deudaPorMoneda.length) % deudaPorMoneda.length)}
-                    disabled={deudaPorMoneda.length < 2}
-                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
-                  <div className="text-center flex-1">
-                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className="text-2xl font-bold font-mono text-red-500">{fmtFull(actual.monto, actual.moneda)}</div>
-                  </div>
-                  <button onClick={() => setDeudaMonedaIdx(i => (i + 1) % deudaPorMoneda.length)}
-                    disabled={deudaPorMoneda.length < 2}
-                    className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">›</button>
-                </div>
-                {deudaPorMoneda.length > 1 && (
-                  <div className="flex justify-center gap-1.5 mt-3">
-                    {deudaPorMoneda.map((_, i) => (
-                      <button key={i} onClick={() => setDeudaMonedaIdx(i)}
-                        className={`w-1.5 h-1.5 rounded-full border-none cursor-pointer p-0 ${i === idx ? 'bg-slate-800' : 'bg-slate-200'}`} />
-                    ))}
-                  </div>
-                )}
-              </>
-            )
-          })()}
         </Card>
       </div>
 
