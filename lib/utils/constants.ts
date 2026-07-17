@@ -12,7 +12,6 @@ export const NAV_ITEMS = [
   { id: 'precios',       label: 'Precios',        icon: '△', href: '/dashboard/precios'       },
   { id: 'metas',         label: 'Metas',          icon: '◎', href: '/dashboard/metas'         },
   { id: 'salud',         label: 'Salud',          icon: '♥', href: '/dashboard/salud'         },
-  { id: 'configuracion', label: 'Configuración',  icon: '⚙', href: '/dashboard/configuracion' },
 ] as const
 
 // ─── Meses ────────────────────────────────────────────────────────────────────

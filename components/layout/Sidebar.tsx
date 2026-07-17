@@ -46,15 +46,16 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="px-5 py-4 border-t border-slate-100">
-        <div className="flex items-center gap-3 mb-3">
+        <Link href="/dashboard/configuracion"
+          className={`flex items-center gap-3 mb-3 no-underline -mx-2 px-2 py-1.5 rounded-lg transition-colors ${pathname === '/dashboard/configuracion' ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-700 to-green-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
             M
           </div>
           <div className="min-w-0">
-            <div className="text-slate-900 text-xs font-semibold truncate">Mi cuenta</div>
-            <div className="text-blue-700 text-[10px]">Pro Plan</div>
+            <div className="text-slate-900 text-xs font-semibold truncate">Mi perfil</div>
+            <div className="text-blue-700 text-[10px]">Configuración →</div>
           </div>
-        </div>
+        </Link>
         <button onClick={logout} className="w-full text-left text-xs text-slate-400 hover:text-red-500 transition-colors py-1">
           Cerrar sesión →
         </button>

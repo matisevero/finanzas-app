@@ -1,9 +1,11 @@
 import type { Moneda } from '@/types'
 
+const SIMBOLOS: Record<string, string> = { ARS: '$', USD: 'u$s ', EUR: '€' }
+
 export function fmt(n: number, moneda: Moneda = 'ARS'): string {
   if (moneda === 'BTC') return `₿${n.toFixed(6)}`
   if (moneda === 'ETH') return `Ξ${n.toFixed(4)}`
-  const sym = moneda === 'USD' ? 'u$s ' : moneda === 'EUR' ? '€' : '$'
+  const sym = SIMBOLOS[moneda] ?? `${moneda} `
   if (Math.abs(n) >= 1_000_000) return `${sym}${(n / 1_000_000).toFixed(1)}M`
   if (Math.abs(n) >= 1_000)    return `${sym}${Math.round(n / 1000)}k`
   return `${sym}${Math.round(n)}`
@@ -17,10 +19,16 @@ export function fmtFull(n: number, moneda: Moneda = 'ARS'): string {
     return `u$s ${num}`
   }
   const locale = moneda === 'EUR' ? 'de-DE' : 'es-AR'
-  return new Intl.NumberFormat(locale, {
-    style: 'currency', currency: moneda,
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(n)
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency', currency: moneda,
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(n)
+  } catch {
+    // Moneda que Intl no reconoce (código inventado/no estándar) — formato genérico, nunca rompe.
+    const num = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+    return `${moneda} ${num}`
+  }
 }
 
 export function fmtPct(n: number, decimals = 1): string {

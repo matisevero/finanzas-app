@@ -2,13 +2,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { createClient } from '@/lib/supabase/client'
+import { useCategoriasCustom } from '@/hooks'
+import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
 import PasswordInput from '@/components/ui/PasswordInput'
-import type { Moneda } from '@/types'
+import type { Moneda, CategoriaCustom } from '@/types'
+import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { useRouter } from 'next/navigation'
 
-const MONEDAS_AHORRO: Moneda[] = ['USD','EUR','BTC','ETH','USDT']
-const MONEDAS_CRIPTO: Moneda[] = ['BTC','ETH','USDT']
 
 function parseMonto(str: string): number {
   if (!str) return 0
@@ -75,7 +76,7 @@ function claveEvento(r: { dia: number; mes: number; año: number; descripcion: s
 export default function ConfiguracionPage() {
   const router = useRouter()
   const sb = createClient()
-  const { monedaPrincipal, monedasAhorro, monedasCripto, setMonedaPrincipal, setMonedasAhorro, setMonedasCripto, añoActivo, setAñoActivo } = useAppStore()
+  const { monedaPrincipal, monedasAhorro, monedasCripto, monedasPalette, setMonedaPrincipal, setMonedasAhorro, setMonedasCripto, setMonedasPalette, añoActivo, setAñoActivo } = useAppStore()
 
   const [email, setEmail]     = useState('')
   const [nombre, setNombre]   = useState('')
@@ -88,6 +89,33 @@ export default function ConfiguracionPage() {
   const [importStep, setImportStep] = useState('')
   const [exporting, setExporting] = useState(false)
   const fileMultiRef = useRef<HTMLInputElement>(null)
+  const [tabImportExport, setTabImportExport] = useState<'importar'|'exportar'>('importar')
+  const [draggedMoneda, setDraggedMoneda] = useState<{mon:Moneda, origen:'principal'|'ahorro'|'cripto'|'libre'}|null>(null)
+  const [showAddMoneda, setShowAddMoneda] = useState(false)
+  const [nuevaMonedaTexto, setNuevaMonedaTexto] = useState('')
+
+  // Categorías
+  const [catModulo, setCatModulo] = useState<'ingresos'|'egresos'>('ingresos')
+  const { data: categoriasCustom, refetch: refetchCategorias } = useCategoriasCustom(catModulo)
+  const tiposBase = catModulo === 'ingresos'
+    ? Object.entries(TIPOS_INGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
+    : Object.entries(TIPOS_EGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
+  const [nuevaCatNombre, setNuevaCatNombre] = useState('')
+  const [savingCat, setSavingCat] = useState(false)
+  const [editCatId, setEditCatId] = useState<string|null>(null)
+  const [editCatNombre, setEditCatNombre] = useState('')
+
+  // Etiquetas
+  const [etiquetas, setEtiquetas] = useState<string[]>([])
+  const [loadingEtiquetas, setLoadingEtiquetas] = useState(true)
+  const [editEtiqueta, setEditEtiqueta] = useState<string|null>(null)
+  const [editEtiquetaNombre, setEditEtiquetaNombre] = useState('')
+
+  const cargarEtiquetas = () => {
+    setLoadingEtiquetas(true)
+    getEtiquetasDistintas().then(setEtiquetas).finally(() => setLoadingEtiquetas(false))
+  }
+  useEffect(() => { cargarEtiquetas() }, [])
 
   // Zona de peligro
   const [deleteStep, setDeleteStep] = useState<'idle'|'confirming'|'deleting'>('idle')
@@ -125,6 +153,84 @@ export default function ConfiguracionPage() {
       setPassForm({nueva:'',repetir:''})
     } catch(e){ setPassMsg({type:'err',text:e instanceof Error?e.message:'Error'}) }
   }
+
+  const agregarCategoria = async () => {
+    if (!nuevaCatNombre.trim()) return
+    setSavingCat(true)
+    try {
+      await createCategoriaCustom({ modulo: catModulo, nombre: nuevaCatNombre.trim(), icono: '🏷️', color: '#888780', parent_id: null })
+      setNuevaCatNombre('')
+      refetchCategorias()
+    } finally { setSavingCat(false) }
+  }
+
+  const guardarEdicionCategoria = async (id: string) => {
+    if (!editCatNombre.trim()) return
+    await updateCategoriaCustom(id, { nombre: editCatNombre.trim() })
+    setEditCatId(null)
+    refetchCategorias()
+  }
+
+  const borrarCategoria = async (id: string) => {
+    if (!confirm('¿Borrar esta categoría? Los ítems que la usan van a quedar con esa referencia vacía.')) return
+    await deleteCategoriaCustom(id)
+    refetchCategorias()
+  }
+
+  const guardarEdicionEtiqueta = async (vieja: string) => {
+    if (!editEtiquetaNombre.trim() || editEtiquetaNombre.trim() === vieja) { setEditEtiqueta(null); return }
+    await renombrarEtiqueta(vieja, editEtiquetaNombre.trim())
+    setEditEtiqueta(null)
+    cargarEtiquetas()
+  }
+
+  const eliminarEtiqueta = async (etiqueta: string) => {
+    if (!confirm(`¿Quitar la etiqueta "${etiqueta}" de todos los ítems que la usan?`)) return
+    await borrarEtiqueta(etiqueta)
+    cargarEtiquetas()
+  }
+
+  // Gestión de monedas — igual al mockup aprobado:
+  // arrastrar = mover de una zona a otra (excepto que salir de "Principal" nunca la vacía,
+  // solo se reemplaza soltando otra encima); cada chip tiene su propio duplicar/eliminar.
+  type ZonaMoneda = 'principal'|'ahorro'|'cripto'|'libre'
+
+  const listaDeZona = (zona: ZonaMoneda): Moneda[] =>
+    zona === 'principal' ? [monedaPrincipal] : zona === 'ahorro' ? monedasAhorro : zona === 'cripto' ? monedasCripto : monedasPalette
+
+  const setListaDeZona = (zona: ZonaMoneda, lista: Moneda[]) => {
+    if (zona === 'ahorro') setMonedasAhorro(lista)
+    else if (zona === 'cripto') setMonedasCripto(lista)
+    else if (zona === 'libre') setMonedasPalette(lista)
+  }
+
+  const agregarAZona = (zona: ZonaMoneda, mon: Moneda) => {
+    if (zona === 'principal') { setMonedaPrincipal(mon); return }
+    const lista = listaDeZona(zona)
+    if (!lista.includes(mon)) setListaDeZona(zona, [...lista, mon])
+  }
+
+  const quitarDeZona = (zona: ZonaMoneda, mon: Moneda) => {
+    if (zona === 'principal') return // Principal siempre tiene una — se reemplaza, no se vacía.
+    setListaDeZona(zona, listaDeZona(zona).filter(m => m !== mon))
+  }
+
+  const moverMoneda = (mon: Moneda, origen: ZonaMoneda, destino: ZonaMoneda) => {
+    agregarAZona(destino, mon)
+    if (origen !== destino && origen !== 'principal') quitarDeZona(origen, mon)
+  }
+
+  const duplicarMoneda = (mon: Moneda) => {
+    const destino = (['ahorro','cripto','libre'] as ZonaMoneda[]).find(z => !listaDeZona(z).includes(mon))
+    if (destino) agregarAZona(destino, mon)
+  }
+
+  const agregarMonedaNueva = (codigoCrudo: string) => {
+    const codigo = codigoCrudo.trim().toUpperCase()
+    if (!codigo || monedasPalette.includes(codigo)) return
+    setMonedasPalette([...monedasPalette, codigo])
+  }
+
 
   const detectarTipo = (header: string): 'ingresos'|'egresos'|'deudas'|null => {
     if (header.includes('Ingreso')) return 'ingresos'
@@ -318,93 +424,203 @@ export default function ConfiguracionPage() {
         </Card>
 
         <Card>
-          <div className="text-slate-900 font-semibold text-[15px] mb-5">Monedas</div>
-          <div className="flex flex-col gap-5">
-            <div>
-              <FieldLabel>Moneda principal</FieldLabel>
-              <div className="flex gap-2 mt-1">
-                {(['ARS','USD','EUR'] as Moneda[]).map(mon=>(
-                  <button key={mon} onClick={()=>setMonedaPrincipal(mon)} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${monedaPrincipal===mon?'bg-blue-700 text-white border-blue-700':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{mon}</button>
-                ))}
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Monedas</div>
+          <p className="text-slate-400 text-xs mb-4">Arrastrá para mover entre categorías. Pasá el mouse sobre una moneda para duplicarla o eliminarla.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {(['principal','ahorro','cripto','libre'] as const).map(zona => (
+              <div key={zona}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault()
+                  if (draggedMoneda) moverMoneda(draggedMoneda.mon, draggedMoneda.origen, zona)
+                  setDraggedMoneda(null)
+                }}
+                className="border-2 border-dashed border-slate-200 rounded-2xl p-3 min-h-[84px] relative">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    {zona === 'principal' ? 'Principal' : zona === 'ahorro' ? 'Ahorro' : zona === 'cripto' ? 'Cripto' : 'Sin asignar'}
+                  </div>
+                  {zona === 'libre' && (
+                    <button onClick={() => setShowAddMoneda(v => !v)} className="w-5 h-5 rounded-full bg-slate-900 text-white text-xs leading-none border-none cursor-pointer flex items-center justify-center">+</button>
+                  )}
+                </div>
+
+                {zona === 'libre' && showAddMoneda && (
+                  <div className="absolute right-3 top-9 z-10 bg-white border border-slate-200 rounded-xl shadow-lg p-2 flex flex-col gap-1.5 min-w-[140px]">
+                    <input autoFocus value={nuevaMonedaTexto} onChange={e => setNuevaMonedaTexto(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { agregarMonedaNueva(nuevaMonedaTexto); setNuevaMonedaTexto(''); setShowAddMoneda(false) } if (e.key === 'Escape') setShowAddMoneda(false) }}
+                      placeholder="Código, ej: GBP" maxLength={4} className="input-field py-1 text-xs uppercase" />
+                    <button onClick={() => { agregarMonedaNueva(nuevaMonedaTexto); setNuevaMonedaTexto(''); setShowAddMoneda(false) }}
+                      disabled={!nuevaMonedaTexto.trim()} className="btn-primary py-1 text-xs disabled:opacity-50">Agregar</button>
+                  </div>
+                )}
+
+                <div className="flex gap-1.5 flex-wrap">
+                  {listaDeZona(zona).map(mon => (
+                    <div key={mon} className="group relative"
+                      draggable={zona !== 'principal'}
+                      onDragStart={e => { setDraggedMoneda({mon, origen:zona}); e.dataTransfer.setData('text/plain', mon) }}
+                      onDragEnd={() => setDraggedMoneda(null)}>
+                      <div className={`flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-lg text-xs font-bold border-2 select-none ${
+                        zona === 'principal' ? 'cursor-default bg-blue-700 text-white border-blue-700'
+                        : zona === 'ahorro'   ? 'cursor-grab active:cursor-grabbing bg-emerald-700 text-white border-emerald-700'
+                        : zona === 'cripto'   ? 'cursor-grab active:cursor-grabbing bg-amber-600 text-white border-amber-600'
+                        : 'cursor-grab active:cursor-grabbing bg-white text-slate-600 border-slate-200'
+                      }`}>
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 mr-0.5">
+                          <button onClick={() => duplicarMoneda(mon)} title="Duplicar" className="border-none bg-transparent cursor-pointer p-0 opacity-70 hover:opacity-100">⧉</button>
+                        </span>
+                        {mon}
+                        <button onClick={() => quitarDeZona(zona, mon)} title="Eliminar" className="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer text-xs leading-none px-0.5 opacity-70 hover:opacity-100">✕</button>
+                      </div>
+                    </div>
+                  ))}
+                  {listaDeZona(zona).length === 0 && (
+                    <span className="text-slate-300 text-xs italic py-1.5">{zona === 'libre' ? 'Tocá + para agregar' : 'Soltá acá'}</span>
+                  )}
+                </div>
               </div>
-            </div>
-            <div>
-              <FieldLabel>Monedas de ahorro</FieldLabel>
-              <div className="flex gap-2 flex-wrap mt-1">
-                {MONEDAS_AHORRO.map(mon=>(
-                  <button key={mon} onClick={()=>setMonedasAhorro(monedasAhorro.includes(mon)?monedasAhorro.filter(m=>m!==mon):[...monedasAhorro,mon])} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${monedasAhorro.includes(mon)?'bg-emerald-700 text-white border-emerald-700':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{mon}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <FieldLabel>Criptomonedas</FieldLabel>
-              <div className="flex gap-2 flex-wrap mt-1">
-                {MONEDAS_CRIPTO.map(mon=>(
-                  <button key={mon} onClick={()=>setMonedasCripto(monedasCripto.includes(mon)?monedasCripto.filter(m=>m!==mon):[...monedasCripto,mon])} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${monedasCripto.includes(mon)?'bg-amber-600 text-white border-amber-600':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{mon}</button>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
         </Card>
 
-        <div className="flex flex-col gap-5">
-          <Card>
-            <div className="text-slate-900 font-semibold text-[15px] mb-4">Año activo</div>
-            <div className="flex gap-2">
-              {[2024,2025,2026,2027].map(y=>(
-                <button key={y} onClick={()=>setAñoActivo(y)} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${añoActivo===y?'bg-slate-900 text-white border-slate-900':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{y}</button>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <div className="text-slate-900 font-semibold text-[15px] mb-3">Sesión</div>
-            <button onClick={logout} className="btn-danger">Cerrar sesión →</button>
-          </Card>
-        </div>
-
-        {/* IMPORTAR */}
-        <Card className="col-span-2">
-          <div className="text-slate-900 font-semibold text-[15px] mb-2">Importar datos desde CSV</div>
-          <p className="text-slate-400 text-sm mb-4">
-            Seleccioná uno o varios archivos CSV exportados desde tu Google Sheet.
-            El sistema detecta automáticamente si es de Ingresos, Gastos o Deudas según el contenido.
-            Los registros duplicados (misma fecha, monto y descripción) se saltean automáticamente.
-          </p>
-          <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors mb-5 text-center">
-            <div className="text-3xl mb-2">📂</div>
-            <div className="text-sm font-semibold text-slate-700 mb-1">Seleccioná tus archivos CSV</div>
-            <div className="text-slate-400 text-xs mb-4">Podés seleccionar varios a la vez — el sistema detecta el tipo de cada uno automáticamente</div>
-            <input ref={fileMultiRef} type="file" accept=".csv" multiple className="text-sm text-slate-500 cursor-pointer" />
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={handleImport} disabled={importing} className="btn-primary disabled:opacity-50">
-              {importing?importStep||'Importando...':'⬆ Importar archivos seleccionados'}
+        {/* IMPORTAR / EXPORTAR */}
+        <Card>
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit">
+            <button onClick={() => setTabImportExport('importar')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border-none transition-all ${tabImportExport === 'importar' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+              Importar
             </button>
-            {importResult&&(
-              <div className={`flex-1 text-sm px-4 py-3 rounded-xl ${importResult.errores.length>0?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700'}`}>
-                {importResult.errores.length>0
-                  ? '⚠ '+importResult.errores.join(' · ')
-                  : '✓ Importado — '+[
-                      importResult.ingresos>0 && importResult.ingresos+' ingresos',
-                      importResult.egresos>0  && importResult.egresos+' egresos',
-                      importResult.eventos>0  && importResult.eventos+' eventos',
-                      importResult.saltados>0 && importResult.saltados+' duplicados salteados',
-                    ].filter(Boolean).join(' · ')
-                }
+            <button onClick={() => setTabImportExport('exportar')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border-none transition-all ${tabImportExport === 'exportar' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+              Exportar
+            </button>
+          </div>
+
+          {tabImportExport === 'importar' ? (
+            <>
+              <p className="text-slate-400 text-sm mb-4">
+                Seleccioná uno o varios archivos CSV exportados desde tu Google Sheet.
+                El sistema detecta automáticamente si es de Ingresos, Gastos o Deudas según el contenido.
+                Los registros duplicados (misma fecha, monto y descripción) se saltean automáticamente.
+              </p>
+              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors mb-5 text-center">
+                <div className="text-3xl mb-2">📂</div>
+                <div className="text-sm font-semibold text-slate-700 mb-1">Seleccioná tus archivos CSV</div>
+                <div className="text-slate-400 text-xs mb-4">Podés seleccionar varios a la vez — el sistema detecta el tipo de cada uno automáticamente</div>
+                <input ref={fileMultiRef} type="file" accept=".csv" multiple className="text-sm text-slate-500 cursor-pointer" />
               </div>
-            )}
+              <div className="flex items-center gap-4 flex-wrap">
+                <button onClick={handleImport} disabled={importing} className="btn-primary disabled:opacity-50">
+                  {importing?importStep||'Importando...':'⬆ Importar archivos seleccionados'}
+                </button>
+                {importResult&&(
+                  <div className={`flex-1 text-sm px-4 py-3 rounded-xl ${importResult.errores.length>0?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700'}`}>
+                    {importResult.errores.length>0
+                      ? '⚠ '+importResult.errores.join(' · ')
+                      : '✓ Importado — '+[
+                          importResult.ingresos>0 && importResult.ingresos+' ingresos',
+                          importResult.egresos>0  && importResult.egresos+' egresos',
+                          importResult.eventos>0  && importResult.eventos+' eventos',
+                          importResult.saltados>0 && importResult.saltados+' duplicados salteados',
+                        ].filter(Boolean).join(' · ')
+                    }
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-400 text-sm mb-5">Descargá todos tus datos en formato JSON. Incluye ingresos, egresos, deudas, metas y tarjetas.</p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <button onClick={handleExport} disabled={exporting} className="btn-primary disabled:opacity-50">
+                  {exporting?'Preparando backup...':'⬇ Descargar backup completo (JSON)'}
+                </button>
+                <span className="text-slate-400 text-xs">El archivo se descarga directamente en tu computadora</span>
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* AÑO ACTIVO + SESIÓN, misma fila */}
+        <Card>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Año activo</div>
+          <div className="flex gap-2">
+            {[2024,2025,2026,2027].map(y=>(
+              <button key={y} onClick={()=>setAñoActivo(y)} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${añoActivo===y?'bg-slate-900 text-white border-slate-900':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{y}</button>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Sesión</div>
+          <button onClick={logout} className="btn-danger">Cerrar sesión →</button>
+        </Card>
+
+        {/* CATEGORÍAS */}
+        <Card>
+          <div className="text-slate-900 font-semibold text-[15px] mb-3">Categorías</div>
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit">
+            <button onClick={() => setCatModulo('ingresos')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border-none transition-all ${catModulo === 'ingresos' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+              Ingresos
+            </button>
+            <button onClick={() => setCatModulo('egresos')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border-none transition-all ${catModulo === 'egresos' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
+              Egresos
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto mb-3">
+            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-300 px-1 pt-1">De base (fijas)</div>
+            {tiposBase.map(t => (
+              <div key={t.key} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50/60">
+                <span className="text-sm text-slate-500">{t.icon} {t.label}</span>
+                <span className="text-[10px] text-slate-300">predefinida</span>
+              </div>
+            ))}
+            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-300 px-1 pt-2">Personalizadas</div>
+            {(categoriasCustom ?? []).length === 0 && <p className="text-slate-400 text-xs italic px-1">Sin categorías propias todavía.</p>}
+            {(categoriasCustom as CategoriaCustom[] ?? []).map(cat => (
+              <div key={cat.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50">
+                {editCatId === cat.id ? (
+                  <input autoFocus value={editCatNombre} onChange={e=>setEditCatNombre(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionCategoria(cat.id); if(e.key==='Escape') setEditCatId(null) }}
+                    onBlur={() => guardarEdicionCategoria(cat.id)}
+                    className="input-field py-1 text-sm flex-1" />
+                ) : (
+                  <span onClick={() => { setEditCatId(cat.id); setEditCatNombre(cat.nombre) }} className="text-sm text-slate-700 cursor-pointer hover:underline flex-1">{cat.icono} {cat.nombre}</span>
+                )}
+                <button onClick={() => borrarCategoria(cat.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={nuevaCatNombre} onChange={e=>setNuevaCatNombre(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') agregarCategoria() }}
+              placeholder="Nueva categoría..." className="input-field py-2 text-sm flex-1" />
+            <button onClick={agregarCategoria} disabled={savingCat || !nuevaCatNombre.trim()} className="btn-primary py-2 px-4 text-sm disabled:opacity-50">+ Agregar</button>
           </div>
         </Card>
 
-        {/* EXPORTAR */}
-        <Card className="col-span-2">
-          <div className="text-slate-900 font-semibold text-[15px] mb-2">Exportar y backup</div>
-          <p className="text-slate-400 text-sm mb-5">Descargá todos tus datos en formato JSON. Incluye ingresos, egresos, deudas, metas y tarjetas.</p>
-          <div className="flex items-center gap-4">
-            <button onClick={handleExport} disabled={exporting} className="btn-primary disabled:opacity-50">
-              {exporting?'Preparando backup...':'⬇ Descargar backup completo (JSON)'}
-            </button>
-            <span className="text-slate-400 text-xs">El archivo se descarga directamente en tu computadora</span>
+        {/* ETIQUETAS */}
+        <Card>
+          <div className="text-slate-900 font-semibold text-[15px] mb-1">Etiquetas</div>
+          <p className="text-slate-400 text-xs mb-4">Las que ya usaste en Ingresos, Egresos o Deudas. Renombrar o borrar acá lo actualiza en todos los ítems que la tengan.</p>
+          <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
+            {loadingEtiquetas && <p className="text-slate-400 text-xs">Cargando...</p>}
+            {!loadingEtiquetas && etiquetas.length === 0 && <p className="text-slate-400 text-xs italic">Todavía no usaste ninguna etiqueta.</p>}
+            {etiquetas.map(et => (
+              <div key={et} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50">
+                {editEtiqueta === et ? (
+                  <input autoFocus value={editEtiquetaNombre} onChange={e=>setEditEtiquetaNombre(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionEtiqueta(et); if(e.key==='Escape') setEditEtiqueta(null) }}
+                    onBlur={() => guardarEdicionEtiqueta(et)}
+                    className="input-field py-1 text-sm flex-1" />
+                ) : (
+                  <span onClick={() => { setEditEtiqueta(et); setEditEtiquetaNombre(et) }} className="text-sm text-slate-700 cursor-pointer hover:underline flex-1">{et}</span>
+                )}
+                <button onClick={() => eliminarEtiqueta(et)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
+              </div>
+            ))}
           </div>
         </Card>
 

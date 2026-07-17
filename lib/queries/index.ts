@@ -55,6 +55,46 @@ export async function deleteCategoriaCustom(id: string) {
   if (error) throw error
 }
 
+export async function updateCategoriaCustom(id: string, form: Partial<CategoriaCustomInsert>): Promise<CategoriaCustom> {
+  const { data, error } = await sb().from('categorias_custom').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// ─── ETIQUETAS (across ingresos/egresos/deudas) ───────────────────────────────
+export async function getEtiquetasDistintas(): Promise<string[]> {
+  const userId = await uid()
+  const [ing, egr, deu] = await Promise.all([
+    sb().from('ingresos').select('etiqueta').eq('user_id', userId).not('etiqueta', 'is', null),
+    sb().from('egresos').select('etiqueta').eq('user_id', userId).not('etiqueta', 'is', null),
+    sb().from('deudas').select('etiqueta').eq('user_id', userId).not('etiqueta', 'is', null),
+  ])
+  const todas = [
+    ...(ing.data ?? []).map(r => r.etiqueta),
+    ...(egr.data ?? []).map(r => r.etiqueta),
+    ...(deu.data ?? []).map(r => r.etiqueta),
+  ].filter((e): e is string => !!e && e.trim().length > 0)
+  return Array.from(new Set(todas)).sort()
+}
+
+export async function renombrarEtiqueta(vieja: string, nueva: string) {
+  const userId = await uid()
+  await Promise.all([
+    sb().from('ingresos').update({ etiqueta: nueva }).eq('user_id', userId).eq('etiqueta', vieja),
+    sb().from('egresos').update({ etiqueta: nueva }).eq('user_id', userId).eq('etiqueta', vieja),
+    sb().from('deudas').update({ etiqueta: nueva }).eq('user_id', userId).eq('etiqueta', vieja),
+  ])
+}
+
+export async function borrarEtiqueta(etiqueta: string) {
+  const userId = await uid()
+  await Promise.all([
+    sb().from('ingresos').update({ etiqueta: null }).eq('user_id', userId).eq('etiqueta', etiqueta),
+    sb().from('egresos').update({ etiqueta: null }).eq('user_id', userId).eq('etiqueta', etiqueta),
+    sb().from('deudas').update({ etiqueta: null }).eq('user_id', userId).eq('etiqueta', etiqueta),
+  ])
+}
+
 // ─── INGRESOS ─────────────────────────────────────────────────────────────────
 export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
   const { data, error } = await sb().from('ingresos').select('*').eq('año', año).order('fecha', { ascending: false })

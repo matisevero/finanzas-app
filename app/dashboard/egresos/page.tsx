@@ -315,7 +315,7 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, onSave, onCancel, 
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function EgresosPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
   const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('egresos')
@@ -784,7 +784,7 @@ export default function EgresosPage() {
             <div><FieldLabel>Monto</FieldLabel><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} /></div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={form.moneda} onChange={e => setForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
-                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>

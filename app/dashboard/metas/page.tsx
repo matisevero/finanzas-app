@@ -13,7 +13,7 @@ import type { Moneda } from '@/types'
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
 
 export default function MetasPage() {
-  const { monedaPrincipal: m } = useAppStore()
+  const { monedaPrincipal: m, monedasPalette } = useAppStore()
   const { data: metas, loading, refetch } = useMetas()
   const [showModal, setShowModal]   = useState(false)
   const [editId, setEditId]         = useState<string|null>(null)
@@ -199,7 +199,7 @@ export default function MetasPage() {
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">
-                {['ARS','USD','EUR'].map(c=><option key={c} value={c}>{c}</option>)}
+                {monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div><FieldLabel>Fecha límite</FieldLabel><FechaInput value={form.fecha_limite} onChange={iso=>setForm(p=>({...p,fecha_limite:iso}))} /></div>

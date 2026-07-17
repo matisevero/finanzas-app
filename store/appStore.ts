@@ -20,9 +20,11 @@ interface AppState {
   monedaPrincipal: Moneda
   monedasAhorro: Moneda[]
   monedasCripto: Moneda[]
+  monedasPalette: Moneda[]
   setMonedaPrincipal: (m: Moneda) => void
   setMonedasAhorro: (ms: Moneda[]) => void
   setMonedasCripto: (ms: Moneda[]) => void
+  setMonedasPalette: (ms: Moneda[]) => void
 
   usuario: Usuario | null
   setUsuario: (u: Usuario | null) => void
@@ -49,9 +51,11 @@ export const useAppStore = create<AppState>()(
       monedaPrincipal: 'ARS',
       monedasAhorro:   ['USD', 'EUR'],
       monedasCripto:   ['BTC', 'ETH'],
+      monedasPalette:  ['ARS', 'USD', 'EUR', 'BTC', 'ETH'],
       setMonedaPrincipal: (monedaPrincipal) => set({ monedaPrincipal }),
       setMonedasAhorro:   (monedasAhorro)   => set({ monedasAhorro }),
       setMonedasCripto:   (monedasCripto)   => set({ monedasCripto }),
+      setMonedasPalette:  (monedasPalette)  => set({ monedasPalette }),
 
       usuario: null,
       setUsuario: (usuario) => set({ usuario }),
@@ -65,6 +69,7 @@ export const useAppStore = create<AppState>()(
         monedaPrincipal: s.monedaPrincipal,
         monedasAhorro: s.monedasAhorro,
         monedasCripto: s.monedasCripto,
+        monedasPalette: s.monedasPalette,
       }),
     }
   )

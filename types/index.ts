@@ -1,5 +1,8 @@
 // ─── Primitivos ──────────────────────────────────────────────────────────────
-export type Moneda = 'ARS' | 'USD' | 'EUR' | 'BTC' | 'ETH' | 'USDT'
+// Antes era una lista cerrada de 6 códigos. La base de datos nunca exigió eso —
+// era solo una restricción de este tipo. Ahora es cualquier código de moneda que
+// el usuario agregue desde Configuración (el pool vive en el store, no acá).
+export type Moneda = string
 export type TipoIngreso = string
 export type TipoEgreso = string
 export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa'

@@ -67,6 +67,7 @@ function InlineEditEvento({ ev, onSave, onCancel }: { ev: any; onSave: (id: stri
 
 // ─── InlineEditDeuda ──────────────────────────────────────────────────────────
 function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
+  const monedasPalette = useAppStore(s => s.monedasPalette)
   const [form, setForm] = useState({
     nombre: d.nombre ?? '', banco: d.banco ?? '',
     total_original: String(d.total_original), pendiente: String(d.pendiente),
@@ -107,7 +108,7 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
         <div className="grid grid-cols-2 gap-2">
           <div><label className="label mb-1.5 block">Moneda</label>
             <select value={form.moneda} onChange={e => setForm(p => ({ ...p, moneda: e.target.value }))} className="input-field py-1.5 text-sm">
-              {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+              {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div><label className="label mb-1.5 block">Color</label>
@@ -131,7 +132,7 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function DeudasPage() {
-  const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
   const { data: deudas, loading: ld, refetch: refDeudas } = useDeudas()
   const { data: ingresos } = useIngresos()
   const [tab, setTab] = useState<'calendario'|'largo'>('calendario')
@@ -643,7 +644,7 @@ export default function DeudasPage() {
             </div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={evForm.moneda} onChange={e => setEvForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
-                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
@@ -721,7 +722,7 @@ export default function DeudasPage() {
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={deudaForm.moneda} onChange={e => setDeudaForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
-                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div><FieldLabel>Color</FieldLabel>

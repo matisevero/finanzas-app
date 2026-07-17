@@ -21,7 +21,7 @@ const CAT_COLORS: Record<string,{bg:string,c:string}> = {
 }
 
 export default function TarjetasPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
   const esMensual = vistaTipo === 'mensual'
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()
@@ -358,7 +358,7 @@ export default function TarjetasPage() {
           <div><FieldLabel>Banco / titular</FieldLabel><input value={form.banco} onChange={e=>setForm(p=>({...p,banco:e.target.value}))} placeholder="Ej: Galicia · Mati" className="input-field" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel><input type="number" value={form.limite} onChange={e=>setForm(p=>({...p,limite:e.target.value}))} placeholder="0" className="input-field" /></div>
-            <div><FieldLabel>Moneda</FieldLabel><select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">{['ARS','USD'].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div><FieldLabel>Moneda</FieldLabel><select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">{monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Titular</FieldLabel><select value={form.quien} onChange={e=>setForm(p=>({...p,quien:e.target.value as Quien}))} className="input-field"><option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option></select></div>
@@ -570,7 +570,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
             </div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={txnForm.moneda} onChange={e => setTxnForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
-                {['ARS','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>

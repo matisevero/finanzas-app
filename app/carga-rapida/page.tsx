@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAppStore } from '@/store/appStore'
 import { useCategoriasCustom } from '@/hooks'
 import { createIngreso, createEgreso } from '@/lib/queries'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -18,6 +19,7 @@ const FORM_INIT = {
 
 export default function CargaRapidaPage() {
   const router = useRouter()
+  const monedasPalette = useAppStore(s => s.monedasPalette)
   const [tipoVista, setTipoVista] = useState<TipoVista>('egreso')
   const [form, setForm] = useState(FORM_INIT)
   const [analizando, setAnalizando] = useState(false)
@@ -185,8 +187,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
           <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-3">
             <select value={form.moneda} onChange={e => setForm(p => ({ ...p, moneda: e.target.value as Moneda }))}
               className="text-sm text-slate-500 border-none bg-transparent cursor-pointer flex-shrink-0">
-              <option value="ARS">$</option>
-              <option value="USD">u$s</option>
+              {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <MontoInput bare value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))}
               className="text-2xl font-bold font-mono flex-1" placeholder="0" />
