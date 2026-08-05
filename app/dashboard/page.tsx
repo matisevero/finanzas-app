@@ -203,7 +203,7 @@ export default function DashboardPage() {
       />
 
       {/* ── Widgets ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         {widgets.map((widgetId, index) => {
           const opt = WIDGET_OPTIONS.find(o => o.id === widgetId)!
           const { value, sub, trend, color, trendInvert } = getWidgetValue(widgetId)
@@ -237,18 +237,25 @@ export default function DashboardPage() {
                 }`}
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
-                <div className="text-xl mb-2">{opt.icon}</div>
-                <div className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1">{widgetLabel(widgetId, opt.label)}</div>
-                <div className="text-slate-900 text-xl md:text-2xl font-bold font-mono leading-tight">{value}</div>
-                {sub && <div className="text-slate-400 text-xs mt-1">{sub}</div>}
-                {trend !== undefined && (
-                  <div className="flex items-center gap-1 mt-2">
-                    <span className={`text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
-                      {up ? '▲' : '▼'} {Math.abs(trend)}%
-                    </span>
-                    <span className="text-slate-400 text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
-                  </div>
-                )}
+
+                <div className="flex items-center gap-2 mb-2 md:block md:gap-0">
+                  <div className="text-xl md:mb-2">{opt.icon}</div>
+                  <div className="text-slate-500 text-sm md:text-[11px] font-bold uppercase tracking-widest md:mb-1">{widgetLabel(widgetId, opt.label)}</div>
+                </div>
+
+                <div className="text-slate-900 text-6xl md:text-2xl font-bold font-mono leading-tight">{value}</div>
+
+                <div className="flex items-center justify-between mt-2 md:block md:mt-0">
+                  {sub && <div className="text-slate-400 text-sm md:text-xs md:mt-1">{sub}</div>}
+                  {trend !== undefined && (
+                    <div className="flex items-center gap-1 md:mt-2">
+                      <span className={`text-sm md:text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {up ? '▲' : '▼'} {Math.abs(trend)}%
+                      </span>
+                      <span className="text-slate-400 text-sm md:text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
+                    </div>
+                  )}
+                </div>
                 {!editingWidgets && (
                   <div className="absolute bottom-3 right-3 text-slate-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">→</div>
                 )}
