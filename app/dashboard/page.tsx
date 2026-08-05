@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
@@ -38,6 +38,22 @@ export default function DashboardPage() {
   const [editingWidgets, setEditingWidgets] = useState(false)
   const [ahorroIdx, setAhorroIdx] = useState(0)
   const [deudaMonedaIdx, setDeudaMonedaIdx] = useState(0)
+  const ahorroTouchX = useRef<number | null>(null)
+  const deudaTouchX  = useRef<number | null>(null)
+
+  // Devuelve los handlers de touch para un carrusel: swipe izq → siguiente, swipe der → anterior
+  const swipeHandlers = (touchXRef: React.MutableRefObject<number | null>, length: number, setIdx: (fn: (i: number) => number) => void) => ({
+    onTouchStart: (e: React.TouchEvent) => { touchXRef.current = e.touches[0].clientX },
+    onTouchEnd: (e: React.TouchEvent) => {
+      if (touchXRef.current === null || length < 2) return
+      const delta = e.changedTouches[0].clientX - touchXRef.current
+      if (Math.abs(delta) > 40) {
+        if (delta < 0) setIdx(i => (i + 1) % length)
+        else setIdx(i => (i - 1 + length) % length)
+      }
+      touchXRef.current = null
+    },
+  })
   const [expandedChart, setExpandedChart] = useState<'flujo'|'egresos'|'ingresos'|'deudas'|'tarjetas'|null>(null)
 
   useEffect(() => {
@@ -240,19 +256,19 @@ export default function DashboardPage() {
 
                 <div className="flex items-center gap-2 mb-2 md:block md:gap-0">
                   <div className="text-xl md:mb-2">{opt.icon}</div>
-                  <div className="text-slate-500 text-sm md:text-[11px] font-bold uppercase tracking-widest md:mb-1">{widgetLabel(widgetId, opt.label)}</div>
+                  <div className="text-slate-500 text-[17px] md:text-[11px] font-bold uppercase tracking-widest md:mb-1">{widgetLabel(widgetId, opt.label)}</div>
                 </div>
 
-                <div className="text-slate-900 text-6xl md:text-2xl font-bold font-mono leading-tight">{value}</div>
+                <div className="text-slate-900 text-[40px] md:text-2xl font-bold font-mono leading-tight">{value}</div>
 
                 <div className="flex items-center justify-between mt-2 md:block md:mt-0">
-                  {sub && <div className="text-slate-400 text-sm md:text-xs md:mt-1">{sub}</div>}
+                  {sub && <div className="text-slate-400 text-[17px] md:text-xs md:mt-1">{sub}</div>}
                   {trend !== undefined && (
                     <div className="flex items-center gap-1 md:mt-2">
-                      <span className={`text-sm md:text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
+                      <span className={`text-[17px] md:text-xs font-bold ${good ? 'text-emerald-700' : 'text-red-600'}`}>
                         {up ? '▲' : '▼'} {Math.abs(trend)}%
                       </span>
-                      <span className="text-slate-400 text-sm md:text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
+                      <span className="text-slate-400 text-[17px] md:text-xs">{esMensual ? 'vs mes anterior' : 'vs año anterior'}</span>
                     </div>
                   )}
                 </div>
@@ -428,7 +444,7 @@ export default function DashboardPage() {
             const actual = ahorroPorMoneda[idx]
             return (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }} {...swipeHandlers(ahorroTouchX, ahorroPorMoneda.length, setAhorroIdx)}>
                   <button onClick={() => setAhorroIdx(i => (i - 1 + ahorroPorMoneda.length) % ahorroPorMoneda.length)}
                     disabled={ahorroPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
@@ -462,7 +478,7 @@ export default function DashboardPage() {
             const actual = deudaPorMoneda[idx]
             return (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }} {...swipeHandlers(deudaTouchX, deudaPorMoneda.length, setDeudaMonedaIdx)}>
                   <button onClick={() => setDeudaMonedaIdx(i => (i - 1 + deudaPorMoneda.length) % deudaPorMoneda.length)}
                     disabled={deudaPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
