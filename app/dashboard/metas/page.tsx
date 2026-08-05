@@ -79,7 +79,7 @@ export default function MetasPage() {
         action={<button className="btn-primary" onClick={openNew}>+ Nueva meta</button>} />
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
           {l:'Metas activas',      v:String(kpis.total),              s:kpis.compl>0?kpis.compl+' completadas':'',          c:'#1A5E9E'},
           {l:'Completadas',        v:`${kpis.compl}/${kpis.total}`,   s:'Objetivos alcanzados',                              c:'#40B046'},
@@ -99,7 +99,7 @@ export default function MetasPage() {
       ) : (
         <>
           {/* Grid de metas */}
-          <div className="grid grid-cols-2 gap-5 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
             {(metas??[]).map(meta=>{
               const { pct, meses, cuota, falta } = calcularMeta(meta.monto_objetivo, meta.monto_actual, meta.fecha_limite)
               const mon = meta.moneda as Moneda
@@ -138,7 +138,7 @@ export default function MetasPage() {
 
                   {!meta.completada ? (
                     <>
-                      <div className="grid grid-cols-3 gap-3 pt-4 border-t border-slate-100 mb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-slate-100 mb-4">
                         <div><div className="label mb-0.5">Meses restantes</div><div className="text-sm font-mono font-bold text-slate-700">{meses>0?meses+' meses':'Vencida'}</div></div>
                         <div><div className="label mb-0.5">Ahorro mensual</div><div className="text-sm font-mono font-bold" style={{color:meta.color}}>{meses>0?fmt(cuota,mon):'—'}</div></div>
                         <div><div className="label mb-0.5">Fecha límite</div><div className="text-sm font-mono font-bold text-slate-700">{meta.fecha_limite.slice(0,7)}</div></div>
@@ -163,7 +163,7 @@ export default function MetasPage() {
 
           {/* Ranking comparado */}
           <Card>
-            <div className="text-slate-900 font-semibold text-[15px] mb-4">Progreso comparado</div>
+            <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Progreso comparado</div>
             {sorted.map(meta=>{
               const { pct, meses } = calcularMeta(meta.monto_objetivo, meta.monto_actual, meta.fecha_limite)
               return (

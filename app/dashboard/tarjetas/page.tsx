@@ -184,7 +184,7 @@ export default function TarjetasPage() {
   return (
     <div>
       <PageHeader title="Tarjetas de crédito" subtitle="Seguimiento de pagos y transacciones"
-        action={<div className="flex gap-2">
+        action={<div className="flex gap-2 flex-wrap justify-end">
           <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfError('') }}>Importar PDF</button>
           <button className="btn-primary" onClick={()=>setShowModal(true)}>+ Nueva tarjeta</button>
         </div>} />
@@ -232,14 +232,14 @@ export default function TarjetasPage() {
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
-      <div className="grid grid-cols-3 gap-5 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
 
         {/* ── Columna izquierda: Transacciones ── */}
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <Card>
             <div className="flex items-center justify-between mb-4">
-              <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filteredTxns.length} registros</span>
+              <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Transacciones</div>
+              <span className="text-slate-400 text-[14px] md:text-xs">{filteredTxns.length} registros</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[160px]">

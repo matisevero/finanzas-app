@@ -530,7 +530,7 @@ export default function IngresosPage() {
     <div>
       <PageHeader title="Ingresos"
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
             <button
               onClick={() => setEditingWidgets(v => !v)}
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
@@ -541,7 +541,7 @@ export default function IngresosPage() {
         } />
 
       {/* ── StatCards personalizables ── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {widgets.map((widgetId, index) => {
           const opt = WIDGET_OPTIONS_ING.find(o => o.id === widgetId)!
           const wv  = getWidgetValue(widgetId)
@@ -569,14 +569,14 @@ export default function IngresosPage() {
       </div>
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
-      <div className="grid grid-cols-3 gap-5 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
 
         {/* ── Columna izquierda: Transacciones ── */}
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <Card>
             <div className="flex items-center justify-between mb-4">
-              <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
+              <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Transacciones</div>
+              <span className="text-slate-400 text-[14px] md:text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[180px]">
@@ -823,8 +823,8 @@ export default function IngresosPage() {
       </Modal>
       {/* ── Modal gráfico expandido ── */}
       {expandedChart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-4 md:p-8 relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
             {expandedChart==='evolucion' && <>
@@ -854,7 +854,7 @@ export default function IngresosPage() {
 
             {expandedChart==='composicion' && <>
               <div className="text-slate-900 font-semibold text-lg mb-5">Composición {periodoLabel}</div>
-              <div className="grid grid-cols-2 gap-8 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8 items-center">
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">

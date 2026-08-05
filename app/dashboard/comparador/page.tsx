@@ -122,7 +122,7 @@ export default function ComparadorPage() {
       <PageHeader title="Comparador" subtitle={`Compará métricas financieras mes a mes — ${añoActivo}`} />
 
       {/* ── Cajas de selección ── */}
-      <div className="grid grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-5">
         {grupos.map(g => (
           <div key={g.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
             <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-100">
@@ -192,9 +192,9 @@ export default function ComparadorPage() {
       </div>
 
       {/* ── Gráfico ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-card mb-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-card mb-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-slate-900 font-semibold text-[15px]">Comparativa mensual {añoActivo}</div>
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Comparativa mensual {añoActivo}</div>
           <span className="text-slate-400 text-xs">{activeItems.length} métricas · {mesesDisp.length} meses</span>
         </div>
         {activeItems.length === 0 ? (
@@ -231,8 +231,8 @@ export default function ComparadorPage() {
 
       {/* ── Tabla resumen ── */}
       {activeItems.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-card">
-          <div className="text-slate-900 font-semibold text-[15px] mb-4">Resumen de métricas seleccionadas</div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-card">
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Resumen de métricas seleccionadas</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>

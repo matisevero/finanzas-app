@@ -346,7 +346,7 @@ export default function DeudasPage() {
     <div>
       <PageHeader title="Deudas"
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
             <button
               onClick={() => setEditingWidgets(v => !v)}
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
@@ -358,7 +358,7 @@ export default function DeudasPage() {
         } />
 
       {/* ── StatCards personalizables ── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {widgets.map((widgetId, index) => {
           const opt = WIDGET_OPTIONS_DEU.find(o => o.id === widgetId)!
           const wv  = getWidgetValue(widgetId)
@@ -385,10 +385,10 @@ export default function DeudasPage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
         <Tabs tabs={[{value:'calendario',label:'Calendario'},{value:'largo',label:'Largo plazo'}]} value={tab} onChange={v => setTab(v as any)} />
         {tab === 'calendario' && (
-          <div className="flex items-center gap-5 bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm">
+          <div className="flex items-center gap-3 md:gap-5 bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm flex-wrap w-full sm:w-auto">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Total a pagar:</span>
               <span className="font-mono font-bold text-red-600">{fmt(venceMes, m)}</span>
@@ -409,9 +409,7 @@ export default function DeudasPage() {
 
       {/* ── Calendario ── */}
       {tab === 'calendario' && (
-        <div className="grid grid-cols-2 gap-5">
-
-          {/* Lista */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Card>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -492,7 +490,7 @@ export default function DeudasPage() {
               ))}
             </div>
             <div className="grid grid-cols-7 gap-0.5">
-              {Array.from({length: offsetLunes}).map((_, i) => <div key={`e${i}`} className="min-h-[72px]" />)}
+              {Array.from({length: offsetLunes}).map((_, i) => <div key={`e${i}`} className="min-h-[52px] md:min-h-[72px]" />)}
               {Array.from({length: diasEnMes}).map((_, i) => {
                 const dia = i + 1
                 const isHoy = dia === HOY_DIA && calMes === HOY_MES && calAño === HOY_AÑO
@@ -501,7 +499,7 @@ export default function DeudasPage() {
                 const visible = dayEvs.slice(0, 3)
                 const extra = dayEvs.length - 3
                 return (
-                  <div key={dia} className={`min-h-[72px] rounded-lg p-1.5 border transition-all ${isHoy ? 'bg-blue-50 border-blue-200' : 'border-transparent'} ${dayEvs.length > 0 ? 'hover:bg-slate-50 cursor-pointer' : ''} ${isPast && !isHoy ? 'opacity-50' : ''}`}>
+                  <div key={dia} className={`min-h-[52px] md:min-h-[72px] rounded-lg p-1 md:p-1.5 border transition-all ${isHoy ? 'bg-blue-50 border-blue-200' : 'border-transparent'} ${dayEvs.length > 0 ? 'hover:bg-slate-50 cursor-pointer' : ''} ${isPast && !isHoy ? 'opacity-50' : ''}`}>
                     <div className={`text-xs font-bold mb-1 ${isHoy ? 'text-blue-700' : 'text-slate-500'}`}>
                       {dia}{isHoy && <span className="ml-1 text-[8px] bg-blue-700 text-white rounded px-1">hoy</span>}
                     </div>
@@ -535,7 +533,7 @@ export default function DeudasPage() {
               <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }} className="btn-primary">+ Nueva deuda LP</button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {(deudas ?? []).map(d => {
                 if (editingDeudaId === d.id) return (
                   <InlineEditDeuda key={d.id} d={d} onSave={handleUpdateDeuda} onCancel={() => setEditingDeudaId(null)} />
@@ -597,7 +595,7 @@ export default function DeudasPage() {
       {/* ── Gráfico anual % deuda vs ingresos ── */}
       <div className="mt-6">
         <div className="mb-3">
-          <div className="text-slate-900 font-semibold text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
           <div className="text-slate-400 text-xs mt-0.5">Qué % de tus ingresos del mes se va en pago de deudas</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-6">

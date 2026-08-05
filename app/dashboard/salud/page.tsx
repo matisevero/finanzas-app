@@ -99,7 +99,7 @@ export default function SaludPage() {
       <PageHeader title="Salud Financiera" subtitle={`Diagnóstico integral — ${periodoLabel}`} />
 
       {/* Hero */}
-      <div className="grid grid-cols-3 gap-5 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
         {/* Score gauge */}
         <Card className="flex flex-col items-center justify-center py-6">
           <canvas ref={canvasRef} width={360} height={180} className="w-full max-w-[240px]" />
@@ -119,15 +119,15 @@ export default function SaludPage() {
         </Card>
 
         {/* Desglose */}
-        <Card className="col-span-2">
-          <div className="text-slate-900 font-semibold text-[15px] mb-5">Desglose por categoría</div>
+        <Card className="md:col-span-2">
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-5">Desglose por categoría</div>
           <div className="flex flex-col gap-4">
             {salud.categorias.map(cat=>{
               const bc = cat.score>=75?'#40B046':cat.score>=50?'#E8A020':'#F54927'
               return (
-                <div key={cat.nombre} className="flex items-center gap-4">
+                <div key={cat.nombre} className="flex items-center gap-2 md:gap-4 flex-wrap">
                   <span className="text-xl w-7 flex-shrink-0">{cat.icono}</span>
-                  <div className="w-36 flex-shrink-0">
+                  <div className="w-24 sm:w-36 flex-shrink-0">
                     <div className="text-sm font-medium text-slate-700">{cat.nombre}</div>
                     <div className="text-slate-400 text-xs">Peso: {cat.peso}%</div>
                   </div>
@@ -146,7 +146,7 @@ export default function SaludPage() {
       </div>
 
       {/* Cards detalle */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {salud.categorias.map(cat=>{
           const bc   = cat.score>=75?'#40B046':cat.score>=50?'#E8A020':'#F54927'
           const tipBg = cat.ok?'#E9F6EA':'#FEF2F2'
@@ -190,8 +190,8 @@ export default function SaludPage() {
 
       {/* Métricas clave */}
       <div>
-        <div className="text-slate-900 font-semibold text-[15px] mb-4">Métricas clave — {periodoLabel}</div>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Métricas clave — {periodoLabel}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {[
             {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:periodoLabel,           c:'#40B046'},
             {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#F54927'},

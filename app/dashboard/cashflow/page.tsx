@@ -120,12 +120,12 @@ function CalendarioSemanal({
   return (
     <Card className="mb-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
-          <div className="text-slate-900 font-semibold text-[15px]">Simulador semanal</div>
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Simulador semanal</div>
           <div className="text-slate-400 text-xs mt-0.5">Arrastrá los items para ver cómo cambia tu saldo día a día</div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${semaforo==='ok'?'bg-emerald-50 border-emerald-200 text-emerald-700':semaforo==='cuidado'?'bg-amber-50 border-amber-200 text-amber-700':'bg-red-50 border-red-200 text-red-600'}`}>
             {semaforo==='ok'?'✓':semaforo==='cuidado'?'~':'⚠'} {gastoDiarioSim >= 0 ? gastoDiarioSim.toLocaleString('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}) : 'Déficit'}/día
           </div>
@@ -141,7 +141,9 @@ function CalendarioSemanal({
         </div>
       </div>
 
-      {/* Grilla de saldos */}
+      {/* Grilla de saldos + drag&drop + mini-barras: scroll horizontal en mobile */}
+      <div className="overflow-x-auto -mx-1 px-1 pb-1">
+      <div className="min-w-[560px]">
       <div className="grid grid-cols-7 gap-2 mb-2">
         {diasSemana.map((dia, i) => {
           const s = saldosDia[i]
@@ -210,6 +212,8 @@ function CalendarioSemanal({
             </div>
           )
         })}
+      </div>
+      </div>
       </div>
 
       {/* Zona sin fecha */}
@@ -416,7 +420,7 @@ export default function CashFlowPage() {
       </div>
 
       {/* ── KPIs ── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
           { l: 'Saldo inicial',          v: fmt(saldoInicial, m), s: 'Ingresos − Egresos − Deudas',    c: saldoInicial >= 0 ? '#1A5E9E' : '#F54927' },
           { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Proyección con eventos del mes', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
@@ -433,7 +437,7 @@ export default function CashFlowPage() {
 
       {/* ── Gasto diario disponible ── */}
       <Card className={`mb-5 ${gastoDiarioDisp < 0 ? 'border border-red-200 bg-red-50/40' : 'border border-emerald-100 bg-emerald-50/30'}`}>
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex flex-col md:flex-row items-start justify-between gap-6">
           <div className="flex-1">
             <CardTitle>¿Cuánto podés gastar por día?</CardTitle>
             <p className="text-slate-400 text-xs mt-1 mb-4">
@@ -454,7 +458,7 @@ export default function CashFlowPage() {
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-3 text-sm min-w-[220px]">
+          <div className="flex flex-col gap-3 text-sm w-full md:w-auto md:min-w-[220px]">
             <div className="flex justify-between">
               <span className="text-slate-400">Saldo hoy (día {diaHoy})</span>
               <span className={`font-mono font-semibold ${saldoHoy >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmt(saldoHoy, m)}</span>
@@ -494,8 +498,8 @@ export default function CashFlowPage() {
       {/* ── Días con movimientos ── */}
       {diasConEvs.length > 0 && (
         <div>
-          <div className="text-slate-900 font-semibold text-[15px] mb-4">Días con movimientos</div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Días con movimientos</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {diasConEvs.map(d => {
               const isHoy = d.dia === HOY.getDate() && mes === HOY.getMonth() && año === HOY.getFullYear()
               const isNeg = d.saldo < 0
