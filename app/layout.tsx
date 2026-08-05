@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Roboto, Roboto_Mono } from 'next/font/google'
 import './globals.css'
 
@@ -8,6 +8,11 @@ const robotoMono = Roboto_Mono({ subsets: ['latin'], variable: '--font-space-mon
 export const metadata: Metadata = {
   title: 'Finanzas Personal',
   description: 'Tu hub financiero personal',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

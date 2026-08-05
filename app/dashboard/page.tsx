@@ -203,7 +203,7 @@ export default function DashboardPage() {
       />
 
       {/* ── Widgets ── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         {widgets.map((widgetId, index) => {
           const opt = WIDGET_OPTIONS.find(o => o.id === widgetId)!
           const { value, sub, trend, color, trendInvert } = getWidgetValue(widgetId)
@@ -230,7 +230,7 @@ export default function DashboardPage() {
               {/* Card clickeable */}
               <div
                 onClick={() => !editingWidgets && router.push(opt.href)}
-                className={`bg-white border border-slate-200 rounded-2xl p-5 relative overflow-hidden transition-all shadow-card ${
+                className={`bg-white border border-slate-200 rounded-2xl p-4 md:p-5 relative overflow-hidden transition-all shadow-card ${
                   editingWidgets
                     ? 'ring-2 ring-blue-400 ring-offset-1 cursor-default opacity-80'
                     : 'hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer'
@@ -239,7 +239,7 @@ export default function DashboardPage() {
                 <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
                 <div className="text-xl mb-2">{opt.icon}</div>
                 <div className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1">{widgetLabel(widgetId, opt.label)}</div>
-                <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{value}</div>
+                <div className="text-slate-900 text-xl md:text-2xl font-bold font-mono leading-tight">{value}</div>
                 {sub && <div className="text-slate-400 text-xs mt-1">{sub}</div>}
                 {trend !== undefined && (
                   <div className="flex items-center gap-1 mt-2">
@@ -259,10 +259,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Flujo financiero (ancho completo) + Distribución egresos e ingresos ── */}
-      <div className="grid grid-cols-4 gap-5 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-5 mb-5">
 
         {/* Flujo — 2 columnas */}
-        <Card className="col-span-2 transition-all hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer group" onClick={()=>setExpandedChart('flujo')}>
+        <Card className="md:col-span-2 transition-all hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer group" onClick={()=>setExpandedChart('flujo')}>
           <CardTitle action={<div onClick={e=>e.stopPropagation()}><ChartToggle options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]} value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} /></div>}
           >
             {flujoTitulo}
@@ -358,7 +358,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Deudas y Tarjetas ── */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
         <Card className="hover:border-slate-300 transition-all cursor-pointer" onClick={()=>router.push('/dashboard/deudas')}>
           <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>{vencimientosTitulo}</CardTitle>
           {eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
@@ -409,7 +409,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Ahorro / Inversiones y Deudas por moneda ── */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
         <Card>
           <CardTitle>Ahorro e inversiones</CardTitle>
           {ahorroPorMoneda.length === 0 ? (
@@ -483,8 +483,8 @@ export default function DashboardPage() {
 
       {/* ── Modal expandido ── */}
       {expandedChart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-8 relative" onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6" style={{background:'rgba(15,23,42,0.55)'}} onClick={()=>setExpandedChart(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-4 md:p-8 relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpandedChart(null)}
               className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
@@ -505,7 +505,7 @@ export default function DashboardPage() {
 
             {expandedChart==='egresos' && <>
               <div className="text-slate-900 font-semibold text-lg mb-5">Distribución Gastos {periodoLabel}</div>
-              <div className="grid grid-cols-2 gap-8 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8 items-center">
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
@@ -527,7 +527,7 @@ export default function DashboardPage() {
 
             {expandedChart==='ingresos' && <>
               <div className="text-slate-900 font-semibold text-lg mb-5">Distribución Ingresos {periodoLabel}</div>
-              <div className="grid grid-cols-2 gap-8 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8 items-center">
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
