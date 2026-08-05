@@ -335,20 +335,20 @@ export default function DashboardPage() {
                   {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
                 </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
               </ResponsiveContainer>
-              <div className="flex flex-col gap-1 mt-2">
+              <div className="flex flex-col gap-1.5 md:gap-1 mt-2">
                 {pieEgresoData.slice(0,5).map((d,i)=>(
                   <div key={d.name} className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
-                      <span className="text-slate-500 text-xs">{d.name}</span>
+                      <span className="text-slate-500 text-[18px] md:text-xs">{d.name}</span>
                     </div>
-                    <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
+                    <span className="text-slate-900 text-[18px] md:text-xs font-mono font-bold">{fmt(d.value,m)}</span>
                   </div>
                 ))}
               </div>
             </>
           ):(
-            <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>
+            <div className="text-center text-slate-400 text-[17px] md:text-sm py-8">Sin datos</div>
           )}
         </Card>
 
@@ -362,20 +362,20 @@ export default function DashboardPage() {
                   {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
                 </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
               </ResponsiveContainer>
-              <div className="flex flex-col gap-1 mt-2">
+              <div className="flex flex-col gap-1.5 md:gap-1 mt-2">
                 {pieIngresoData.map((d,i)=>(
                   <div key={d.name} className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
-                      <span className="text-slate-500 text-xs">{d.name}</span>
+                      <span className="text-slate-500 text-[18px] md:text-xs">{d.name}</span>
                     </div>
-                    <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
+                    <span className="text-slate-900 text-[18px] md:text-xs font-mono font-bold">{fmt(d.value,m)}</span>
                   </div>
                 ))}
               </div>
             </>
           ):(
-            <div className="text-center text-slate-400 text-sm py-8">Sin datos</div>
+            <div className="text-center text-slate-400 text-[17px] md:text-sm py-8">Sin datos</div>
           )}
         </Card>
       </div>
@@ -385,17 +385,17 @@ export default function DashboardPage() {
         <Card className="hover:border-slate-300 transition-all cursor-pointer" onClick={()=>router.push('/dashboard/deudas')}>
           <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>{vencimientosTitulo}</CardTitle>
           {eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
-            <div className="text-slate-400 text-sm text-center py-4">Sin vencimientos pendientes 🎉</div>
+            <div className="text-slate-400 text-[17px] md:text-sm text-center py-4">Sin vencimientos pendientes 🎉</div>
           ):eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).sort((a,b)=>(a.mes*100+a.dia)-(b.mes*100+b.dia)).slice(0,6).map(ev=>(
             <div key={ev.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-slate-100 flex flex-col items-center justify-center flex-shrink-0 leading-none">
-                  <span className="text-[9px] font-semibold text-slate-400">{MESES_CORTOS[ev.mes-1]?.toUpperCase()}</span>
-                  <span className="text-xs font-bold text-slate-600">{ev.dia}</span>
+                  <span className="text-[11px] md:text-[9px] font-semibold text-slate-400">{MESES_CORTOS[ev.mes-1]?.toUpperCase()}</span>
+                  <span className="text-[14px] md:text-xs font-bold text-slate-600">{ev.dia}</span>
                 </div>
-                <span className="text-slate-700 text-sm truncate max-w-[160px]">{ev.descripcion}</span>
+                <span className="text-slate-700 text-[17px] md:text-sm truncate max-w-[200px] md:max-w-[160px]">{ev.descripcion}</span>
               </div>
-              <span className="font-mono text-sm font-bold text-red-500 flex-shrink-0">{fmt(ev.monto??0,m)}</span>
+              <span className="font-mono text-[17px] md:text-sm font-bold text-red-500 flex-shrink-0">{fmt(ev.monto??0,m)}</span>
             </div>
           ))}
         </Card>
@@ -403,7 +403,7 @@ export default function DashboardPage() {
         <Card className="hover:border-slate-300 transition-all">
           <CardTitle action={<div className="flex gap-1"><button onClick={()=>setExpandedChart('tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-base px-1" title="Expandir">⤢</button><button onClick={()=>router.push('/dashboard/tarjetas')} className="text-slate-300 hover:text-slate-500 border-none bg-transparent cursor-pointer text-xs px-1">→</button></div>}>Tarjetas de crédito</CardTitle>
           {(tarjetas??[]).length===0?(
-            <div className="text-slate-400 text-sm text-center py-4">Sin tarjetas registradas</div>
+            <div className="text-slate-400 text-[17px] md:text-sm text-center py-4">Sin tarjetas registradas</div>
           ):(tarjetas??[]).map(t=>{
             const acumulado = acumuladoPorTC[t.id] ?? 0
             const pct = r.totalIngresos > 0 ? Math.round(acumulado / r.totalIngresos * 100) : 0
@@ -411,21 +411,21 @@ export default function DashboardPage() {
             <div key={t.id} className="mb-4 last:mb-0">
               <div className="flex justify-between items-center mb-1.5">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{background:t.color}}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[17px] md:text-sm font-bold flex-shrink-0" style={{background:t.color}}>
                     {t.icono}
                   </div>
                   <div>
-                    <div className="text-slate-700 text-sm font-medium">{t.nombre}</div>
-                    <div className="text-slate-400 text-xs">{t.banco} · {t.quien}</div>
+                    <div className="text-slate-700 text-[17px] md:text-sm font-medium">{t.nombre}</div>
+                    <div className="text-slate-400 text-[14px] md:text-xs">{t.banco} · {t.quien}</div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono text-sm font-bold text-slate-600">{fmt(acumulado,m)}</div>
-                  <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
+                  <div className="font-mono text-[17px] md:text-sm font-bold text-slate-600">{fmt(acumulado,m)}</div>
+                  <div className="text-slate-400 text-[14px] md:text-xs">acumulado {añoActivo}</div>
                 </div>
               </div>
               <ProgressBar value={pct} color={t.color} height={6} />
-              <div className="text-slate-400 text-[11px] mt-1">{pct}% de tus ingresos del año</div>
+              <div className="text-slate-400 text-[13px] md:text-[11px] mt-1">{pct}% de tus ingresos del año</div>
             </div>
           )})}
         </Card>
@@ -436,7 +436,7 @@ export default function DashboardPage() {
         <Card>
           <CardTitle>Ahorro e inversiones</CardTitle>
           {ahorroPorMoneda.length === 0 ? (
-            <div className="text-slate-400 text-sm text-center py-6">
+            <div className="text-slate-400 text-[17px] md:text-sm text-center py-6">
               Etiquetá un ingreso o egreso con "Ahorro" o "Inversión" para que aparezca acá.
             </div>
           ) : (() => {
@@ -449,8 +449,8 @@ export default function DashboardPage() {
                     disabled={ahorroPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
                   <div className="text-center flex-1">
-                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className={`text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmtFull(actual.monto, actual.moneda)}</div>
+                    <div className="text-slate-400 text-[14px] md:text-xs font-semibold mb-1">{actual.moneda}</div>
+                    <div className={`text-[29px] md:text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmtFull(actual.monto, actual.moneda)}</div>
                   </div>
                   <button onClick={() => setAhorroIdx(i => (i + 1) % ahorroPorMoneda.length)}
                     disabled={ahorroPorMoneda.length < 2}
@@ -472,7 +472,7 @@ export default function DashboardPage() {
         <Card>
           <CardTitle>Deudas por moneda</CardTitle>
           {deudaPorMoneda.length === 0 ? (
-            <div className="text-slate-400 text-sm text-center py-6">Sin deudas registradas.</div>
+            <div className="text-slate-400 text-[17px] md:text-sm text-center py-6">Sin deudas registradas.</div>
           ) : (() => {
             const idx = Math.min(deudaMonedaIdx, deudaPorMoneda.length - 1)
             const actual = deudaPorMoneda[idx]
@@ -483,8 +483,8 @@ export default function DashboardPage() {
                     disabled={deudaPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
                   <div className="text-center flex-1">
-                    <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className="text-2xl font-bold font-mono text-red-500">{fmtFull(actual.monto, actual.moneda)}</div>
+                    <div className="text-slate-400 text-[14px] md:text-xs font-semibold mb-1">{actual.moneda}</div>
+                    <div className="text-[29px] md:text-2xl font-bold font-mono text-red-500">{fmtFull(actual.monto, actual.moneda)}</div>
                   </div>
                   <button onClick={() => setDeudaMonedaIdx(i => (i + 1) % deudaPorMoneda.length)}
                     disabled={deudaPorMoneda.length < 2}

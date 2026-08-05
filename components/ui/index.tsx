@@ -55,7 +55,7 @@ export function Card({ children, className = '', padding = 'md', onClick }: {
 export function CardTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-5">
-      <div className="text-slate-900 font-semibold text-[15px]">{children}</div>
+      <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">{children}</div>
       {action && <div>{action}</div>}
     </div>
   )
