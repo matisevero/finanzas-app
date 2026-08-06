@@ -539,7 +539,7 @@ export default function IngresosPage() {
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
               {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
             </button>
-            <button className="btn-primary" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>
+            <button className="btn-primary hidden md:inline-block" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>
           </div>
         } />
 

@@ -352,8 +352,8 @@ export default function DeudasPage() {
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
               {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
             </button>
-            <button className="btn-ghost text-sm" onClick={() => setShowEvModal(true)}>+ Vencimiento</button>
-            <button className="btn-primary" onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
+            <button className="btn-ghost text-sm hidden md:inline-block" onClick={() => setShowEvModal(true)}>+ Vencimiento</button>
+            <button className="btn-primary hidden md:inline-block" onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
           </div>
         } />
 
@@ -530,7 +530,7 @@ export default function DeudasPage() {
               <div className="text-4xl mb-3">📋</div>
               <div className="font-semibold text-slate-600 mb-1">Sin deudas de largo plazo</div>
               <div className="text-sm mb-4">Agregá préstamos, créditos o cuotas fijas.</div>
-              <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }} className="btn-primary">+ Nueva deuda LP</button>
+              <button onClick={() => { setModalEditDeudaId(null); setDeudaForm({ nombre:'', banco:'', total_original:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }} className="btn-primary hidden md:inline-block">+ Nueva deuda LP</button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
