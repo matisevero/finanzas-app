@@ -402,7 +402,7 @@ export default function ConfiguracionPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-5">Perfil</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-5">Perfil</div>
           <div className="flex flex-col gap-4">
             <div><FieldLabel>Nombre</FieldLabel><input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Tu nombre" className="input-field" /></div>
             <div><FieldLabel>Email</FieldLabel><input value={email} disabled className="input-field opacity-50 cursor-not-allowed" /><p className="text-slate-400 text-xs mt-1">El email no se puede cambiar desde aquí</p></div>
@@ -414,7 +414,7 @@ export default function ConfiguracionPage() {
         </Card>
 
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-5">Cambiar contraseña</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-5">Cambiar contraseña</div>
           <div className="flex flex-col gap-4">
             <div><FieldLabel>Nueva contraseña</FieldLabel><PasswordInput value={passForm.nueva} onChange={e=>setPassForm(p=>({...p,nueva:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
             <div><FieldLabel>Repetir contraseña</FieldLabel><PasswordInput value={passForm.repetir} onChange={e=>setPassForm(p=>({...p,repetir:e.target.value}))} placeholder="••••••••" className="input-field" /></div>
@@ -424,7 +424,7 @@ export default function ConfiguracionPage() {
         </Card>
 
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Monedas</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Monedas</div>
           <p className="text-slate-400 text-xs mb-4">Arrastrá para mover entre categorías. Pasá el mouse sobre una moneda para duplicarla o eliminarla.</p>
           <div className="grid grid-cols-2 gap-3">
             {(['principal','ahorro','cripto','libre'] as const).map(zona => (
@@ -544,7 +544,7 @@ export default function ConfiguracionPage() {
 
         {/* AÑO ACTIVO + SESIÓN, misma fila */}
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Año activo</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Año activo</div>
           <div className="flex gap-2 flex-wrap">
             {[2024,2025,2026,2027].map(y=>(
               <button key={y} onClick={()=>setAñoActivo(y)} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 cursor-pointer transition-all ${añoActivo===y?'bg-slate-900 text-white border-slate-900':'bg-transparent text-slate-600 border-slate-200 hover:border-slate-400'}`}>{y}</button>
@@ -552,13 +552,13 @@ export default function ConfiguracionPage() {
           </div>
         </Card>
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Sesión</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Sesión</div>
           <button onClick={logout} className="btn-danger">Cerrar sesión →</button>
         </Card>
 
         {/* CATEGORÍAS */}
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-3">Categorías</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-3">Categorías</div>
           <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4 w-fit">
             <button onClick={() => setCatModulo('ingresos')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border-none transition-all ${catModulo === 'ingresos' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>
@@ -603,7 +603,7 @@ export default function ConfiguracionPage() {
 
         {/* ETIQUETAS */}
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-1">Etiquetas</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-1">Etiquetas</div>
           <p className="text-slate-400 text-xs mb-4">Las que ya usaste en Ingresos, Egresos o Deudas. Renombrar o borrar acá lo actualiza en todos los ítems que la tengan.</p>
           <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
             {loadingEtiquetas && <p className="text-slate-400 text-xs">Cargando...</p>}
@@ -626,7 +626,7 @@ export default function ConfiguracionPage() {
 
         {/* ZONA DE PELIGRO */}
         <Card className="md:col-span-2 border border-red-100 bg-red-50/30">
-          <div className="text-red-700 font-semibold text-[22px] md:text-[15px] mb-2">⚠ Zona de peligro</div>
+          <div className="text-red-700 font-semibold text-[15px] mb-2">⚠ Zona de peligro</div>
           <p className="text-slate-500 text-sm mb-5">
             Borrá todos los datos de la aplicación (ingresos, egresos, deudas, eventos, metas y tarjetas).
             Esta acción es irreversible. Te recomendamos hacer un backup antes.

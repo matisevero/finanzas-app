@@ -194,7 +194,7 @@ export default function ComparadorPage() {
       {/* ── Gráfico ── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-card mb-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Comparativa mensual {añoActivo}</div>
+          <div className="text-slate-900 font-semibold text-[15px]">Comparativa mensual {añoActivo}</div>
           <span className="text-slate-400 text-xs">{activeItems.length} métricas · {mesesDisp.length} meses</span>
         </div>
         {activeItems.length === 0 ? (
@@ -232,7 +232,7 @@ export default function ComparadorPage() {
       {/* ── Tabla resumen ── */}
       {activeItems.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-card">
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Resumen de métricas seleccionadas</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Resumen de métricas seleccionadas</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>

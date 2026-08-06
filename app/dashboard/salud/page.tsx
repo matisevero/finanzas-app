@@ -120,7 +120,7 @@ export default function SaludPage() {
 
         {/* Desglose */}
         <Card className="md:col-span-2">
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-5">Desglose por categoría</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-5">Desglose por categoría</div>
           <div className="flex flex-col gap-4">
             {salud.categorias.map(cat=>{
               const bc = cat.score>=75?'#40B046':cat.score>=50?'#E8A020':'#F54927'
@@ -190,7 +190,7 @@ export default function SaludPage() {
 
       {/* Métricas clave */}
       <div>
-        <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Métricas clave — {periodoLabel}</div>
+        <div className="text-slate-900 font-semibold text-[15px] mb-4">Métricas clave — {periodoLabel}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {[
             {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:periodoLabel,           c:'#40B046'},

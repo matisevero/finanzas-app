@@ -198,7 +198,7 @@ export default function PreciosPage() {
       {/* Gráfico comparativo */}
       {selItems.length>0 && chartData.length>0 && (
         <Card className="mb-5">
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-1">Evolución comparativa</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-1">Evolución comparativa</div>
           <div className="text-slate-400 text-xs mb-4">{selItems.length} ítem{selItems.length>1?'s':''} seleccionado{selItems.length>1?'s':''}</div>
           <div className="flex gap-3 flex-wrap mb-3">
             {selItems.map((item,i)=>(
@@ -226,7 +226,7 @@ export default function PreciosPage() {
       {/* Tabla variaciones */}
       {selItems.length>0 && (
         <Card>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Detalle de variaciones</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Detalle de variaciones</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>

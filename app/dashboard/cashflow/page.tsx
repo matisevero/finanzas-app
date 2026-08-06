@@ -122,7 +122,7 @@ function CalendarioSemanal({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Simulador semanal</div>
+          <div className="text-slate-900 font-semibold text-[15px]">Simulador semanal</div>
           <div className="text-slate-400 text-xs mt-0.5">Arrastrá los items para ver cómo cambia tu saldo día a día</div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -498,7 +498,7 @@ export default function CashFlowPage() {
       {/* ── Días con movimientos ── */}
       {diasConEvs.length > 0 && (
         <div>
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Días con movimientos</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Días con movimientos</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {diasConEvs.map(d => {
               const isHoy = d.dia === HOY.getDate() && mes === HOY.getMonth() && año === HOY.getFullYear()

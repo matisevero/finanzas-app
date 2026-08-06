@@ -259,7 +259,7 @@ export default function DashboardPage() {
                   <div className="text-slate-500 text-[17px] md:text-[11px] font-bold uppercase tracking-widest md:mb-1">{widgetLabel(widgetId, opt.label)}</div>
                 </div>
 
-                <div className="text-slate-900 text-[40px] md:text-2xl font-bold font-mono leading-tight">{value}</div>
+                <div className="text-slate-900 text-[30px] md:text-2xl font-bold font-mono leading-tight">{value}</div>
 
                 <div className="flex items-center justify-between mt-2 md:block md:mt-0">
                   {sub && <div className="text-slate-400 text-[17px] md:text-xs md:mt-1">{sub}</div>}

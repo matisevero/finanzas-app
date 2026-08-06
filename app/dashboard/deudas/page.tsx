@@ -595,7 +595,7 @@ export default function DeudasPage() {
       {/* ── Gráfico anual % deuda vs ingresos ── */}
       <div className="mt-6">
         <div className="mb-3">
-          <div className="text-slate-900 font-semibold text-[22px] md:text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
+          <div className="text-slate-900 font-semibold text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
           <div className="text-slate-400 text-xs mt-0.5">Qué % de tus ingresos del mes se va en pago de deudas</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-6">

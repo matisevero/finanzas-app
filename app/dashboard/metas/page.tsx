@@ -163,7 +163,7 @@ export default function MetasPage() {
 
           {/* Ranking comparado */}
           <Card>
-            <div className="text-slate-900 font-semibold text-[22px] md:text-[15px] mb-4">Progreso comparado</div>
+            <div className="text-slate-900 font-semibold text-[15px] mb-4">Progreso comparado</div>
             {sorted.map(meta=>{
               const { pct, meses } = calcularMeta(meta.monto_objetivo, meta.monto_actual, meta.fecha_limite)
               return (
