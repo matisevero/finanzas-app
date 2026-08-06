@@ -434,6 +434,7 @@ export default function DashboardPage() {
       {/* ── Ahorro / Inversiones y Deudas por moneda ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
         <Card>
+          <div style={{ touchAction: 'pan-y' }} {...swipeHandlers(ahorroTouchX, ahorroPorMoneda.length, setAhorroIdx)}>
           <CardTitle>Ahorro e inversiones</CardTitle>
           {ahorroPorMoneda.length === 0 ? (
             <div className="text-slate-400 text-[17px] md:text-sm text-center py-6">
@@ -444,7 +445,7 @@ export default function DashboardPage() {
             const actual = ahorroPorMoneda[idx]
             return (
               <>
-                <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }} {...swipeHandlers(ahorroTouchX, ahorroPorMoneda.length, setAhorroIdx)}>
+                <div className="flex items-center justify-between">
                   <button onClick={() => setAhorroIdx(i => (i - 1 + ahorroPorMoneda.length) % ahorroPorMoneda.length)}
                     disabled={ahorroPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
@@ -467,9 +468,11 @@ export default function DashboardPage() {
               </>
             )
           })()}
+          </div>
         </Card>
 
         <Card>
+          <div style={{ touchAction: 'pan-y' }} {...swipeHandlers(deudaTouchX, deudaPorMoneda.length, setDeudaMonedaIdx)}>
           <CardTitle>Deudas por moneda</CardTitle>
           {deudaPorMoneda.length === 0 ? (
             <div className="text-slate-400 text-[17px] md:text-sm text-center py-6">Sin deudas registradas.</div>
@@ -478,7 +481,7 @@ export default function DashboardPage() {
             const actual = deudaPorMoneda[idx]
             return (
               <>
-                <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }} {...swipeHandlers(deudaTouchX, deudaPorMoneda.length, setDeudaMonedaIdx)}>
+                <div className="flex items-center justify-between">
                   <button onClick={() => setDeudaMonedaIdx(i => (i - 1 + deudaPorMoneda.length) % deudaPorMoneda.length)}
                     disabled={deudaPorMoneda.length < 2}
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
@@ -501,6 +504,7 @@ export default function DashboardPage() {
               </>
             )
           })()}
+          </div>
         </Card>
       </div>
 

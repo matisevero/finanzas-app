@@ -597,7 +597,8 @@ export default function IngresosPage() {
               <EmptyState title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
             ) : (
               <>
-                <div className="overflow-x-auto">
+                {/* ── Vista tabla (desktop) ── */}
+                <div className="overflow-x-auto hidden md:block">
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
@@ -656,6 +657,27 @@ export default function IngresosPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* ── Vista lista (mobile): fecha, descripción, importe, tipo, quién — sin editar/borrar inline, tocar abre el modal completo ── */}
+                <div className="md:hidden flex flex-col">
+                  {visibleRows.map((ingreso, rowIdx) => {
+                    const cfg = getTipoInfo(ingreso.tipo)
+                    const bg  = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+                    return (
+                      <div key={ingreso.id} onClick={() => openEditModal(ingreso)}
+                        className={`px-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer ${bg}`}>
+                        <div className="text-slate-400 text-[12px] font-mono mb-0.5">{fmtDate(ingreso.fecha)}</div>
+                        <div className="text-slate-700 font-medium text-[15px] mb-1">{ingreso.descripcion || cfg.label}</div>
+                        <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span>
+                          {ingreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
                 {hasMore && (
                   <div className="flex items-center justify-center pt-4 border-t border-slate-100 mt-2">
@@ -816,6 +838,12 @@ export default function IngresosPage() {
             <span className="text-slate-600 text-sm">Ingreso recurrente</span>
           </label>
           <div className="flex gap-3 pt-2">
+            {modalEditId && (
+              <button onClick={() => { handleDelete(modalEditId); setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }}
+                className="text-red-500 hover:text-red-700 text-sm font-medium border-none bg-transparent cursor-pointer px-2">
+                Eliminar
+              </button>
+            )}
             <button onClick={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
