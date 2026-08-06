@@ -568,7 +568,7 @@ export default function EgresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-[14px] md:text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[180px]">

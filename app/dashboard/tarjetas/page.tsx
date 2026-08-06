@@ -239,7 +239,7 @@ export default function TarjetasPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-[14px] md:text-xs">{filteredTxns.length} registros</span>
+              <span className="text-slate-400 text-xs">{filteredTxns.length} registros</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[160px]">
