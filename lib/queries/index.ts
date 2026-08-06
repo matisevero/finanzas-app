@@ -95,6 +95,20 @@ export async function borrarEtiqueta(etiqueta: string) {
   ])
 }
 
+// ─── FRECUENCIA DE CATEGORÍAS (para ordenar selectores por uso real) ──────────
+export async function getFrecuenciaCategorias(modulo: 'ingresos' | 'egresos'): Promise<Record<string, number>> {
+  const campo = modulo === 'ingresos' ? 'tipo' : 'categoria'
+  const { data, error } = await sb().from(modulo).select(campo)
+  if (error) throw error
+  const counts: Record<string, number> = {}
+  for (const row of (data ?? []) as any[]) {
+    const key = row[campo] as string
+    if (!key) continue
+    counts[key] = (counts[key] ?? 0) + 1
+  }
+  return counts
+}
+
 // ─── INGRESOS ─────────────────────────────────────────────────────────────────
 export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
   const { data, error } = await sb().from('ingresos').select('*').eq('año', año).order('fecha', { ascending: false })

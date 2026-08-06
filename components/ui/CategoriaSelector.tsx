@@ -24,9 +24,11 @@ interface Props {
   onPaste?: (e: React.ClipboardEvent<HTMLButtonElement>) => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLButtonElement>) => void
   bare?: boolean
+  /** Cantidad de usos por categoría (id → count). Si se pasa, las categorías base se muestran ordenadas de más a menos usadas. */
+  frecuencia?: Record<string, number>
 }
 
-export default function CategoriaSelector({ modulo, value, onChange, categorias, categoriasBase, onCategoriasChange, onPaste, onKeyDown, bare = false }: Props) {
+export default function CategoriaSelector({ modulo, value, onChange, categorias, categoriasBase, onCategoriasChange, onPaste, onKeyDown, bare = false, frecuencia }: Props) {
   const [open, setOpen]           = useState(false)
   const [showNew, setShowNew]     = useState(false)
   const [newNombre, setNewNombre] = useState('')
@@ -37,6 +39,10 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const customFlat = flattenCats(categorias)
+
+  const categoriasBaseOrdenadas = frecuencia
+    ? [...categoriasBase].sort((a, b) => (frecuencia[b.key] ?? 0) - (frecuencia[a.key] ?? 0))
+    : categoriasBase
 
   const allOptions = [
     ...categoriasBase.map(c => ({ id: c.key, label: c.label, icono: c.icon, color: c.color, isCustom: false })),
@@ -102,7 +108,7 @@ export default function CategoriaSelector({ modulo, value, onChange, categorias,
                 Categorías base
               </div>
             )}
-            {categoriasBase.map(c => (
+            {categoriasBaseOrdenadas.map(c => (
               <button key={c.key} type="button"
                 onClick={() => { onChange(c.key); setOpen(false); triggerRef.current?.focus() }}
                 className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors text-sm border-none cursor-pointer ${value === c.key ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'}`}>

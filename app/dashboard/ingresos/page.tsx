@@ -4,7 +4,7 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useCategoriasCustom } from '@/hooks'
+import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias } from '@/hooks'
 import { createIngreso, updateIngreso, deleteIngreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_INGRESO } from '@/lib/utils/constants'
@@ -137,10 +137,11 @@ function blankDraftRow(): DraftRow {
   return { id: Math.random().toString(36).slice(2), tipo: '', descripcion: '', fecha: '', monto: '', moneda: 'ARS', quien: '' }
 }
 
-function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }: {
+function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
+  frecuencia?: Record<string, number>
   onSave: (data: typeof FORM_INIT) => Promise<void>
   refetchCats: () => void
 }) {
@@ -225,7 +226,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
           onKeyDown={handleKey} className={cellBase} />
       </td>
       <td className="border border-slate-200" style={{width:150}}>
-        <CategoriaSelector bare modulo="ingresos" value={r.tipo} onChange={v => onChange({ tipo: v })} onPaste={handlePasteEnCelda(startRow, 2)}
+        <CategoriaSelector bare modulo="ingresos" value={r.tipo} onChange={v => onChange({ tipo: v })} frecuencia={frecuencia} onPaste={handlePasteEnCelda(startRow, 2)}
           onKeyDown={handleKey}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
@@ -267,10 +268,11 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, onSave, refetchCats }:
 }
 
 // ─── InlineEditRow ────────────────────────────────────────────────────────────
-function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel, refetchCats }: {
+function InlineEditRow({ ingreso, tiposBase, categoriasCustom, frecuencia, onSave, onCancel, refetchCats }: {
   ingreso: Ingreso
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
+  frecuencia?: Record<string, number>
   onSave: (id: string, data: Partial<typeof FORM_INIT>) => Promise<void>
   onCancel: () => void
   refetchCats: () => void
@@ -294,7 +296,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, onSave, onCancel,
       <td className="border border-slate-200" style={{width:100}}><FechaInput bare value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} onKeyDown={handleKeyDown} className={cellBase} /></td>
       <td className="border border-slate-200"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className={cellBase} placeholder="Descripción" /></td>
       <td className="border border-slate-200" style={{width:150}}>
-        <CategoriaSelector bare modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} onKeyDown={handleKeyDown}
+        <CategoriaSelector bare modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} frecuencia={frecuencia} onKeyDown={handleKeyDown}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
       </td>
       <td className="border border-slate-200" style={{width:100}}>
@@ -319,6 +321,7 @@ export default function IngresosPage() {
   const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading, refetch } = useIngresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('ingresos')
+  const frecuenciaCats = useFrecuenciaCategorias('ingresos')
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
   const data = useMemo(() =>
@@ -620,7 +623,7 @@ export default function IngresosPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} onSave={handleSheetSave} refetchCats={refetchCats} />
+                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} onSave={handleSheetSave} refetchCats={refetchCats} />
                       {visibleRows.map((ingreso, rowIdx) => {
                         const cfg       = getTipoInfo(ingreso.tipo)
                         const isEditing = editingId === ingreso.id
@@ -628,7 +631,7 @@ export default function IngresosPage() {
 
                         if (isEditing) return (
                           <InlineEditRow key={ingreso.id} ingreso={ingreso} tiposBase={tiposBase}
-                            categoriasCustom={categoriasCustom} onSave={handleUpdate}
+                            categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} onSave={handleUpdate}
                             onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
                         )
 
@@ -807,7 +810,7 @@ export default function IngresosPage() {
       <Modal open={showModal} onClose={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} title={modalEditId ? 'Editar ingreso' : 'Nuevo ingreso'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Tipo</FieldLabel>
-            <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
+            <CategoriaSelector modulo="ingresos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} frecuencia={frecuenciaCats.data ?? undefined}
               categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
           </div>
           <div><FieldLabel>Descripción</FieldLabel>
