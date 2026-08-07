@@ -449,7 +449,7 @@ export default function ConfiguracionPage() {
                   <div className="absolute right-3 top-9 z-10 bg-white border border-slate-200 rounded-xl shadow-lg p-2 flex flex-col gap-1.5 min-w-[140px]">
                     <input autoFocus value={nuevaMonedaTexto} onChange={e => setNuevaMonedaTexto(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { agregarMonedaNueva(nuevaMonedaTexto); setNuevaMonedaTexto(''); setShowAddMoneda(false) } if (e.key === 'Escape') setShowAddMoneda(false) }}
-                      placeholder="Código, ej: GBP" maxLength={4} className="input-field py-1 text-xs uppercase" />
+                      placeholder="Código, ej: GBP" maxLength={4} className="input-field py-1 text-base uppercase" />
                     <button onClick={() => { agregarMonedaNueva(nuevaMonedaTexto); setNuevaMonedaTexto(''); setShowAddMoneda(false) }}
                       disabled={!nuevaMonedaTexto.trim()} className="btn-primary py-1 text-xs disabled:opacity-50">Agregar</button>
                   </div>
@@ -585,7 +585,7 @@ export default function ConfiguracionPage() {
                   <input autoFocus value={editCatNombre} onChange={e=>setEditCatNombre(e.target.value)}
                     onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionCategoria(cat.id); if(e.key==='Escape') setEditCatId(null) }}
                     onBlur={() => guardarEdicionCategoria(cat.id)}
-                    className="input-field py-1 text-sm flex-1" />
+                    className="input-field py-1 text-base flex-1" />
                 ) : (
                   <span onClick={() => { setEditCatId(cat.id); setEditCatNombre(cat.nombre) }} className="text-sm text-slate-700 cursor-pointer hover:underline flex-1">{cat.icono} {cat.nombre}</span>
                 )}
@@ -614,7 +614,7 @@ export default function ConfiguracionPage() {
                   <input autoFocus value={editEtiquetaNombre} onChange={e=>setEditEtiquetaNombre(e.target.value)}
                     onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionEtiqueta(et); if(e.key==='Escape') setEditEtiqueta(null) }}
                     onBlur={() => guardarEdicionEtiqueta(et)}
-                    className="input-field py-1 text-sm flex-1" />
+                    className="input-field py-1 text-base flex-1" />
                 ) : (
                   <span onClick={() => { setEditEtiqueta(et); setEditEtiquetaNombre(et) }} className="text-sm text-slate-700 cursor-pointer hover:underline flex-1">{et}</span>
                 )}

@@ -63,9 +63,8 @@ export const useAppStore = create<AppState>()(
     {
       name: 'finanzas-store',
       partialize: (s) => ({
-        añoActivo: s.añoActivo,
-        vistaTipo: s.vistaTipo,
-        mesActivo: s.mesActivo,
+        // añoActivo, mesActivo y vistaTipo NO se persisten a propósito:
+        // cada vez que se abre la app tiene que arrancar en el mes actual.
         monedaPrincipal: s.monedaPrincipal,
         monedasAhorro: s.monedasAhorro,
         monedasCripto: s.monedasCripto,

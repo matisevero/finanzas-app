@@ -26,11 +26,40 @@ const MESES_ABR: Record<string, number> = {
   jul:7, ago:8, sep:9, set:9, oct:10, nov:11, dic:12,
 }
 
-// Acepta "6/7", "6/7/26", "06-07-2026", "10-jul-2026", "10 de julio 2026", etc. Si falta el año, usa añoDefault.
+const DIAS_SEMANA: Record<string, number> = {
+  domingo:0, lunes:1, martes:2, miercoles:3, 'miércoles':3, jueves:4, viernes:5, sabado:6, 'sábado':6,
+}
+
+function isoFromDate(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// "hoy", "ayer", "anteayer", "mañana", "lunes" / "el lunes" (día de la semana más reciente, hoy incluido)
+function parseFechaRelativa(input: string): string | null {
+  const clean = input.trim().toLowerCase().replace(/^el\s+/, '').replace('mañana', 'manana')
+  const hoy = new Date()
+  if (clean === 'hoy') return isoFromDate(hoy)
+  if (clean === 'ayer') { const d = new Date(hoy); d.setDate(d.getDate() - 1); return isoFromDate(d) }
+  if (clean === 'anteayer' || clean === 'antes de ayer') { const d = new Date(hoy); d.setDate(d.getDate() - 2); return isoFromDate(d) }
+  if (clean === 'manana') { const d = new Date(hoy); d.setDate(d.getDate() + 1); return isoFromDate(d) }
+  if (clean in DIAS_SEMANA) {
+    const objetivo = DIAS_SEMANA[clean]
+    const d = new Date(hoy)
+    const diff = (d.getDay() - objetivo + 7) % 7 // 0 = hoy, si no, el más reciente hacia atrás
+    d.setDate(d.getDate() - diff)
+    return isoFromDate(d)
+  }
+  return null
+}
+
+// Acepta "6/7", "6/7/26", "06-07-2026", "10-jul-2026", "10 de julio 2026", "hoy", "ayer", "el lunes", etc. Si falta el año, usa añoDefault.
 export function parseFechaFlexible(input: string, añoDefault: number): string | null {
   const clean = input.trim()
   if (!clean) return null
   if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean
+
+  const relativa = parseFechaRelativa(clean)
+  if (relativa) return relativa
 
   // Formato con mes en texto: "10-jul-2026", "10 jul 26", "10 de julio de 2026"
   const conMes = clean.toLowerCase().replace(/\s+de\s+/g, ' ').match(/^(\d{1,2})[\s\-\/]+([a-záéíóúñ]{3,})[a-záéíóúñ]*[\s\-\/]+(\d{2,4})$/)

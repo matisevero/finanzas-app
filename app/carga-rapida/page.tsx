@@ -399,7 +399,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                     <input ref={descRef} type="text" placeholder="Ej: Préstamo auto, Tarjeta Visa..." value={form.nombre ?? ''}
                       onChange={e => set('nombre', e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') setStep(4) }}
-                      className="w-full text-[15px] text-slate-900 outline-none border-none bg-transparent mt-1.5" />
+                      className="w-full text-base text-slate-900 outline-none border-none bg-transparent mt-1.5" />
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-4 mb-1">Cuota mensual <span className="normal-case font-normal text-slate-300">— opcional</span></div>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-lg font-bold font-mono text-slate-900">$</span>
@@ -415,7 +415,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Vencimiento</div>
                     <input type="date" autoFocus min={hoyISO()} value={form.fecha_vencimiento ?? ''}
                       onChange={e => set('fecha_vencimiento', e.target.value)}
-                      className="w-full text-[15px] text-slate-900 outline-none border border-slate-200 rounded-sm px-3 py-2 bg-slate-50" />
+                      className="w-full text-base text-slate-900 outline-none border border-slate-200 rounded-sm px-3 py-2 bg-slate-50" />
                   </div>
                 )}
               </>
@@ -454,7 +454,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                     </div>
                     <AutocompleteInput value={form.descripcion ?? ''} onChange={v => set('descripcion', v)}
                       suggestions={descripcionesQ.data ?? []} placeholder="Ej: Supermercado, sueldo julio..." autoFocus
-                      className="w-full text-[15px] text-slate-900 outline-none border-none bg-transparent pb-3 mb-3 border-b border-slate-200 mt-1.5" />
+                      className="w-full text-base text-slate-900 outline-none border-none bg-transparent pb-3 mb-3 border-b border-slate-200 mt-1.5" />
                     {(
                       <>
                         <div className="flex flex-wrap gap-2 mb-3">
