@@ -8,25 +8,50 @@ interface Props {
   placeholder?: string
   className?: string
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
   autoFocus?: boolean
   maxSuggestions?: number
 }
 
 /** Input de texto libre con sugerencias de valores usados antes (Descripción, Etiqueta, etc).
- *  `suggestions` ya debería venir ordenada por relevancia (ej. frecuencia de uso). */
+ *  `suggestions` ya debería venir ordenada por relevancia (ej. frecuencia de uso).
+ *  El desplegable se posiciona con `fixed` calculando su lugar en pantalla, para no quedar
+ *  recortado cuando el input vive dentro de un contenedor con overflow (tablas, celdas, etc). */
 export default function AutocompleteInput({
-  value, onChange, suggestions, placeholder, className = 'input-field', onKeyDown, autoFocus, maxSuggestions = 6,
+  value, onChange, suggestions, placeholder, className = 'input-field', onKeyDown, onPaste, autoFocus, maxSuggestions = 6,
 }: Props) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null)
+  const wrapRef  = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (wrapRef.current?.contains(target)) return
+      if ((target as HTMLElement).closest?.('[data-autocomplete-menu]')) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onOutside)
     return () => document.removeEventListener('mousedown', onOutside)
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+    function place() {
+      const el = inputRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      setRect({ left: r.left, top: r.bottom + 4, width: Math.max(r.width, 180) })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open])
 
   const q = value.trim().toLowerCase()
   const filtered = (q
@@ -34,9 +59,12 @@ export default function AutocompleteInput({
     : suggestions
   ).slice(0, maxSuggestions)
 
+  const showMenu = open && filtered.length > 0 && rect
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef} className="relative">
       <input
+        ref={inputRef}
         type="text"
         value={value}
         placeholder={placeholder}
@@ -44,11 +72,16 @@ export default function AutocompleteInput({
         onChange={e => { onChange(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         className={className}
         autoComplete="off"
       />
-      {open && filtered.length > 0 && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-48 overflow-auto">
+      {showMenu && (
+        <div
+          data-autocomplete-menu
+          style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, zIndex: 1000 }}
+          className="bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-auto"
+        >
           {filtered.map(s => (
             <button
               key={s} type="button"

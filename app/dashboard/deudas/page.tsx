@@ -38,7 +38,7 @@ const DEFAULT_WIDGETS_DEU = ['vence_mes', 'pagado_mes', 'pct_ingresos', 'deudas_
 
 
 // ─── InlineEditEvento ─────────────────────────────────────────────────────────
-function InlineEditEvento({ ev, onSave, onCancel }: { ev: any; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
+function InlineEditEvento({ ev, descripciones, onSave, onCancel }: { ev: any; descripciones?: string[]; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
   const [form, setForm] = useState({
     descripcion: ev.descripcion ?? '',
     monto: ev.monto != null ? String(ev.monto) : '',
@@ -54,7 +54,7 @@ function InlineEditEvento({ ev, onSave, onCancel }: { ev: any; onSave: (id: stri
   return (
     <div className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg">
       <input type="number" min="1" max="31" value={form.dia} onChange={e => setForm(p => ({ ...p, dia: e.target.value }))} className="input-field py-1 text-xs w-14 text-center" placeholder="Día" />
-      <input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
+      <AutocompleteInput value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} suggestions={descripciones ?? []} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
       <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className="input-field py-1 text-xs w-28">
         {CATEGORIAS_EVENTO.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
       </select>
@@ -440,7 +440,7 @@ export default function DeudasPage() {
               const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
               if (editingEventoId === ev.id) return (
                 <div key={ev.id} className="mb-1">
-                  <InlineEditEvento ev={ev} onSave={handleUpdateEvento} onCancel={() => setEditingEventoId(null)} />
+                  <InlineEditEvento ev={ev} descripciones={descripcionesEventosQ.data ?? undefined} onSave={handleUpdateEvento} onCancel={() => setEditingEventoId(null)} />
                 </div>
               )
               return (

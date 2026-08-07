@@ -139,11 +139,12 @@ function blankDraftRow(): DraftRow {
   return { id: Math.random().toString(36).slice(2), categoria: '', descripcion: '', fecha: '', monto: '', moneda: 'ARS', quien: '' }
 }
 
-function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, onSave, refetchCats }: {
+function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripciones, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
   frecuencia?: Record<string, number>
+  descripciones?: string[]
   onSave: (data: typeof FORM_INIT) => Promise<void>
   refetchCats: () => void
 }) {
@@ -224,7 +225,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, onSave, re
           onKeyDown={handleKey} className={cellBase} />
       </td>
       <td className="border border-slate-200">
-        <input value={r.descripcion} onChange={e => onChange({ descripcion: e.target.value })} onPaste={handlePasteEnCelda(startRow, 1)}
+        <AutocompleteInput value={r.descripcion} onChange={v => onChange({ descripcion: v })} suggestions={descripciones ?? []} onPaste={handlePasteEnCelda(startRow, 1)}
           onKeyDown={handleKey} className={cellBase} />
       </td>
       <td className="border border-slate-200" style={{width:150}}>
@@ -270,11 +271,12 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, onSave, re
 }
 
 // ─── InlineEditRow ────────────────────────────────────────────────────────────
-function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, onSave, onCancel, refetchCats }: {
+function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, descripciones, onSave, onCancel, refetchCats }: {
   egreso: Egreso
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
   frecuencia?: Record<string, number>
+  descripciones?: string[]
   onSave: (id: string, data: Partial<typeof FORM_INIT>) => Promise<void>
   onCancel: () => void
   refetchCats: () => void
@@ -295,7 +297,7 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, onSave
   return (
     <tr className="bg-blue-50/60">
       <td className="border border-slate-200" style={{width:100}}><FechaInput bare value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} onKeyDown={handleKeyDown} className={cellBase} /></td>
-      <td className="border border-slate-200"><input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} onKeyDown={handleKeyDown} className={cellBase} placeholder="Descripción" /></td>
+      <td className="border border-slate-200"><AutocompleteInput value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} suggestions={descripciones ?? []} onKeyDown={handleKeyDown} className={cellBase} placeholder="Descripción" /></td>
       <td className="border border-slate-200" style={{width:150}}>
         <CategoriaSelector bare modulo="egresos" value={form.categoria} onChange={v => setForm(p => ({ ...p, categoria: v }))} frecuencia={frecuencia} onKeyDown={handleKeyDown}
           categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
@@ -618,7 +620,7 @@ export default function EgresosPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} onSave={handleSheetSave} refetchCats={refetchCats} />
+                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} onSave={handleSheetSave} refetchCats={refetchCats} />
                       {visibleRows.map((egreso, rowIdx) => {
                         const cfg       = getTipoInfo(egreso.categoria)
                         const isEditing = editingId === egreso.id
@@ -626,7 +628,7 @@ export default function EgresosPage() {
 
                         if (isEditing) return (
                           <InlineEditRow key={egreso.id} egreso={egreso} tiposBase={tiposBase}
-                            categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} onSave={handleUpdate}
+                            categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} onSave={handleUpdate}
                             onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
                         )
 
