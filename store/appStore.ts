@@ -74,3 +74,15 @@ export const useAppStore = create<AppState>()(
     }
   )
 )
+
+/** Todas las monedas configuradas (Principal + Ahorro + Cripto + Sin asignar), sin duplicados.
+ *  Usar esto en los selects de moneda de transacciones — `monedasPalette` sola es solo
+ *  la zona "Sin asignar" y no incluye la moneda Principal ni las de Ahorro/Cripto. */
+export function useMonedasDisponibles(): Moneda[] {
+  const monedaPrincipal = useAppStore(s => s.monedaPrincipal)
+  const monedasAhorro   = useAppStore(s => s.monedasAhorro)
+  const monedasCripto   = useAppStore(s => s.monedasCripto)
+  const monedasPalette  = useAppStore(s => s.monedasPalette)
+  return Array.from(new Set([monedaPrincipal, ...monedasAhorro, ...monedasCripto, ...monedasPalette]))
+}
+

@@ -1,13 +1,14 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useAppStore } from '@/store/appStore'
-import { useDeudas, useEventosMes, useEventosAño, useIngresos } from '@/hooks'
+import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
+import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas } from '@/hooks'
 import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
+import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import type { Moneda } from '@/types'
 
 const HOY     = new Date()
@@ -67,7 +68,7 @@ function InlineEditEvento({ ev, onSave, onCancel }: { ev: any; onSave: (id: stri
 
 // ─── InlineEditDeuda ──────────────────────────────────────────────────────────
 function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
-  const monedasPalette = useAppStore(s => s.monedasPalette)
+  const monedasPalette = useMonedasDisponibles()
   const [form, setForm] = useState({
     nombre: d.nombre ?? '', banco: d.banco ?? '',
     total_original: String(d.total_original), pendiente: String(d.pendiente),
@@ -132,8 +133,11 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function DeudasPage() {
-  const { añoActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
+  const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const monedasPalette = useMonedasDisponibles()
   const { data: deudas, loading: ld, refetch: refDeudas } = useDeudas()
+  const descripcionesEventosQ = useDescripcionesDistintas('eventos_calendario')
+  const etiquetasQ = useEtiquetasDistintas()
   const { data: ingresos } = useIngresos()
   const [tab, setTab] = useState<'calendario'|'largo'>('calendario')
   const [calMes, setCalMes] = useState(HOY_MES)
@@ -620,8 +624,8 @@ export default function DeudasPage() {
       <Modal open={showEvModal} onClose={() => setShowEvModal(false)} title="Nuevo vencimiento">
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Descripción</FieldLabel>
-            <input value={evForm.descripcion} onChange={e => setEvForm(p => ({ ...p, descripcion: e.target.value }))}
-              placeholder="Ej: Pago tarjeta Galicia" className="input-field" autoFocus />
+            <AutocompleteInput value={evForm.descripcion} onChange={v => setEvForm(p => ({ ...p, descripcion: v }))}
+              suggestions={descripcionesEventosQ.data ?? []} placeholder="Ej: Pago tarjeta Galicia" autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Categoría</FieldLabel>
@@ -735,7 +739,7 @@ export default function DeudasPage() {
           </div>
           <div>
             <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
-            <input value={deudaForm.etiqueta} onChange={e => setDeudaForm(p => ({ ...p, etiqueta: e.target.value }))} placeholder="Ej: Viaje Brasil" className="input-field" />
+            <AutocompleteInput value={deudaForm.etiqueta} onChange={v => setDeudaForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} className="btn-ghost flex-1">Cancelar</button>

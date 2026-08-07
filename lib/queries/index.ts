@@ -95,6 +95,19 @@ export async function borrarEtiqueta(etiqueta: string) {
   ])
 }
 
+// ─── DESCRIPCIONES (para autocompletar, ordenadas por frecuencia real de uso) ─
+export async function getDescripcionesDistintas(modulo: 'ingresos' | 'egresos' | 'eventos_calendario'): Promise<string[]> {
+  const { data, error } = await sb().from(modulo).select('descripcion')
+  if (error) throw error
+  const counts: Record<string, number> = {}
+  for (const row of (data ?? []) as any[]) {
+    const desc = (row.descripcion as string)?.trim()
+    if (!desc) continue
+    counts[desc] = (counts[desc] ?? 0) + 1
+  }
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a])
+}
+
 // ─── FRECUENCIA DE CATEGORÍAS (para ordenar selectores por uso real) ──────────
 export async function getFrecuenciaCategorias(modulo: 'ingresos' | 'egresos'): Promise<Record<string, number>> {
   const campo = modulo === 'ingresos' ? 'tipo' : 'categoria'

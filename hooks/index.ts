@@ -33,6 +33,8 @@ export function useMetas()       { return useAsync(() => Q.getMetas(), []) }
 export function usePrecioItems() { return useAsync(() => Q.getPrecioItems(), []) }
 export function useCategoriasCustom(modulo: string) { return useAsync(() => Q.getCategoriasCustom(modulo), [modulo]) }
 export function useFrecuenciaCategorias(modulo: 'ingresos' | 'egresos') { return useAsync(() => Q.getFrecuenciaCategorias(modulo), [modulo]) }
+export function useDescripcionesDistintas(modulo: 'ingresos' | 'egresos' | 'eventos_calendario') { return useAsync(() => Q.getDescripcionesDistintas(modulo), [modulo]) }
+export function useEtiquetasDistintas() { return useAsync(() => Q.getEtiquetasDistintas(), []) }
 
 export function useEventosMes(año: number, mes: number) {
   return useAsync(() => Q.getEventosByMes(año, mes), [año, mes])

@@ -1,9 +1,10 @@
 'use client'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCategoriasCustom, useFrecuenciaCategorias } from '@/hooks'
+import { useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas } from '@/hooks'
 import { createIngreso, createEgreso, createEvento, createDeuda } from '@/lib/queries'
 import { TIPOS_INGRESO, TIPOS_EGRESO, TIPOS_EVENTO } from '@/lib/utils/constants'
+import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import type { Moneda, Quien } from '@/types'
 
 type Tipo = 'ingreso' | 'egreso' | 'deuda'
@@ -18,6 +19,24 @@ const TIPO_INFO: Record<Tipo, { label: string; acc: string; accBg: string; gradE
 function hoyISO() { return new Date().toISOString().split('T')[0] }
 function ayerISO() { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0] }
 function fmtMonto(v: string) { if (!v) return ''; const n = parseFloat(v); return isNaN(n) ? '' : '$' + n.toLocaleString('es-AR') }
+
+// Formateo en vivo con puntos de miles (igual que MontoInput en el resto de la app)
+function toDisplay(raw: string): string {
+  const clean  = raw.replace(/[^\d,]/g, '')
+  const parts  = clean.split(',')
+  const entero = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return parts.length > 1 ? entero + ',' + parts[1].slice(0, 2) : entero
+}
+function toRaw(display: string): string {
+  return display.replace(/\./g, '').replace(',', '.')
+}
+function fromRawValue(value: string): string {
+  if (!value) return ''
+  const num = parseFloat(value)
+  if (isNaN(num)) return ''
+  return toDisplay(String(num).replace('.', ','))
+}
+
 function fmtFechaCorta(iso: string) {
   if (!iso) return ''
   if (iso === hoyISO()) return 'Hoy'
@@ -53,6 +72,7 @@ export default function CargaRapidaPage() {
   const modulo: 'ingresos' | 'egresos' | null = tipo === 'ingreso' ? 'ingresos' : tipo === 'egreso' ? 'egresos' : null
   const { data: categoriasCustom } = useCategoriasCustom(modulo ?? 'ingresos')
   const frecuenciaQ = useFrecuenciaCategorias((modulo ?? 'ingresos') as 'ingresos' | 'egresos')
+  const descripcionesQ = useDescripcionesDistintas(tipo === 'deuda' ? 'eventos_calendario' : (modulo ?? 'ingresos'))
 
   const esDeudaLargo = tipo === 'deuda' && form.categoria === 'largo'
   const theme = tipo ? TIPO_INFO[tipo] : { label: '', acc: '#0F172A', accBg: '#F1F5F9', gradEnd: '#0F172A' }
@@ -73,6 +93,43 @@ export default function CargaRapidaPage() {
     const frec = frecuenciaQ.data
     return frec ? [...all].sort((a, b) => (frec[b.id] ?? 0) - (frec[a.id] ?? 0)) : all
   }, [tipo, modulo, categoriasCustom, frecuenciaQ.data])
+
+  const [montoDisplay, setMontoDisplay] = useState('')
+  const [cuotaDisplay, setCuotaDisplay] = useState('')
+
+  useEffect(() => {
+    const numActual = parseFloat(toRaw(montoDisplay))
+    const numNuevo  = parseFloat(form.monto || '')
+    const mismosVacios = toRaw(montoDisplay) === '' && !form.monto
+    if (mismosVacios || numActual === numNuevo) return
+    setMontoDisplay(fromRawValue(form.monto || ''))
+  }, [form.monto]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const numActual = parseFloat(toRaw(cuotaDisplay))
+    const numNuevo  = parseFloat(form.cuota_mensual || '')
+    const mismosVacios = toRaw(cuotaDisplay) === '' && !form.cuota_mensual
+    if (mismosVacios || numActual === numNuevo) return
+    setCuotaDisplay(fromRawValue(form.cuota_mensual || ''))
+  }, [form.cuota_mensual]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input  = e.target.value.replace(/[^\d,]/g, '')
+    const commas = (input.match(/,/g) || []).length
+    if (commas > 1) return
+    const formatted = toDisplay(input)
+    setMontoDisplay(formatted)
+    set('monto', toRaw(formatted))
+  }
+
+  function handleCuotaChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input  = e.target.value.replace(/[^\d,]/g, '')
+    const commas = (input.match(/,/g) || []).length
+    if (commas > 1) return
+    const formatted = toDisplay(input)
+    setCuotaDisplay(formatted)
+    set('cuota_mensual', toRaw(formatted))
+  }
 
   function reset() {
     setTipo(null); setStep(0); setForm({}); setError(''); setAnalizError(''); setSaved(false)
@@ -258,8 +315,8 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Monto</div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-bold font-mono text-slate-900">$</span>
-              <input ref={montoRef} type="number" inputMode="decimal" placeholder="0" value={form.monto ?? ''}
-                onChange={e => set('monto', e.target.value)}
+              <input ref={montoRef} type="text" inputMode="decimal" placeholder="0" value={montoDisplay}
+                onChange={handleMontoChange}
                 onKeyDown={e => { if (e.key === 'Enter' && form.monto) setStep(1) }}
                 className="text-2xl font-bold font-mono text-slate-900 outline-none border-none w-full bg-transparent" />
             </div>
@@ -333,7 +390,12 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                 )}
                 {step === 3 && (
                   <div className="bg-white border rounded-sm p-4" style={{ borderColor: theme.acc }}>
-                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Nombre <span className="normal-case font-normal text-slate-300">— opcional</span></div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Nombre <span className="normal-case font-normal text-slate-300">— opcional</span></div>
+                      <button onClick={() => setStep(4)} className="text-[12.5px] font-bold border-none bg-transparent cursor-pointer flex items-center gap-0.5" style={{ color: theme.acc }}>
+                        Saltear <span className="text-sm leading-none">›</span>
+                      </button>
+                    </div>
                     <input ref={descRef} type="text" placeholder="Ej: Préstamo auto, Tarjeta Visa..." value={form.nombre ?? ''}
                       onChange={e => set('nombre', e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') setStep(4) }}
@@ -341,13 +403,10 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-4 mb-1">Cuota mensual <span className="normal-case font-normal text-slate-300">— opcional</span></div>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-lg font-bold font-mono text-slate-900">$</span>
-                      <input type="number" inputMode="decimal" placeholder="0" value={form.cuota_mensual ?? ''}
-                        onChange={e => set('cuota_mensual', e.target.value)}
+                      <input type="text" inputMode="decimal" placeholder="0" value={cuotaDisplay}
+                        onChange={handleCuotaChange}
                         className="text-lg font-bold font-mono text-slate-900 outline-none border-none w-full bg-transparent" />
                     </div>
-                    <button onClick={() => setStep(4)} className="w-full mt-4 py-2.5 rounded-xl text-white font-semibold text-sm border-none cursor-pointer" style={{ background: theme.acc }}>
-                      Continuar
-                    </button>
                   </div>
                 )}
 
@@ -385,11 +444,16 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                 )}
                 {step === 3 && (
                   <div className="bg-white border rounded-sm p-4" style={{ borderColor: theme.acc }}>
-                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      'Descripción, categoría y quién' <span className="normal-case font-normal text-slate-300">— opcional</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        Descripción, categoría y quién <span className="normal-case font-normal text-slate-300">— opcional</span>
+                      </div>
+                      <button onClick={() => setStep(4)} className="text-[12.5px] font-bold border-none bg-transparent cursor-pointer flex items-center gap-0.5 flex-shrink-0 ml-2" style={{ color: theme.acc }}>
+                        Saltear <span className="text-sm leading-none">›</span>
+                      </button>
                     </div>
-                    <input ref={descRef} type="text" placeholder="Ej: Supermercado, sueldo julio..." value={form.descripcion ?? ''}
-                      onChange={e => set('descripcion', e.target.value)}
+                    <AutocompleteInput value={form.descripcion ?? ''} onChange={v => set('descripcion', v)}
+                      suggestions={descripcionesQ.data ?? []} placeholder="Ej: Supermercado, sueldo julio..." autoFocus
                       className="w-full text-[15px] text-slate-900 outline-none border-none bg-transparent pb-3 mb-3 border-b border-slate-200 mt-1.5" />
                     {(
                       <>
@@ -409,9 +473,6 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                         </div>
                       </>
                     )}
-                    <button onClick={() => setStep(4)} className="w-full mt-3.5 py-2.5 rounded-xl text-white font-semibold text-sm border-none cursor-pointer" style={{ background: theme.acc }}>
-                      Continuar
-                    </button>
                   </div>
                 )}
 

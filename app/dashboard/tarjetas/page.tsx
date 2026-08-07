@@ -1,7 +1,7 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useAppStore } from '@/store/appStore'
+import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
 import { updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
@@ -21,7 +21,8 @@ const CAT_COLORS: Record<string,{bg:string,c:string}> = {
 }
 
 export default function TarjetasPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const monedasPalette = useMonedasDisponibles()
   const esMensual = vistaTipo === 'mensual'
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()

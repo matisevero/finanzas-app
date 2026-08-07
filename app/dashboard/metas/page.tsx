@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
-import { useAppStore } from '@/store/appStore'
+import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useMetas } from '@/hooks'
 import { createMeta, updateMeta, deleteMeta } from '@/lib/queries'
 import { fmt } from '@/lib/utils/formatters'
@@ -13,7 +13,8 @@ import type { Moneda } from '@/types'
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
 
 export default function MetasPage() {
-  const { monedaPrincipal: m, monedasPalette } = useAppStore()
+  const { monedaPrincipal: m } = useAppStore()
+  const monedasPalette = useMonedasDisponibles()
   const { data: metas, loading, refetch } = useMetas()
   const [showModal, setShowModal]   = useState(false)
   const [editId, setEditId]         = useState<string|null>(null)

@@ -3,8 +3,8 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useAppStore } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias } from '@/hooks'
+import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas } from '@/hooks'
 import { createEgreso, updateEgreso, deleteEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -12,6 +12,7 @@ import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinn
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
+import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import { parsePegadoTSV, matchOpcion, celdaFechaISO, parseCeldaMonto } from '@/lib/utils/pegado'
 import type { Moneda, Quien, Egreso, CategoriaCustom } from '@/types'
 
@@ -317,11 +318,14 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, onSave
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function EgresosPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, monedasPalette } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const monedasPalette = useMonedasDisponibles()
   const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('egresos')
   const frecuenciaCats = useFrecuenciaCategorias('egresos')
+  const descripcionesQ = useDescripcionesDistintas('egresos')
+  const etiquetasQ = useEtiquetasDistintas()
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
   const data = useMemo(() =>
@@ -802,7 +806,7 @@ export default function EgresosPage() {
               categorias={categoriasCustom} categoriasBase={tiposBase} onCategoriasChange={refetchCats} />
           </div>
           <div><FieldLabel>Descripción</FieldLabel>
-            <input value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: Pago tarjeta Galicia" className="input-field" />
+            <AutocompleteInput value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} suggestions={descripcionesQ.data ?? []} placeholder="Ej: Pago tarjeta Galicia" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel><MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} /></div>
@@ -822,7 +826,7 @@ export default function EgresosPage() {
           </div>
           <div>
             <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
-            <input value={form.etiqueta} onChange={e => setForm(p => ({ ...p, etiqueta: e.target.value }))} placeholder="Ej: Viaje Brasil" className="input-field" />
+            <AutocompleteInput value={form.etiqueta} onChange={v => setForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
