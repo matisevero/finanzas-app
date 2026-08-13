@@ -67,6 +67,7 @@ export interface Egreso {
   quien: Quien
   recurrente: boolean
   etiqueta?: string | null
+  proyecto_id?: string | null
   created_at: string
 }
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -182,6 +183,34 @@ export interface Meta {
   created_at: string
 }
 export type MetaInsert = Omit<Meta, 'id' | 'user_id' | 'created_at'>
+
+export interface Ahorro {
+  id: string
+  user_id: string
+  nombre: string
+  categoria: string
+  moneda: Moneda
+  icono: string
+  color: string
+  ajuste_manual: number
+  created_at: string
+}
+export type AhorroInsert = Omit<Ahorro, 'id' | 'user_id' | 'created_at'>
+
+export interface Proyecto {
+  id: string
+  user_id: string
+  nombre: string
+  icono: string
+  color: string
+  presupuesto: number
+  moneda: Moneda
+  fecha_inicio?: string | null
+  fecha_fin?: string | null
+  activo: boolean
+  created_at: string
+}
+export type ProyectoInsert = Omit<Proyecto, 'id' | 'user_id' | 'created_at'>
 
 // ─── Precios recurrentes ──────────────────────────────────────────────────────
 export interface PrecioItem {

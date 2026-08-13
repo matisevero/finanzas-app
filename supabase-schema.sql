@@ -216,6 +216,42 @@ CREATE TABLE IF NOT EXISTS public.metas (
 ALTER TABLE public.metas ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "metas_own" ON public.metas FOR ALL USING (auth.uid() = user_id);
 
+-- ─── AHORROS (categorías de inversión/ahorro: automático + ajuste manual) ────
+CREATE TABLE IF NOT EXISTS public.ahorros (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id        UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+  nombre         TEXT NOT NULL,
+  categoria      TEXT NOT NULL,
+  moneda         TEXT NOT NULL DEFAULT 'ARS',
+  icono          TEXT NOT NULL DEFAULT '💰',
+  color          TEXT NOT NULL DEFAULT '#1A5E9E',
+  ajuste_manual  NUMERIC(15,2) NOT NULL DEFAULT 0,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.ahorros ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "ahorros_own" ON public.ahorros FOR ALL USING (auth.uid() = user_id);
+
+-- ─── PROYECTOS ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.proyectos (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id        UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+  nombre         TEXT NOT NULL,
+  icono          TEXT NOT NULL DEFAULT '📁',
+  color          TEXT NOT NULL DEFAULT '#1A5E9E',
+  presupuesto    NUMERIC(15,2) NOT NULL DEFAULT 0,
+  moneda         TEXT NOT NULL DEFAULT 'ARS',
+  fecha_inicio   DATE,
+  fecha_fin      DATE,
+  activo         BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.proyectos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "proyectos_own" ON public.proyectos FOR ALL USING (auth.uid() = user_id);
+
+-- Vínculo opcional de un egreso a un proyecto (agregado después de que existe la tabla egresos y proyectos)
+ALTER TABLE public.egresos ADD COLUMN IF NOT EXISTS proyecto_id UUID REFERENCES public.proyectos(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_egresos_proyecto ON public.egresos(proyecto_id);
+
 -- ─── PRECIOS — Items ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.precio_items (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

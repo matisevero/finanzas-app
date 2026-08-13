@@ -5,6 +5,8 @@ import type {
   Tarjeta, TarjetaTransaccion, PagoTarjeta,
   EventoCalendario, EventoInsert,
   Meta, MetaInsert,
+  Ahorro, AhorroInsert,
+  Proyecto, ProyectoInsert,
   PrecioItem, PrecioHistorial,
   SaldoInicial,
   CategoriaCustom, CategoriaCustomInsert,
@@ -188,6 +190,20 @@ export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Pro
 export async function deleteEgreso(id: string) {
   const { error } = await sb().from('egresos').delete().eq('id', id)
   if (error) throw error
+}
+
+// Todos los ingresos/egresos del usuario, sin acotar a un año — usado por Ahorro general
+// (el ahorro acumulado es historico, no algo que deba resetear cada año).
+export async function getAllIngresos(): Promise<Ingreso[]> {
+  const { data, error } = await sb().from('ingresos').select('*').order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getAllEgresos(): Promise<Egreso[]> {
+  const { data, error } = await sb().from('egresos').select('*').order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
 }
 
 // ─── DEUDAS ──────────────────────────────────────────────────────────────────
@@ -393,6 +409,62 @@ export async function updateMeta(id: string, updates: Partial<MetaInsert>): Prom
 export async function deleteMeta(id: string) {
   const { error } = await sb().from('metas').delete().eq('id', id)
   if (error) throw error
+}
+
+// ─── AHORROS ─────────────────────────────────────────────────────────────────
+export async function getAhorros(): Promise<Ahorro[]> {
+  const { data, error } = await sb().from('ahorros').select('*').order('created_at')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createAhorro(form: AhorroInsert): Promise<Ahorro> {
+  const userId = await uid()
+  const { data, error } = await sb().from('ahorros').insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateAhorro(id: string, updates: Partial<AhorroInsert>): Promise<Ahorro> {
+  const { data, error } = await sb().from('ahorros').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteAhorro(id: string) {
+  const { error } = await sb().from('ahorros').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── PROYECTOS ───────────────────────────────────────────────────────────────
+export async function getProyectos(): Promise<Proyecto[]> {
+  const { data, error } = await sb().from('proyectos').select('*').order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createProyecto(form: ProyectoInsert): Promise<Proyecto> {
+  const userId = await uid()
+  const { data, error } = await sb().from('proyectos').insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateProyecto(id: string, updates: Partial<ProyectoInsert>): Promise<Proyecto> {
+  const { data, error } = await sb().from('proyectos').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteProyecto(id: string) {
+  const { error } = await sb().from('proyectos').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getEgresosByProyecto(proyectoId: string): Promise<Egreso[]> {
+  const { data, error } = await sb().from('egresos').select('*').eq('proyecto_id', proyectoId).order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
 }
 
 // ─── PRECIOS ─────────────────────────────────────────────────────────────────

@@ -1,21 +1,26 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useMetas } from '@/hooks'
-import { createMeta, updateMeta, deleteMeta } from '@/lib/queries'
+import { useMetas, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
+import { createMeta, updateMeta, deleteMeta, createAhorro, updateAhorro, deleteAhorro } from '@/lib/queries'
 import { fmt } from '@/lib/utils/formatters'
 import { calcularMeta } from '@/lib/utils/calculations'
 import { META_COLORS, ICONOS_GENERALES } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
-import type { Moneda } from '@/types'
+import type { Moneda, Ahorro } from '@/types'
 
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
+const AHORRO_FORM_INIT = { nombre:'', categoria:'', moneda:'ARS' as Moneda, icono:'💰', color:'#1A5E9E' }
 
-export default function MetasPage() {
+export default function AhorrosPage() {
+  const [tab, setTab] = useState<'metas'|'general'>('metas')
   const { monedaPrincipal: m } = useAppStore()
   const monedasPalette = useMonedasDisponibles()
   const { data: metas, loading, refetch } = useMetas()
+  const { data: ahorros, loading: loadingAhorros, refetch: refetchAhorros } = useAhorros()
+  const { data: allIngresos, loading: liAll } = useAllIngresos()
+  const { data: allEgresos, loading: leAll } = useAllEgresos()
   const [showModal, setShowModal]   = useState(false)
   const [editId, setEditId]         = useState<string|null>(null)
   const [saving, setSaving]         = useState(false)
@@ -23,6 +28,47 @@ export default function MetasPage() {
   const [selIcon, setSelIcon]       = useState('🎯')
   const [selColor, setSelColor]     = useState('#1A5E9E')
   const [addMontos, setAddMontos]   = useState<Record<string,string>>({})
+
+  const [showAhorroModal, setShowAhorroModal] = useState(false)
+  const [ahorroEditId, setAhorroEditId]       = useState<string|null>(null)
+  const [ahorroForm, setAhorroForm]           = useState(AHORRO_FORM_INIT)
+  const [savingAhorro, setSavingAhorro]       = useState(false)
+  const [ajusteAbierto, setAjusteAbierto]     = useState<string|null>(null)
+  const [ajusteValor, setAjusteValor]         = useState('')
+
+  const openNewAhorro = () => { setAhorroEditId(null); setAhorroForm(AHORRO_FORM_INIT); setShowAhorroModal(true) }
+  const openEditAhorro = (a: Ahorro) => {
+    setAhorroEditId(a.id)
+    setAhorroForm({ nombre:a.nombre, categoria:a.categoria, moneda:a.moneda as Moneda, icono:a.icono, color:a.color })
+    setShowAhorroModal(true)
+  }
+  const handleSaveAhorro = async () => {
+    if (!ahorroForm.nombre || !ahorroForm.categoria) return
+    setSavingAhorro(true)
+    try {
+      if (ahorroEditId) await updateAhorro(ahorroEditId, ahorroForm)
+      else await createAhorro({ ...ahorroForm, ajuste_manual: 0 })
+      setShowAhorroModal(false); refetchAhorros()
+    } catch(e){ console.error(e) } finally { setSavingAhorro(false) }
+  }
+  const handleDeleteAhorro = async (id: string) => {
+    if (!confirm('¿Eliminar este ahorro? Esto no borra tus ingresos/egresos, solo la card.')) return
+    await deleteAhorro(id); refetchAhorros()
+  }
+  const handleAjustar = async (a: Ahorro, signo: 1|-1) => {
+    const val = parseFloat(ajusteValor||'0')
+    if (!val) return
+    await updateAhorro(a.id, { ajuste_manual: a.ajuste_manual + signo*val })
+    setAjusteValor(''); setAjusteAbierto(null); refetchAhorros()
+  }
+
+  // Ahorro/inversión: matchea por categoría exacta del item (tipo en ingresos, categoria en egresos),
+  // y por moneda — el "automático" nunca es negativo, igual que en el widget del Dashboard.
+  const automaticoDe = (a: Ahorro) => {
+    const ing = (allIngresos ?? []).filter(i => i.tipo === a.categoria && i.moneda === a.moneda).reduce((s,i)=>s+i.monto,0)
+    const egr = (allEgresos ?? []).filter(e => e.categoria === a.categoria && e.moneda === a.moneda).reduce((s,e)=>s+e.monto,0)
+    return Math.max(0, ing - egr)
+  }
 
   const openNew = () => {
     setEditId(null); setForm(FORM_INIT); setSelIcon('🎯'); setSelColor('#1A5E9E'); setShowModal(true)
@@ -72,13 +118,25 @@ export default function MetasPage() {
 
   const sorted = useMemo(()=>[...(metas??[])].sort((a,b)=>(b.monto_actual/b.monto_objetivo)-(a.monto_actual/a.monto_objetivo)), [metas])
 
-  if (loading && !metas) return <LoadingSpinner />
+  if ((loading && !metas) || (loadingAhorros && !ahorros)) return <LoadingSpinner />
 
   return (
     <div>
-      <PageHeader title="Metas de ahorro" subtitle="Tus objetivos financieros y el camino para llegar"
-        action={<button className="btn-primary" onClick={openNew}>+ Nueva meta</button>} />
+      <PageHeader title="Ahorros" subtitle={tab==='metas' ? 'Tus objetivos financieros y el camino para llegar' : 'Todo lo que tenés ahorrado e invertido, por categoría'}
+        action={tab==='metas'
+          ? <button className="btn-primary" onClick={openNew}>+ Nueva meta</button>
+          : <button className="btn-primary" onClick={openNewAhorro}>+ Nuevo ahorro</button>} />
 
+      <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl mb-6 max-w-[300px]">
+        {(['metas','general'] as const).map(t => (
+          <button key={t} onClick={()=>setTab(t)}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all border-none cursor-pointer ${tab===t?'bg-white text-slate-900 shadow-sm':'bg-transparent text-slate-500'}`}>
+            {t==='metas'?'Metas':'Ahorro general'}
+          </button>
+        ))}
+      </div>
+
+      {tab==='metas' && <>
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
@@ -187,8 +245,62 @@ export default function MetasPage() {
           </Card>
         </>
       )}
+      </>}
 
-      {/* Modal */}
+      {tab==='general' && <>
+        {(ahorros??[]).length===0 ? (
+          <EmptyState icon="💰" title="Sin categorías de ahorro" description="Creá tu primera categoría (ej. Inversiones pesos) para empezar a ver cuánto tenés ahorrado e invertido en total." action={<button className="btn-primary" onClick={openNewAhorro}>+ Nuevo ahorro</button>} />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {(ahorros??[]).map(a=>{
+              const auto  = automaticoDe(a)
+              const total = Math.max(0, auto + a.ajuste_manual)
+              return (
+                <div key={a.id} className="group bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden" style={{borderColor:a.color+'22'}}>
+                  <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-[80px]" style={{background:a.color+'08'}} />
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{a.icono}</span>
+                      <div>
+                        <div className="text-lg font-semibold text-slate-900">{a.nombre}</div>
+                        <div className="text-slate-400 text-sm">{a.categoria} · {a.moneda}</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity select-none">
+                      <button onClick={()=>openEditAhorro(a)} className="text-slate-300 hover:text-slate-600 text-sm border-none bg-transparent cursor-pointer">✎</button>
+                      <button onClick={()=>handleDeleteAhorro(a.id)} className="text-slate-300 hover:text-red-500 text-sm border-none bg-transparent cursor-pointer">✕</button>
+                    </div>
+                  </div>
+
+                  <div className="text-3xl font-bold font-mono mb-4" style={{color:a.color}}>{fmt(total, a.moneda as Moneda)}</div>
+
+                  <div className="flex justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
+                    <span>Automático (ingresos/egresos)</span>
+                    <span className="font-mono font-semibold text-slate-700">{fmt(auto, a.moneda as Moneda)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-500 mt-1.5 mb-4">
+                    <span>Ajuste manual</span>
+                    <span className="font-mono font-semibold text-slate-700">{a.ajuste_manual>=0?'+':''}{fmt(a.ajuste_manual, a.moneda as Moneda)}</span>
+                  </div>
+
+                  {ajusteAbierto===a.id ? (
+                    <div className="flex gap-2">
+                      <input type="number" value={ajusteValor} onChange={e=>setAjusteValor(e.target.value)} placeholder={`Monto ${a.moneda}...`} className="input-field flex-1 font-mono text-sm py-2" />
+                      <button onClick={()=>handleAjustar(a,1)} className="btn-primary py-2 px-3 text-sm flex-shrink-0" style={{background:'#40B046'}}>+</button>
+                      <button onClick={()=>handleAjustar(a,-1)} className="btn-primary py-2 px-3 text-sm flex-shrink-0" style={{background:'#F54927'}}>−</button>
+                      <button onClick={()=>{setAjusteAbierto(null);setAjusteValor('')}} className="btn-ghost py-2 px-3 text-sm flex-shrink-0">✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={()=>setAjusteAbierto(a.id)} className="btn-ghost w-full py-2 text-sm">+/− Ajustar manualmente</button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </>}
+
+      {/* Modal meta */}
       <Modal open={showModal} onClose={()=>setShowModal(false)} title={editId?'Editar meta':'Nueva meta'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Viaje a Europa" className="input-field" /></div>
@@ -222,6 +334,43 @@ export default function MetasPage() {
           <div className="flex gap-3 pt-2">
             <button onClick={()=>setShowModal(false)} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSave} disabled={saving||!form.nombre||!form.monto_objetivo||!form.fecha_limite} className="btn-primary flex-1 disabled:opacity-50">{saving?'Guardando...':'Guardar'}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal ahorro */}
+      <Modal open={showAhorroModal} onClose={()=>setShowAhorroModal(false)} title={ahorroEditId?'Editar ahorro':'Nuevo ahorro'}>
+        <div className="flex flex-col gap-4">
+          <div><FieldLabel>Nombre</FieldLabel><input value={ahorroForm.nombre} onChange={e=>setAhorroForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Inversiones en pesos" className="input-field" /></div>
+          <div>
+            <FieldLabel>Categoría (debe coincidir con la de Ingresos/Egresos)</FieldLabel>
+            <input list="categorias-ahorro-datalist" value={ahorroForm.categoria} onChange={e=>setAhorroForm(p=>({...p,categoria:e.target.value}))} placeholder="Ej: inversion_pesos" className="input-field" />
+            <datalist id="categorias-ahorro-datalist">
+              {Array.from(new Set([...(allIngresos??[]).map(i=>i.tipo), ...(allEgresos??[]).map(e=>e.categoria)])).map(c=><option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div><FieldLabel>Moneda</FieldLabel>
+            <select value={ahorroForm.moneda} onChange={e=>setAhorroForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">
+              {monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div><FieldLabel>Ícono</FieldLabel>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {ICONOS_GENERALES.slice(0,16).map(ic=>(
+                <button key={ic} onClick={()=>setAhorroForm(p=>({...p,icono:ic}))} className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg cursor-pointer border-2 transition-all ${ahorroForm.icono===ic?'border-blue-700 bg-blue-50':'border-slate-200 bg-slate-50'}`}>{ic}</button>
+              ))}
+            </div>
+          </div>
+          <div><FieldLabel>Color</FieldLabel>
+            <div className="flex gap-2 mt-1">
+              {META_COLORS.map(c=>(
+                <button key={c} onClick={()=>setAhorroForm(p=>({...p,color:c}))} className={`w-7 h-7 rounded-full border-2 cursor-pointer transition-all ${ahorroForm.color===c?'border-slate-900 scale-110':'border-transparent'}`} style={{background:c}} />
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={()=>setShowAhorroModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={handleSaveAhorro} disabled={savingAhorro||!ahorroForm.nombre||!ahorroForm.categoria} className="btn-primary flex-1 disabled:opacity-50">{savingAhorro?'Guardando...':'Guardar'}</button>
           </div>
         </div>
       </Modal>

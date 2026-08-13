@@ -23,7 +23,7 @@ const WIDGET_OPTIONS = [
   { id: 'tarjetas',           label: 'Pago tarjetas (año)',   icon: '💳', href: '/dashboard/tarjetas'  },
   { id: 'gasto_diario',       label: 'Gasto diario sugerido', icon: '📅', href: '/dashboard/cashflow'  },
   { id: 'cuotas_mensuales',   label: 'Cuotas mensuales',      icon: '🔁', href: '/dashboard/deudas'    },
-  { id: 'metas',              label: 'Metas activas',         icon: '🎯', href: '/dashboard/metas'     },
+  { id: 'metas',              label: 'Metas activas',         icon: '🎯', href: '/dashboard/ahorros'   },
 ]
 
 const DEFAULT_WIDGETS = ['ingresos_anuales','egresos_anuales','ahorro_acumulado','deuda_total']

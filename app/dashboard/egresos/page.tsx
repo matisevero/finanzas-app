@@ -4,7 +4,7 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas } from '@/hooks'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos } from '@/hooks'
 import { createEgreso, updateEgreso, deleteEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -25,7 +25,7 @@ const PAGE_SIZE = 30
 const FORM_INIT = {
   categoria: 'tarjeta', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
-  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
+  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '', proyecto_id: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'categoria' | 'descripcion' | 'quien'
@@ -163,7 +163,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '' })
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', proyecto_id: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -329,6 +329,7 @@ export default function EgresosPage() {
   const frecuenciaCats = useFrecuenciaCategorias('egresos')
   const descripcionesQ = useDescripcionesDistintas('egresos')
   const etiquetasQ = useEtiquetasDistintas()
+  const { data: proyectos } = useProyectos()
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
   const data = useMemo(() =>
@@ -486,9 +487,9 @@ export default function EgresosPage() {
     setSaving(true)
     try {
       if (modalEditId) {
-        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
+        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null, proyecto_id: form.proyecto_id || null })
       } else {
-        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
+        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null, proyecto_id: form.proyecto_id || null })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -498,7 +499,7 @@ export default function EgresosPage() {
     setForm({
       categoria: egreso.categoria, monto: String(egreso.monto), descripcion: egreso.descripcion,
       fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
-      etiqueta: egreso.etiqueta ?? '',
+      etiqueta: egreso.etiqueta ?? '', proyecto_id: egreso.proyecto_id ?? '',
     })
     setModalEditId(egreso.id)
     setShowModal(true)
@@ -523,7 +524,7 @@ export default function EgresosPage() {
     await createEgreso({
       categoria: egreso.categoria, monto: egreso.monto, moneda: egreso.moneda,
       descripcion: egreso.descripcion, fecha: egreso.fecha, quien: egreso.quien,
-      recurrente: false, etiqueta: egreso.etiqueta,
+      recurrente: false, etiqueta: egreso.etiqueta, proyecto_id: egreso.proyecto_id,
     })
     refetch()
   }
@@ -880,6 +881,14 @@ export default function EgresosPage() {
             <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
             <AutocompleteInput value={form.etiqueta} onChange={v => setForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
           </div>
+          {(proyectos ?? []).length > 0 && (
+            <div><FieldLabel>Proyecto <span className="text-slate-400 font-normal normal-case">(opcional)</span></FieldLabel>
+              <select value={form.proyecto_id} onChange={e => setForm(p => ({ ...p, proyecto_id: e.target.value }))} className="input-field">
+                <option value="">Sin proyecto</option>
+                {(proyectos ?? []).map(p => <option key={p.id} value={p.id}>{p.icono} {p.nombre}</option>)}
+              </select>
+            </div>
+          )}
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
             <span className="text-slate-600 text-sm">Egreso recurrente</span>

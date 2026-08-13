@@ -30,6 +30,11 @@ export function useEgresos()     { const y = useAppStore(s => s.añoActivo); ret
 export function useDeudas()      { return useAsync(() => Q.getDeudas(), []) }
 export function useTarjetas()    { return useAsync(() => Q.getTarjetas(), []) }
 export function useMetas()       { return useAsync(() => Q.getMetas(), []) }
+export function useAhorros()     { return useAsync(() => Q.getAhorros(), []) }
+export function useAllIngresos() { return useAsync(() => Q.getAllIngresos(), []) }
+export function useAllEgresos()  { return useAsync(() => Q.getAllEgresos(), []) }
+export function useProyectos()   { return useAsync(() => Q.getProyectos(), []) }
+export function useEgresosByProyecto(id: string | null) { return useAsync(() => id ? Q.getEgresosByProyecto(id) : Promise.resolve([]), [id]) }
 export function usePrecioItems() { return useAsync(() => Q.getPrecioItems(), []) }
 export function useCategoriasCustom(modulo: string) { return useAsync(() => Q.getCategoriasCustom(modulo), [modulo]) }
 export function useFrecuenciaCategorias(modulo: 'ingresos' | 'egresos') { return useAsync(() => Q.getFrecuenciaCategorias(modulo), [modulo]) }

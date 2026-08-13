@@ -10,7 +10,8 @@ export const NAV_ITEMS = [
   { id: 'cashflow',      label: 'Cash Flow',      icon: '≋', href: '/dashboard/cashflow'      },
   { id: 'comparador',    label: 'Comparador',     icon: '⇌', href: '/dashboard/comparador'    },
   { id: 'precios',       label: 'Precios',        icon: '△', href: '/dashboard/precios'       },
-  { id: 'metas',         label: 'Metas',          icon: '◎', href: '/dashboard/metas'         },
+  { id: 'ahorros',       label: 'Ahorros',        icon: '◎', href: '/dashboard/ahorros'       },
+  { id: 'proyectos',     label: 'Proyecto',       icon: '✦', href: '/dashboard/proyectos'     },
   { id: 'salud',         label: 'Salud',          icon: '♥', href: '/dashboard/salud'         },
 ] as const
 
