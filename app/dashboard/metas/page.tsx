@@ -72,7 +72,7 @@ export default function MetasPage() {
 
   const sorted = useMemo(()=>[...(metas??[])].sort((a,b)=>(b.monto_actual/b.monto_objetivo)-(a.monto_actual/a.monto_objetivo)), [metas])
 
-  if (loading) return <LoadingSpinner />
+  if (loading && !metas) return <LoadingSpinner />
 
   return (
     <div>

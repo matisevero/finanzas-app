@@ -89,6 +89,8 @@ export default function ConfiguracionPage() {
   const [importStep, setImportStep] = useState('')
   const [exporting, setExporting] = useState(false)
   const fileMultiRef = useRef<HTMLInputElement>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [dragActive, setDragActive] = useState(false)
   const [tabImportExport, setTabImportExport] = useState<'importar'|'exportar'>('importar')
   const [draggedMoneda, setDraggedMoneda] = useState<{mon:Moneda, origen:'principal'|'ahorro'|'cripto'|'libre'}|null>(null)
   const [showAddMoneda, setShowAddMoneda] = useState(false)
@@ -240,7 +242,7 @@ export default function ConfiguracionPage() {
   }
 
   const handleImport = async () => {
-    const files = fileMultiRef.current?.files
+    const files = selectedFiles
     if (!files || files.length === 0) return
     setImporting(true); setImportResult(null)
     const result: ImportResult = { ingresos:0, egresos:0, eventos:0, saltados:0, errores:[] }
@@ -351,6 +353,7 @@ export default function ConfiguracionPage() {
     } finally {
       setImporting(false); setImportStep(''); setImportResult(result)
       if (fileMultiRef.current) fileMultiRef.current.value=''
+      setSelectedFiles([])
     }
   }
 
@@ -504,14 +507,29 @@ export default function ConfiguracionPage() {
                 El sistema detecta automáticamente si es de Ingresos, Gastos o Deudas según el contenido.
                 Los registros duplicados (misma fecha, monto y descripción) se saltean automáticamente.
               </p>
-              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors mb-5 text-center">
+              <div
+                onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragActive(true) }}
+                onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setDragActive(false) }}
+                onDrop={e => {
+                  e.preventDefault(); e.stopPropagation(); setDragActive(false)
+                  const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.csv'))
+                  if (dropped.length > 0) setSelectedFiles(dropped)
+                }}
+                onClick={() => fileMultiRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-6 transition-colors mb-5 text-center cursor-pointer ${dragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
                 <div className="text-3xl mb-2">📂</div>
-                <div className="text-sm font-semibold text-slate-700 mb-1">Seleccioná tus archivos CSV</div>
-                <div className="text-slate-400 text-xs mb-4">Podés seleccionar varios a la vez — el sistema detecta el tipo de cada uno automáticamente</div>
-                <input ref={fileMultiRef} type="file" accept=".csv" multiple className="text-sm text-slate-500 cursor-pointer" />
+                <div className="text-sm font-semibold text-slate-700 mb-1">
+                  {selectedFiles.length > 0 ? `${selectedFiles.length} archivo${selectedFiles.length > 1 ? 's' : ''} listo${selectedFiles.length > 1 ? 's' : ''}` : 'Arrastrá tus archivos CSV acá'}
+                </div>
+                <div className="text-slate-400 text-xs mb-4 truncate">
+                  {selectedFiles.length > 0 ? selectedFiles.map(f => f.name).join(', ') : 'o hacé click para seleccionar — podés elegir varios a la vez'}
+                </div>
+                <input ref={fileMultiRef} type="file" accept=".csv" multiple className="text-sm text-slate-500 cursor-pointer"
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setSelectedFiles(Array.from(e.target.files ?? []))} />
               </div>
               <div className="flex items-center gap-4 flex-wrap">
-                <button onClick={handleImport} disabled={importing} className="btn-primary disabled:opacity-50">
+                <button onClick={handleImport} disabled={importing || selectedFiles.length === 0} className="btn-primary disabled:opacity-50">
                   {importing?importStep||'Importando...':'⬆ Importar archivos seleccionados'}
                 </button>
                 {importResult&&(

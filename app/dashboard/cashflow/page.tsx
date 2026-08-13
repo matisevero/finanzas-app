@@ -364,7 +364,7 @@ export default function CashFlowPage() {
     return fv.getFullYear() === año && (fv.getMonth() + 1) === mesNum
   }).reduce((s, d) => s + (d.cuota_mensual ?? 0), 0)
 
-  if (le || li || lx || ld) return <LoadingSpinner />
+  if ((le && !eventos) || (li && !ingresos) || (lx && !egresos) || (ld && !deudas)) return <LoadingSpinner />
 
   return (
     <div>

@@ -101,7 +101,7 @@ export default function PreciosPage() {
     } finally { setSaving(false) }
   }
 
-  if (loading) return <LoadingSpinner />
+  if (loading && !items) return <LoadingSpinner />
 
   const selItems = [...selected].map(id=>(items??[]).find(i=>i.id===id)).filter(Boolean) as PrecioItem[]
 

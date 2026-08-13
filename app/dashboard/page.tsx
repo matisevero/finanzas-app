@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta, useMetas } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { calcularTendencia, calcularTendenciaBalance } from '@/lib/utils/tendencia'
 import { fmt, fmtFull } from '@/lib/utils/formatters'
@@ -70,6 +70,7 @@ export default function DashboardPage() {
   const { data: tarjetas, loading: lt } = useTarjetas()
   const monedasAhorro = useAppStore(s => s.monedasAhorro)
   const { data: pagosTC,  loading: lp } = usePagosTarjeta()
+  const { data: metas,    loading: lm } = useMetas()
 
   const HOY = new Date()
   const { data: eventosMes, loading: lem } = useEventosMes(HOY.getFullYear(), HOY.getMonth() + 1)
@@ -80,14 +81,17 @@ export default function DashboardPage() {
   // Eventos de todo el año activo (para "Vencimientos" en vista Año)
   const { data: eventosAño, loading: lea } = useEventosAño(añoActivo)
 
-  if (li || le || ld || lt || lem || lemv || lea || lp) return <LoadingSpinner />
+  if ((li&&!ingresos) || (le&&!egresos) || (ld&&!deudas) || (lt&&!tarjetas) || (lem&&!eventosMes) || (lemv&&!eventosMesVista) || (lea&&!eventosAño) || (lp&&!pagosTC) || (lm&&!metas)) return <LoadingSpinner />
 
   const r = calcularResumen(ingresos??[], egresos??[], deudas??[])
 
-  // "Ahorro / Inversiones" por moneda: cuenta ítems con etiqueta "ahorro"/"inversión",
-  // o ya categorizados como Inversiones USD (tipo/categoria === 'usd'), dentro del año activo.
+  // "Ahorro / Inversiones" por moneda: cuenta ítems de categorías tipo "Inversiones ARS", "Inversiones USD",
+  // "Inversiones EUR", etc. — como tipo/categoria es texto libre (el usuario las crea en Configuración),
+  // matcheamos por nombre de categoría además de por etiqueta. 'usd' queda como caso fijo legacy.
   const esAhorroOInversion = (etiqueta?: string|null, tipoOCategoria?: string) =>
-    (!!etiqueta && /ahorro|inversi/i.test(etiqueta)) || tipoOCategoria === 'usd'
+    (!!etiqueta && /ahorro|inversi/i.test(etiqueta)) ||
+    (!!tipoOCategoria && /ahorro|inversi/i.test(tipoOCategoria)) ||
+    tipoOCategoria === 'usd'
 
   const monedasConAhorro = Array.from(new Set([
     ...(ingresos??[]).filter(i => esAhorroOInversion(i.etiqueta, i.tipo)).map(i => i.moneda),
@@ -95,10 +99,11 @@ export default function DashboardPage() {
     ...monedasAhorro,
   ]))
 
+  // El ahorro nunca puede ser negativo — un mes con más retiros que aportes muestra 0, no un saldo en rojo.
   const ahorroPorMoneda = monedasConAhorro.map(mon => {
     const ing = (ingresos??[]).filter(i => i.moneda === mon && esAhorroOInversion(i.etiqueta, i.tipo)).reduce((s,i)=>s+i.monto,0)
     const egr = (egresos??[]).filter(e => e.moneda === mon && esAhorroOInversion(e.etiqueta, e.categoria)).reduce((s,e)=>s+e.monto,0)
-    return { moneda: mon, monto: ing - egr }
+    return { moneda: mon, monto: Math.max(0, ing - egr) }
   })
 
   // Deudas por moneda: agrupa el saldo pendiente real de cada deuda por su moneda.
@@ -126,13 +131,12 @@ export default function DashboardPage() {
 
   // Desglose día a día del mes seleccionado
   const diasEnMesVista = new Date(añoActivo, mesActivo, 0).getDate()
-  const flowDataVista  = proyectarCashFlow(0, eventosMesVista??[], diasEnMesVista)
+  const flowDataVista  = proyectarCashFlow(0, eventosMesVista??[], diasEnMesVista, ingresosMes)
 
   // Cuotas mensuales
   const cuotasMensuales = (deudas??[]).reduce((s,d) => s+d.cuota_mensual, 0)
 
-  // Metas activas — no tenemos hook aquí, mostramos deudas como fallback
-  const metasActivas = (deudas??[]).length
+  const metasActivas = (metas??[]).filter(x => !x.completada).length
 
   const periodoLabel = esMensual ? `${MESES[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -152,6 +156,7 @@ export default function DashboardPage() {
   const trendIngresos = calcularTendencia(ingresos ?? [], vistaTipo, mesActivo, añoActivo)
   const trendEgresos  = calcularTendencia(egresos ?? [], vistaTipo, mesActivo, añoActivo)
   const trendAhorro   = calcularTendenciaBalance(ingresos ?? [], egresos ?? [], vistaTipo, mesActivo, añoActivo)
+  const trendTarjetas = calcularTendencia(pagosTC ?? [], vistaTipo, mesActivo, añoActivo)
 
   const getWidgetValue = (id: string) => {
     switch(id) {
@@ -159,7 +164,7 @@ export default function DashboardPage() {
       case 'egresos_anuales':   return { value: fmt(esMensual?totalEgresosMes:r.totalEgresos,m),   sub: `Acumulado ${periodoLabel}`,    trend: trendEgresos.trend,  color: '#F54927', trendInvert: false }
       case 'ahorro_acumulado':  return { value: fmt(esMensual?(totalIngresosMes-totalEgresosMes):(r.totalIngresos-r.totalEgresos),m), sub: `Balance ${periodoLabel}`, trend: trendAhorro.trend, color: '#1A5E9E', trendInvert: false }
       case 'deuda_total':       return { value: fmt(r.totalDeuda,m),     sub: 'Obligaciones activas',      trend: undefined,  color: '#5B3FA6', trendInvert: true  }
-      case 'tarjetas':          return { value: fmt(esMensual?totalTarjetasMes:totalTarjetas,m),    sub: `Pagado ${periodoLabel}`,       trend: undefined, color: '#1A5E9E', trendInvert: false }
+      case 'tarjetas':          return { value: fmt(esMensual?totalTarjetasMes:totalTarjetas,m),    sub: `Pagado ${periodoLabel}`,       trend: trendTarjetas.trend, color: '#1A5E9E', trendInvert: false }
       case 'gasto_diario':      return { value: fmt(gastoDiario,m),      sub: 'Para llegar bien al mes',   trend: undefined, color: '#E8A020', trendInvert: false }
       case 'cuotas_mensuales':  return { value: fmt(cuotasMensuales,m),  sub: 'Comprometido/mes',          trend: undefined, color: '#5B3FA6', trendInvert: false }
       case 'metas':             return { value: String(metasActivas),     sub: 'Obligaciones registradas',  trend: undefined, color: '#1D9E75', trendInvert: false }
@@ -200,12 +205,16 @@ export default function DashboardPage() {
     value: (esMensual?egresosMes:(egresos??[])).filter(e=>e.categoria===key).reduce((s,e)=>s+e.monto,0),
     color: cfg.color,
   })).filter(d=>d.value>0).sort((a,b)=>b.value-a.value).slice(0,7)
+  const totalPieEgreso = pieEgresoData.reduce((s,d)=>s+d.value,0)
+  const pctEgreso = (v:number) => totalPieEgreso>0 ? Math.round(v/totalPieEgreso*100) : 0
 
   const pieIngresoData = Object.entries(TIPOS_INGRESO).map(([key, cfg]) => ({
     name: cfg.label,
     value: (esMensual?ingresosMes:(ingresos??[])).filter(i=>i.tipo===key).reduce((s,i)=>s+i.monto,0),
     color: cfg.color,
   })).filter(d=>d.value>0)
+  const totalPieIngreso = pieIngresoData.reduce((s,d)=>s+d.value,0)
+  const pctIngreso = (v:number) => totalPieIngreso>0 ? Math.round(v/totalPieIngreso*100) : 0
 
   const changeWidget = (index: number, newId: string) => {
     const next = [...widgets]
@@ -251,13 +260,15 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Card clickeable */}
+              {/* Card clickeable — "ahorro_acumulado" no tiene página propia todavía, así que no navega */}
               <div
-                onClick={() => !editingWidgets && router.push(opt.href)}
+                onClick={() => !editingWidgets && widgetId !== 'ahorro_acumulado' && router.push(opt.href)}
                 className={`bg-white border border-slate-200 rounded-2xl p-4 md:p-5 relative overflow-hidden transition-all shadow-card ${
                   editingWidgets
                     ? 'ring-2 ring-blue-400 ring-offset-1 cursor-default opacity-80'
-                    : 'hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer'
+                    : widgetId === 'ahorro_acumulado'
+                      ? 'cursor-default'
+                      : 'hover:shadow-lg hover:border-blue-200 hover:-translate-y-0.5 cursor-pointer'
                 }`}
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
@@ -280,7 +291,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
-                {!editingWidgets && (
+                {!editingWidgets && widgetId !== 'ahorro_acumulado' && (
                   <div className="absolute bottom-3 right-3 text-slate-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">→</div>
                 )}
               </div>
@@ -341,14 +352,14 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3} dataKey="value">
                   {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
-                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[`${fmt(v,m)} (${pctEgreso(v)}%)`, p.name]} /></PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1.5 md:gap-1 mt-2">
                 {pieEgresoData.slice(0,5).map((d,i)=>(
                   <div key={d.name} className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
-                      <span className="text-slate-500 text-xs">{d.name}</span>
+                      <span className="text-slate-500 text-xs">{d.name} <span className="text-slate-400">({pctEgreso(d.value)}%)</span></span>
                     </div>
                     <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
                   </div>
@@ -368,14 +379,14 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={130}>
                 <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3} dataKey="value">
                   {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
-                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmt(v,m), p.name]} /></PieChart>
+                </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[`${fmt(v,m)} (${pctIngreso(v)}%)`, p.name]} /></PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1.5 md:gap-1 mt-2">
                 {pieIngresoData.map((d,i)=>(
                   <div key={d.name} className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
-                      <span className="text-slate-500 text-xs">{d.name}</span>
+                      <span className="text-slate-500 text-xs">{d.name} <span className="text-slate-400">({pctIngreso(d.value)}%)</span></span>
                     </div>
                     <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
                   </div>
@@ -389,7 +400,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Deudas y Tarjetas ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 mb-5">
         <Card className="hover:border-slate-300 transition-all cursor-pointer" onClick={()=>router.push('/dashboard/deudas')}>
           <CardTitle action={<span className="text-slate-300 text-xs">→</span>}>{vencimientosTitulo}</CardTitle>
           {eventosVencimientos.filter(e=>e.tipo!=='ingreso'&&!e.pagado&&e.monto).length===0?(
@@ -524,17 +535,42 @@ export default function DashboardPage() {
               className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
             {expandedChart==='flujo' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">{flujoTitulo}</div>
+              <div className="flex items-center justify-between mb-5">
+                <div className="text-slate-900 font-semibold text-lg">{flujoTitulo}</div>
+                <ChartToggle options={[{value:'bar',label:'▋ Barras'},{value:'area',label:'⟋ Área'}]} value={flowType} onChange={v=>setFlowType(v as 'bar'|'area')} />
+              </div>
               <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={chartFlowData} barCategoryGap="30%" barGap={3}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} interval={esMensual?2:0} />
-                  <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
-                  <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={flujoLabelFormatter} />
-                  <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
-                  <Bar dataKey="Ingresos" fill="#40B046" radius={0} maxBarSize={36} />
-                  <Bar dataKey="Gastos"   fill="#F54927" radius={0} maxBarSize={36} />
-                </BarChart>
+                {flowType==='bar'?(
+                  <BarChart data={chartFlowData} barCategoryGap="30%" barGap={3}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} interval={esMensual?2:0} />
+                    <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
+                    <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={flujoLabelFormatter} />
+                    <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
+                    <Bar dataKey="Ingresos" fill="#40B046" radius={0} maxBarSize={36} />
+                    <Bar dataKey="Gastos"   fill="#F54927" radius={0} maxBarSize={36} />
+                  </BarChart>
+                ):(
+                  <AreaChart data={chartFlowData}>
+                    <defs>
+                      <linearGradient id="gIExp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#40B046" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#40B046" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="gEExp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#F54927" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#F54927" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} interval={esMensual?2:0} />
+                    <YAxis tick={{fill:'#94a3b8',fontSize:12}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmtFull(v,m)} />
+                    <Tooltip contentStyle={TT} formatter={(v:number,name:string)=>[fmtFull(v,m),name]} labelFormatter={flujoLabelFormatter} />
+                    <Legend wrapperStyle={{color:'#64748b',fontSize:13}} />
+                    <Area type="monotone" dataKey="Ingresos" stroke="#40B046" fill="url(#gIExp)" strokeWidth={2.5} />
+                    <Area type="monotone" dataKey="Gastos"   stroke="#F54927" fill="url(#gEExp)" strokeWidth={2.5} />
+                  </AreaChart>
+                )}
               </ResponsiveContainer>
             </>}
 
@@ -544,14 +580,14 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieEgresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieEgresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]} />)}
-                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmtFull(v,m), p.name]} /></PieChart>
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[`${fmtFull(v,m)} (${pctEgreso(v)}%)`, p.name]} /></PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-2.5">
                   {pieEgresoData.map((d,i)=>(
                     <div key={d.name} className="flex justify-between items-center">
                       <div className="flex items-center gap-2.5">
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
-                        <span className="text-slate-600 text-sm">{d.name}</span>
+                        <span className="text-slate-600 text-sm">{d.name} <span className="text-slate-400">({pctEgreso(d.value)}%)</span></span>
                       </div>
                       <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
                     </div>
@@ -566,14 +602,14 @@ export default function DashboardPage() {
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart><Pie data={pieIngresoData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                     {pieIngresoData.map((_,i)=><Cell key={i} fill={PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]} />)}
-                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[fmtFull(v,m), p.name]} /></PieChart>
+                  </Pie><Tooltip contentStyle={TT} formatter={(v:number,_:string,p:any)=>[`${fmtFull(v,m)} (${pctIngreso(v)}%)`, p.name]} /></PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-2.5">
                   {pieIngresoData.map((d,i)=>(
                     <div key={d.name} className="flex justify-between items-center">
                       <div className="flex items-center gap-2.5">
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
-                        <span className="text-slate-600 text-sm">{d.name}</span>
+                        <span className="text-slate-600 text-sm">{d.name} <span className="text-slate-400">({pctIngreso(d.value)}%)</span></span>
                       </div>
                       <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
                     </div>

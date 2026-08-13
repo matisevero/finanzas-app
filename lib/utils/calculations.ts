@@ -81,13 +81,20 @@ export interface DiaFlow {
 export function proyectarCashFlow(
   saldoInicial: number,
   eventos: EventoCalendario[],
-  diasEnMes: number
+  diasEnMes: number,
+  ingresosDelMes: Ingreso[] = []
 ): DiaFlow[] {
+  // Nota: los "ingresos" del flujo día a día antes solo miraban eventos_calendario tipo
+  // ingreso — pero la UI no tiene forma de crear ese tipo de evento, así que ese numero
+  // daba prácticamente siempre 0. Ahora suma también la tabla ingresos real (derivando
+  // el día del mes desde su fecha), que es donde realmente se cargan los ingresos.
   let acum = saldoInicial
   return Array.from({ length: diasEnMes }, (_, i) => {
     const dia    = i + 1
     const dayEvs = eventos.filter(e => e.dia === dia)
-    const entradas = dayEvs.filter(e => e.tipo === 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+    const entradasEventos  = dayEvs.filter(e => e.tipo === 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+    const entradasIngresos = ingresosDelMes.filter(ing => new Date(ing.fecha).getDate() === dia).reduce((s, ing) => s + ing.monto, 0)
+    const entradas = entradasEventos + entradasIngresos
     const salidas  = dayEvs.filter(e => e.tipo !== 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
     acum += entradas - salidas
     return { dia, entradas, salidas, neto: entradas - salidas, saldo: Math.round(acum), eventos: dayEvs }

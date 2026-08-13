@@ -6,6 +6,7 @@ import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
 import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
+import { calcularTendencia } from '@/lib/utils/tendencia'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda, Quien, TarjetaTransaccion } from '@/types'
@@ -177,7 +178,7 @@ export default function TarjetasPage() {
     return result
   }, [tarjetas, txns])
 
-  if (lt||lp||lx) return <LoadingSpinner />
+  if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
   const monedaActiva = activaId==='todas' ? null : activaId.includes('|') ? activaId.split('|')[1] : null
@@ -191,6 +192,11 @@ export default function TarjetasPage() {
   const kpiTrend   = kpiPen>0 ? Math.round(((kpiUlt-kpiPen)/kpiPen)*100) : null
   const kpiMayor   = Math.max(...kpiPagos)
   const kpiMayorMes = MESES_DISP[kpiPagos.indexOf(kpiMayor)]
+
+  // Trend real de "Total pagado" — mes activo vs mes anterior, o año activo vs año anterior según la vista.
+  const tarjetaIdActiva  = activaId === 'todas' ? null : activaId.split('|')[0]
+  const pagosParaTrend   = (pagosRaw ?? []).filter(p => tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva)
+  const trendTotalPagado = calcularTendencia(pagosParaTrend, vistaTipo, mesActivo, añoActivo)
 
   return (
     <div>
@@ -334,7 +340,7 @@ export default function TarjetasPage() {
           <Card>
             <div className="flex flex-col gap-3">
               {[
-                {l:'Total pagado 2026', v:fmt(kpiTotal,m), s:activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||''},
+                {l:`Total pagado ${periodoLabel}`, v:fmt(kpiTotal,m), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
                 {l:`Último pago (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
                 {l:'Mes más caro', v:fmt(kpiMayor,m), s:kpiMayorMes},
               ].map(k=>(

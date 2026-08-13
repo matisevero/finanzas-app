@@ -79,7 +79,7 @@ export default function SaludPage() {
   const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const periodoLabel = esMensual ? `${MESES_N[mesActivo-1]} ${añoActivo}` : `Promedio mensual ${añoActivo}`
 
-  if (li||le||ld||lp||lm) return <LoadingSpinner />
+  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lp&&!pagos)||(lm&&!metas)) return <LoadingSpinner />
 
   if (!salud || ingresoMensual===0) return (
     <div>

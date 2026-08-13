@@ -534,7 +534,7 @@ export default function EgresosPage() {
 
   const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
 
-  if (loading) return <LoadingSpinner />
+  if (loading && !egresos) return <LoadingSpinner />
 
   return (
     <div>
@@ -764,14 +764,16 @@ export default function EgresosPage() {
 
             {sidePanel === 'composicion' && (
               <>
-                <div className="flex items-center justify-between mb-3" onClick={e=>e.stopPropagation()}>
-                  <span className="text-slate-500 text-xs font-medium">Mes</span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                {!esMensual && (
+                  <div className="flex items-center justify-between mb-3" onClick={e=>e.stopPropagation()}>
+                    <span className="text-slate-500 text-xs font-medium">Mes</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                      <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                      <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                    </div>
                   </div>
-                </div>
+                )}
                 {compData.length > 0 ? (
                   <>
                     <ResponsiveContainer width="100%" height={130}>
@@ -911,14 +913,16 @@ export default function EgresosPage() {
             {expandedChart==='composicion' && <>
               <div className="flex items-center justify-between mb-5">
                 <div className="text-slate-900 font-semibold text-lg">Composición {periodoLabel}</div>
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-400 text-xs">Mes:</span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                {!esMensual && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400 text-xs">Mes:</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                      <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                      <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8 items-center">
                 <ResponsiveContainer width="100%" height={300}>

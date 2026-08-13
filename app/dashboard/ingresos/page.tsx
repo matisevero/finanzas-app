@@ -541,7 +541,7 @@ export default function IngresosPage() {
   const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
     <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
 
-  if (loading) return <LoadingSpinner />
+  if (loading && !ingresos) return <LoadingSpinner />
 
 
   return (
@@ -761,7 +761,7 @@ export default function IngresosPage() {
           </Card>
 
           {/* Composición / Top */}
-          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>setExpandedChart('composicion')}>
+          <Card className="cursor-pointer hover:border-blue-200 hover:shadow-lg hover:-translate-y-0.5 transition-all" onClick={()=>{ if(sidePanel==='composicion') setExpandedChart('composicion') }}>
             <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
               {(['composicion', 'top'] as const).map(v => (
                 <button key={v} onClick={(e) => { e.stopPropagation(); setSidePanel(v) }}
@@ -773,14 +773,16 @@ export default function IngresosPage() {
 
             {sidePanel === 'composicion' && (
               <>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-500 text-xs font-medium">Mes</span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
-                    <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
-                    <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                {!esMensual && (
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-slate-500 text-xs font-medium">Mes</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={(e) => { e.stopPropagation(); setCompMes(v => Math.max(-1, v - 1)) }} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                      <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                      <button onClick={(e) => { e.stopPropagation(); setCompMes(v => Math.min(11, v + 1)) }} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                    </div>
                   </div>
-                </div>
+                )}
                 {compData.length > 0 ? (
                   <>
                     <ResponsiveContainer width="100%" height={130}>
@@ -893,7 +895,10 @@ export default function IngresosPage() {
             <button onClick={()=>setExpandedChart(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 border-none cursor-pointer text-lg">✕</button>
 
             {expandedChart==='evolucion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-2">Evolución {periodoLabel}</div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-slate-900 font-semibold text-lg">Evolución {periodoLabel}</div>
+                <ChartToggle options={[{ value: 'apilado', label: '▋ Apilado' }, { value: 'agrupado', label: '▋ Agrupado' }]} value={chartType} onChange={v => setChartType(v as 'apilado'|'agrupado')} />
+              </div>
               <div className="flex gap-2 flex-wrap mb-4">
                 {tiposBase.map(({ key, label, color }) => (
                   <button key={key} type="button" onClick={() => setHiddenKeys(p => p.includes(key) ? p.filter(k => k !== key) : [...p, key])}
@@ -918,7 +923,19 @@ export default function IngresosPage() {
             </>}
 
             {expandedChart==='composicion' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Composición {periodoLabel}</div>
+              <div className="flex items-center justify-between mb-5">
+                <div className="text-slate-900 font-semibold text-lg">Composición {periodoLabel}</div>
+                {!esMensual && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400 text-xs">Mes:</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setCompMes(v => Math.max(-1, v - 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">‹</button>
+                      <span className="text-xs font-medium text-slate-700 min-w-[44px] text-center">{compMes === -1 ? 'Acum.' : MESES_CORTOS[compMes]}</span>
+                      <button onClick={() => setCompMes(v => Math.min(11, v + 1))} className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 bg-transparent cursor-pointer text-sm">›</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8 items-center">
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>

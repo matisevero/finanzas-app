@@ -16,6 +16,7 @@ const TAR_COLORS = ['#1A5E9E','#2E7EC2','#4D9AD4','#72B3E0','#97CCE8','#BCDFF2',
 
 export default function ComparadorPage() {
   const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const [searchGrupo, setSearchGrupo] = useState<Record<string, string>>({})
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
@@ -115,7 +116,7 @@ export default function ComparadorPage() {
   const clearAll    = () => setActive(new Set())
   const getGrupoId  = (id: string) => allItems.find(i => i.id === id)?.grupoId
 
-  if (li||le||ld||lp||lt) return <LoadingSpinner />
+  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lp&&!pagos)||(lt&&!tarjetas)) return <LoadingSpinner />
 
   return (
     <div>
@@ -130,11 +131,21 @@ export default function ComparadorPage() {
               <span className="text-sm font-bold text-slate-700">{g.label}</span>
               <span className="text-xs text-slate-400 ml-auto">{g.items.length}</span>
             </div>
+            {g.items.length > 5 && (
+              <div className="relative mb-2">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
+                <input
+                  value={searchGrupo[g.id] ?? ''}
+                  onChange={e => setSearchGrupo(prev => ({ ...prev, [g.id]: e.target.value }))}
+                  placeholder="Buscar..."
+                  className="input-field pl-7 py-1 text-xs w-full" />
+              </div>
+            )}
             {/* Lista con scroll — muestra 5 items y hace scroll si hay más */}
             <div className="flex flex-col gap-1" style={{ maxHeight: 200, overflowY: 'auto' }}>
-              {g.items.length === 0 ? (
-                <div className="text-xs text-slate-400 text-center py-4">Sin datos</div>
-              ) : g.items.map(item => {
+              {g.items.filter(item => item.label.toLowerCase().includes((searchGrupo[g.id] ?? '').toLowerCase())).length === 0 ? (
+                <div className="text-xs text-slate-400 text-center py-4">{g.items.length === 0 ? 'Sin datos' : 'Sin resultados'}</div>
+              ) : g.items.filter(item => item.label.toLowerCase().includes((searchGrupo[g.id] ?? '').toLowerCase())).map(item => {
                 const on = active.has(item.id)
                 return (
                   <div key={item.id} onClick={() => toggleItem(item.id)}

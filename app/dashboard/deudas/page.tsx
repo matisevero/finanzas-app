@@ -344,7 +344,7 @@ export default function DeudasPage() {
     setCalMes(mes); setCalAño(año)
   }
 
-  if (ld || le) return <LoadingSpinner />
+  if ((ld && !deudas) || (le && !eventos)) return <LoadingSpinner />
 
   return (
     <div>
