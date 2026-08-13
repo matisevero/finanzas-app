@@ -3,12 +3,12 @@ import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
-import { updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
-import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
+import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
-import type { Moneda, Quien } from '@/types'
+import type { Moneda, Quien, TarjetaTransaccion } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10' }
@@ -76,14 +76,24 @@ export default function TarjetasPage() {
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
   }
 
-  const handleDeleteTxn = async () => {
-    if (!txnEditId) return
+  const handleDeleteTxn = async (id?: string) => {
+    const targetId = id ?? txnEditId
+    if (!targetId) return
     if (!confirm('¿Eliminar esta transacción?')) return
     setSavingTxn(true)
     try {
-      await deleteTarjetaTransaccion(txnEditId)
+      await deleteTarjetaTransaccion(targetId)
       setShowTxnModal(false); setTxnEditId(null); refTxns()
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
+  }
+
+  const handleDuplicarTxn = async (t: TarjetaTransaccion) => {
+    await createTarjetaTransaccion({
+      tarjeta_id: t.tarjeta_id, descripcion: t.descripcion, categoria: t.categoria,
+      fecha: t.fecha, monto: t.monto, moneda: t.moneda, cotizacion_ars: t.cotizacion_ars,
+      cuota_actual: t.cuota_actual, cuota_total: t.cuota_total, tipo: t.tipo, etiqueta: t.etiqueta,
+    })
+    refTxns()
   }
 
   // Cargar historial de comercios al montar
@@ -257,7 +267,7 @@ export default function TarjetasPage() {
             ) : (
               <Table>
                 <thead><tr>
-                  <Th>Fecha</Th><Th>Descripción</Th><Th>Categoría</Th><Th>Cuotas</Th><Th right>Importe</Th>
+                  <Th>Fecha</Th><Th>Descripción</Th><Th>Categoría</Th><Th>Cuotas</Th><Th right>Importe</Th><Th right> </Th>
                 </tr></thead>
                 <tbody>
                   {filteredTxns.map(t=>{
@@ -265,7 +275,7 @@ export default function TarjetasPage() {
                     const isUSD = t.moneda==='USD'
                     const tc = (tarjetas??[]).find(x=>x.id===t.tarjeta_id)
                     return (
-                      <tr key={t.id}>
+                      <tr key={t.id} className="group">
                         <Td className="text-slate-400 text-xs font-mono">{fmtDate(t.fecha)}</Td>
                         <Td>
                           <div onClick={() => openEditTxnModal(t)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{t.descripcion}</div>
@@ -278,6 +288,15 @@ export default function TarjetasPage() {
                             {isUSD?'US$':'$'}{t.monto.toLocaleString('es-AR')}
                           </div>
                           {isUSD&&t.cotizacion_ars&&<div className="text-slate-400 text-xs">≈ {fmt(t.monto*t.cotizacion_ars)}</div>}
+                        </Td>
+                        <Td right className="select-none">
+                          <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            <RowMenu items={[
+                              { label: 'Editar', onClick: () => openEditTxnModal(t) },
+                              { label: 'Duplicar', onClick: () => handleDuplicarTxn(t) },
+                              { label: 'Eliminar', onClick: () => handleDeleteTxn(t.id), danger: true },
+                            ]} />
+                          </div>
                         </Td>
                       </tr>
                     )
@@ -316,7 +335,7 @@ export default function TarjetasPage() {
             <div className="flex flex-col gap-3">
               {[
                 {l:'Total pagado 2026', v:fmt(kpiTotal,m), s:activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||''},
-                {l:`Último pago (${MESES_CORTOS[new Date().getMonth()]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
+                {l:`Último pago (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
                 {l:'Mes más caro', v:fmt(kpiMayor,m), s:kpiMayorMes},
               ].map(k=>(
                 <div key={k.l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
@@ -588,7 +607,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={handleDeleteTxn} disabled={savingTxn} className="text-red-500 hover:text-red-600 border-none bg-transparent cursor-pointer text-sm px-2 disabled:opacity-50">Eliminar</button>
+            <button onClick={() => handleDeleteTxn()} disabled={savingTxn} className="text-red-500 hover:text-red-600 border-none bg-transparent cursor-pointer text-sm px-2 disabled:opacity-50">Eliminar</button>
             <div className="flex-1" />
             <button onClick={() => { setShowTxnModal(false); setTxnEditId(null) }} className="btn-ghost">Cancelar</button>
             <button onClick={handleSaveTxn} disabled={savingTxn || !txnForm.descripcion || !txnForm.monto || !txnForm.fecha} className="btn-primary disabled:opacity-50">{savingTxn ? 'Guardando...' : 'Guardar cambios'}</button>

@@ -8,12 +8,13 @@ import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcio
 import { createEgreso, updateEgreso, deleteEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
-import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
+import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import { parsePegadoTSV, matchOpcion, celdaFechaISO, parseCeldaMonto } from '@/lib/utils/pegado'
+import { calcularTendencia } from '@/lib/utils/tendencia'
 import type { Moneda, Quien, Egreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
@@ -320,7 +321,7 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, descri
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function EgresosPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, vistaTablaTarjetas, setVistaTablaTarjetas } = useAppStore()
   const monedasPalette = useMonedasDisponibles()
   const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
@@ -438,10 +439,9 @@ export default function EgresosPage() {
   const hasMore     = filtered.length > visibleRows.length
 
   const total         = data.reduce((s, e) => s + e.monto, 0)
-  const mesActual     = HOY.getMonth() + 1
-  const totalMesAct   = (egresos ?? []).filter(e => e.mes === mesActual).reduce((s, e) => s + e.monto, 0)
-  const totalMesAnt   = (egresos ?? []).filter(e => e.mes === mesActual - 1).reduce((s, e) => s + e.monto, 0)
-  const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
+  // Tendencia real segun la vista activa (mes activo vs mes anterior, o año activo vs año anterior) —
+  // antes esto se calculaba siempre contra el mes calendario real, ignorando la vista/mes elegidos.
+  const { trend: trendMes, label: trendMesLabel } = calcularTendencia(egresos ?? [], vistaTipo, mesActivo, añoActivo)
   const totalTarjetas = data.filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
   const totalUSD      = data.filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
   const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
@@ -449,7 +449,7 @@ export default function EgresosPage() {
 
   const getWidgetValue = (id: string) => {
     switch (id) {
-      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendInvert: true, trendLabel: 'vs mes anterior', color: '#F54927' }
+      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendInvert: true, trendLabel: trendMesLabel, color: '#F54927' }
       case 'tarjetas':      return { value: fmt(totalTarjetas, m), sub: `${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`, color: '#1A5E9E' }
       case 'usd':           return { value: fmt(totalUSD, m), sub: `${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`, color: '#40B046' }
       case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', color: '#E8A020' }
@@ -501,6 +501,15 @@ export default function EgresosPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar este egreso?')) return
     await deleteEgreso(id); refetch()
+  }
+
+  const handleDuplicar = async (egreso: Egreso) => {
+    await createEgreso({
+      categoria: egreso.categoria, monto: egreso.monto, moneda: egreso.moneda,
+      descripcion: egreso.descripcion, fecha: egreso.fecha, quien: egreso.quien,
+      recurrente: false, etiqueta: egreso.etiqueta,
+    })
+    refetch()
   }
 
   const toggleSort = (key: SortKey) => {
@@ -598,7 +607,19 @@ export default function EgresosPage() {
               <EmptyState title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
             ) : (
               <>
-                <div className="overflow-x-auto hidden md:block">
+                {/* ── Switch tabla/tarjetas (solo desktop; mobile siempre usa tarjetas) ── */}
+                <div className="hidden md:flex justify-end gap-1 mb-2">
+                  <button onClick={() => setVistaTablaTarjetas('tabla')}
+                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tabla' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                    ▦ Tabla
+                  </button>
+                  <button onClick={() => setVistaTablaTarjetas('tarjetas')}
+                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tarjetas' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                    ▤ Tarjetas
+                  </button>
+                </div>
+
+                <div className={`overflow-x-auto ${vistaTablaTarjetas === 'tabla' ? 'hidden md:block' : 'hidden'}`}>
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
@@ -646,10 +667,13 @@ export default function EgresosPage() {
                         return (
                           <tr key={egreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
                             {cols.map(col => cellFor(col))}
-                            <td className="border border-slate-200 text-right px-1" style={{width:32}}>
-                              <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditingId(egreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
-                                <button onClick={() => handleDelete(egreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
+                            <td className="border border-slate-200 text-right px-1 select-none" style={{width:32}}>
+                              <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                <RowMenu items={[
+                                  { label: 'Editar', onClick: () => setEditingId(egreso.id) },
+                                  { label: 'Duplicar', onClick: () => handleDuplicar(egreso) },
+                                  { label: 'Eliminar', onClick: () => handleDelete(egreso.id), danger: true },
+                                ]} />
                               </div>
                             </td>
                           </tr>
@@ -660,21 +684,25 @@ export default function EgresosPage() {
                 </div>
 
                 {/* ── Vista lista (mobile): fecha, descripción, importe, categoría, quién — sin editar/borrar inline, tocar abre el modal completo ── */}
-                <div className="md:hidden flex flex-col">
+                <div className={`flex flex-col ${vistaTablaTarjetas === "tarjetas" ? "" : "md:hidden"}`}>
                   {visibleRows.map((egreso, rowIdx) => {
                     const cfg = getTipoInfo(egreso.categoria)
                     const bg  = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
                     return (
                       <div key={egreso.id} onClick={() => openEditModal(egreso)}
-                        className={`px-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer ${bg}`}>
-                        <div className="text-slate-400 text-[12px] font-mono mb-0.5">{fmtDate(egreso.fecha)}</div>
-                        <div className="text-slate-700 font-medium text-[15px] mb-1">{egreso.descripcion || cfg.label}</div>
-                        <div className="text-red-600 font-mono font-bold text-[17px] mb-1.5">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                        className={`px-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer ${bg} md:flex md:items-center md:gap-4`}>
+                        {/* Columna 1: fecha */}
+                        <div className="text-slate-400 text-[12px] font-mono mb-0.5 md:mb-0 md:w-16 md:flex-shrink-0">{fmtDate(egreso.fecha)}</div>
+                        {/* Columna 2: descripción */}
+                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">{egreso.descripcion || cfg.label}</div>
+                        {/* Columna 3: categoría + quién */}
+                        <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span>
                           {egreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}
                         </div>
+                        {/* Columna 4: monto */}
+                        <div className="text-red-600 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</div>
                       </div>
                     )
                   })}

@@ -546,7 +546,7 @@ export default function DeudasPage() {
                 const pct    = Math.round((pagado / d.total_original) * 100)
                 const isExp  = expanded[d.id]
                 return (
-                  <Card key={d.id}>
+                  <Card key={d.id} className="group">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
@@ -560,7 +560,7 @@ export default function DeudasPage() {
                           <div className="text-lg font-bold font-mono" style={{ color: d.color }}>{fmtFull(d.pendiente, d.moneda as Moneda)}</div>
                           <div className="text-slate-400 text-xs">pendiente</div>
                         </div>
-                        <div className="flex gap-0.5 mt-1">
+                        <div className="flex gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity select-none">
                           <button onClick={() => setEditingDeudaId(d.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
                           <button onClick={() => handleDeleteDeuda(d.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
                         </div>

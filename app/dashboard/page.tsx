@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
+import { calcularTendencia, calcularTendenciaBalance } from '@/lib/utils/tendencia'
 import { fmt, fmtFull } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, ChartToggle, ProgressBar, LoadingSpinner } from '@/components/ui'
@@ -145,12 +146,19 @@ export default function DashboardPage() {
     return acc
   }, {} as Record<string, number>)
 
+  // Tendencia real: mes activo vs mes anterior (vista mensual) o año activo vs año anterior (vista anual).
+  // Nota deuda_total: no tiene trend porque el modelo de datos solo guarda el saldo pendiente
+  // actual de cada deuda, no un historico mensual del saldo — no hay con que comparar todavia.
+  const trendIngresos = calcularTendencia(ingresos ?? [], vistaTipo, mesActivo, añoActivo)
+  const trendEgresos  = calcularTendencia(egresos ?? [], vistaTipo, mesActivo, añoActivo)
+  const trendAhorro   = calcularTendenciaBalance(ingresos ?? [], egresos ?? [], vistaTipo, mesActivo, añoActivo)
+
   const getWidgetValue = (id: string) => {
     switch(id) {
-      case 'ingresos_anuales':  return { value: fmt(esMensual?totalIngresosMes:r.totalIngresos,m),  sub: `Acumulado ${periodoLabel}`,    trend:  8.2,  color: '#40B046', trendInvert: false }
-      case 'egresos_anuales':   return { value: fmt(esMensual?totalEgresosMes:r.totalEgresos,m),   sub: `Acumulado ${periodoLabel}`,    trend: -3.1,  color: '#F54927', trendInvert: false }
-      case 'ahorro_acumulado':  return { value: fmt(esMensual?(totalIngresosMes-totalEgresosMes):(r.totalIngresos-r.totalEgresos),m), sub: `Balance ${periodoLabel}`, trend: 12.4, color: '#1A5E9E', trendInvert: false }
-      case 'deuda_total':       return { value: fmt(r.totalDeuda,m),     sub: 'Obligaciones activas',      trend: -2.8,  color: '#5B3FA6', trendInvert: true  }
+      case 'ingresos_anuales':  return { value: fmt(esMensual?totalIngresosMes:r.totalIngresos,m),  sub: `Acumulado ${periodoLabel}`,    trend: trendIngresos.trend,  color: '#40B046', trendInvert: false }
+      case 'egresos_anuales':   return { value: fmt(esMensual?totalEgresosMes:r.totalEgresos,m),   sub: `Acumulado ${periodoLabel}`,    trend: trendEgresos.trend,  color: '#F54927', trendInvert: false }
+      case 'ahorro_acumulado':  return { value: fmt(esMensual?(totalIngresosMes-totalEgresosMes):(r.totalIngresos-r.totalEgresos),m), sub: `Balance ${periodoLabel}`, trend: trendAhorro.trend, color: '#1A5E9E', trendInvert: false }
+      case 'deuda_total':       return { value: fmt(r.totalDeuda,m),     sub: 'Obligaciones activas',      trend: undefined,  color: '#5B3FA6', trendInvert: true  }
       case 'tarjetas':          return { value: fmt(esMensual?totalTarjetasMes:totalTarjetas,m),    sub: `Pagado ${periodoLabel}`,       trend: undefined, color: '#1A5E9E', trendInvert: false }
       case 'gasto_diario':      return { value: fmt(gastoDiario,m),      sub: 'Para llegar bien al mes',   trend: undefined, color: '#E8A020', trendInvert: false }
       case 'cuotas_mensuales':  return { value: fmt(cuotasMensuales,m),  sub: 'Comprometido/mes',          trend: undefined, color: '#5B3FA6', trendInvert: false }

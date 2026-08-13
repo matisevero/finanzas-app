@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePageHeader } from '@/context/PageHeaderContext'
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
@@ -141,6 +141,47 @@ export function EmptyState({ icon = '📭', title, description, action }: { icon
 }
 
 // ─── Table helpers ────────────────────────────────────────────────────────────
+// ─── RowMenu ──────────────────────────────────────────────────────────────────
+// Menú de "más opciones" (⋮) para filas de tabla — reemplaza los íconos editar/eliminar
+// sueltos dentro de la fila. Se abre en hover+click, se cierra con click afuera o ESC.
+export interface RowMenuItem { label: string; onClick: () => void; danger?: boolean }
+export function RowMenu({ items }: { items: RowMenuItem[] }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onEsc)
+    return () => { document.removeEventListener('mousedown', onDocClick); document.removeEventListener('keydown', onEsc) }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative inline-block select-none" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-label="Más opciones"
+        className="text-slate-400 hover:text-slate-700 border-none bg-transparent cursor-pointer px-1.5 py-0.5 text-sm rounded hover:bg-slate-100">
+        ⋮
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[130px]">
+          {items.map((it, i) => (
+            <button
+              key={i}
+              onClick={() => { it.onClick(); setOpen(false) }}
+              className={`w-full text-left px-3 py-1.5 text-xs border-none bg-transparent cursor-pointer hover:bg-slate-50 ${it.danger ? 'text-red-500 hover:text-red-600' : 'text-slate-600'}`}>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Table({ children }: { children: React.ReactNode }) {
   return <div className="overflow-x-auto"><table className="w-full border-collapse">{children}</table></div>
 }

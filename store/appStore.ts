@@ -28,6 +28,10 @@ interface AppState {
 
   usuario: Usuario | null
   setUsuario: (u: Usuario | null) => void
+
+  // Vista de tabla vs. tarjetas en desktop, para Ingresos/Egresos (mobile siempre usa tarjetas).
+  vistaTablaTarjetas: 'tabla' | 'tarjetas'
+  setVistaTablaTarjetas: (v: 'tabla' | 'tarjetas') => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -59,6 +63,9 @@ export const useAppStore = create<AppState>()(
 
       usuario: null,
       setUsuario: (usuario) => set({ usuario }),
+
+      vistaTablaTarjetas: 'tabla',
+      setVistaTablaTarjetas: (vistaTablaTarjetas) => set({ vistaTablaTarjetas }),
     }),
     {
       name: 'finanzas-store',
@@ -69,6 +76,7 @@ export const useAppStore = create<AppState>()(
         monedasAhorro: s.monedasAhorro,
         monedasCripto: s.monedasCripto,
         monedasPalette: s.monedasPalette,
+        vistaTablaTarjetas: s.vistaTablaTarjetas,
       }),
     }
   )

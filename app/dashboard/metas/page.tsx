@@ -105,7 +105,7 @@ export default function MetasPage() {
               const { pct, meses, cuota, falta } = calcularMeta(meta.monto_objetivo, meta.monto_actual, meta.fecha_limite)
               const mon = meta.moneda as Moneda
               return (
-                <div key={meta.id} className="bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden"
+                <div key={meta.id} className="group bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden"
                   style={{borderColor:meta.completada?'#86efac':meta.color+'22'}}>
                   <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-[80px]" style={{background:meta.color+'08'}} />
 
@@ -117,7 +117,7 @@ export default function MetasPage() {
                         {meta.descripcion&&<div className="text-slate-400 text-sm">{meta.descripcion}</div>}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity select-none">
                       <button onClick={()=>openEdit(meta)} className="text-slate-300 hover:text-slate-600 text-sm border-none bg-transparent cursor-pointer">✎</button>
                       <button onClick={()=>handleDelete(meta.id)} className="text-slate-300 hover:text-red-500 text-sm border-none bg-transparent cursor-pointer">✕</button>
                     </div>

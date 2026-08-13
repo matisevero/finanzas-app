@@ -8,12 +8,13 @@ import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripci
 import { createIngreso, updateIngreso, deleteIngreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS, TIPOS_INGRESO } from '@/lib/utils/constants'
-import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
+import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import { parsePegadoTSV, matchOpcion, celdaFechaISO, parseCeldaMonto } from '@/lib/utils/pegado'
+import { calcularTendencia } from '@/lib/utils/tendencia'
 import type { Moneda, Quien, Ingreso, CategoriaCustom } from '@/types'
 
 const TT = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, color: '#0f172a' }
@@ -320,7 +321,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, frecuencia, descr
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function IngresosPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, vistaTablaTarjetas, setVistaTablaTarjetas } = useAppStore()
   const monedasPalette = useMonedasDisponibles()
   const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading, refetch } = useIngresos()
@@ -445,17 +446,16 @@ export default function IngresosPage() {
   const hasMore     = filtered.length > visibleRows.length
 
   const total         = data.reduce((s, i) => s + i.monto, 0)
-  const mesActual     = HOY.getMonth() + 1
-  const totalMesAct   = (ingresos ?? []).filter(i => i.mes === mesActual).reduce((s, i) => s + i.monto, 0)
-  const totalMesAnt   = (ingresos ?? []).filter(i => i.mes === mesActual - 1).reduce((s, i) => s + i.monto, 0)
-  const trendMes      = totalMesAnt > 0 ? Math.round((totalMesAct - totalMesAnt) / totalMesAnt * 100) : undefined
+  // Tendencia real segun la vista activa (mes activo vs mes anterior, o año activo vs año anterior) —
+  // antes esto se calculaba siempre contra el mes calendario real, ignorando la vista/mes elegidos.
+  const { trend: trendMes, label: trendMesLabel } = calcularTendencia(ingresos ?? [], vistaTipo, mesActivo, añoActivo)
   const salarios      = data.filter(i => i.tipo === 'salario').reduce((s, i) => s + i.monto, 0)
   const mesesConDatos = new Set((ingresos ?? []).map(i => i.mes)).size
   const promedio      = mesesConDatos > 0 ? Math.round((ingresos??[]).reduce((s,i)=>s+i.monto,0) / mesesConDatos) : 0
 
   const getWidgetValue = (id: string) => {
     switch (id) {
-      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendLabel: 'vs mes anterior', color: '#40B046' }
+      case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendLabel: trendMesLabel, color: '#40B046' }
       case 'salarios':      return { value: fmt(salarios, m), sub: `${total > 0 ? Math.round(salarios / total * 100) : 0}% del total`, color: '#40B046' }
       case 'extra':         return { value: fmt(total - salarios, m), sub: 'Freelance + alquiler + otros', color: '#52A852' }
       case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', color: '#1A5E9E' }
@@ -508,6 +508,15 @@ export default function IngresosPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar este ingreso?')) return
     await deleteIngreso(id); refetch()
+  }
+
+  const handleDuplicar = async (ingreso: Ingreso) => {
+    await createIngreso({
+      tipo: ingreso.tipo, monto: ingreso.monto, moneda: ingreso.moneda,
+      descripcion: ingreso.descripcion, fecha: ingreso.fecha, quien: ingreso.quien,
+      recurrente: false, etiqueta: ingreso.etiqueta,
+    })
+    refetch()
   }
 
   const toggleSort = (key: SortKey) => {
@@ -606,8 +615,20 @@ export default function IngresosPage() {
               <EmptyState title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
             ) : (
               <>
+                {/* ── Switch tabla/tarjetas (solo desktop; mobile siempre usa tarjetas) ── */}
+                <div className="hidden md:flex justify-end gap-1 mb-2">
+                  <button onClick={() => setVistaTablaTarjetas('tabla')}
+                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tabla' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                    ▦ Tabla
+                  </button>
+                  <button onClick={() => setVistaTablaTarjetas('tarjetas')}
+                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tarjetas' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                    ▤ Tarjetas
+                  </button>
+                </div>
+
                 {/* ── Vista tabla (desktop) ── */}
-                <div className="overflow-x-auto hidden md:block">
+                <div className={`overflow-x-auto ${vistaTablaTarjetas === 'tabla' ? 'hidden md:block' : 'hidden'}`}>
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-slate-50">
@@ -655,10 +676,13 @@ export default function IngresosPage() {
                         return (
                           <tr key={ingreso.id} className={`group ${bg} hover:bg-blue-50 transition-colors`}>
                             {cols.map(col => cellFor(col))}
-                            <td className="border border-slate-200 text-right px-1" style={{width:32}}>
-                              <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditingId(ingreso.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm">✎</button>
-                                <button onClick={() => handleDelete(ingreso.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm">✕</button>
+                            <td className="border border-slate-200 text-right px-1 select-none" style={{width:32}}>
+                              <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                <RowMenu items={[
+                                  { label: 'Editar', onClick: () => setEditingId(ingreso.id) },
+                                  { label: 'Duplicar', onClick: () => handleDuplicar(ingreso) },
+                                  { label: 'Eliminar', onClick: () => handleDelete(ingreso.id), danger: true },
+                                ]} />
                               </div>
                             </td>
                           </tr>
@@ -669,21 +693,25 @@ export default function IngresosPage() {
                 </div>
 
                 {/* ── Vista lista (mobile): fecha, descripción, importe, tipo, quién — sin editar/borrar inline, tocar abre el modal completo ── */}
-                <div className="md:hidden flex flex-col">
+                <div className={`flex flex-col ${vistaTablaTarjetas === "tarjetas" ? "" : "md:hidden"}`}>
                   {visibleRows.map((ingreso, rowIdx) => {
                     const cfg = getTipoInfo(ingreso.tipo)
                     const bg  = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
                     return (
                       <div key={ingreso.id} onClick={() => openEditModal(ingreso)}
-                        className={`px-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer ${bg}`}>
-                        <div className="text-slate-400 text-[12px] font-mono mb-0.5">{fmtDate(ingreso.fecha)}</div>
-                        <div className="text-slate-700 font-medium text-[15px] mb-1">{ingreso.descripcion || cfg.label}</div>
-                        <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                        className={`px-3 py-3 border-b border-slate-100 last:border-0 cursor-pointer ${bg} md:flex md:items-center md:gap-4`}>
+                        {/* Columna 1: fecha */}
+                        <div className="text-slate-400 text-[12px] font-mono mb-0.5 md:mb-0 md:w-16 md:flex-shrink-0">{fmtDate(ingreso.fecha)}</div>
+                        {/* Columna 2: descripción */}
+                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">{ingreso.descripcion || cfg.label}</div>
+                        {/* Columna 3: categoría + quién */}
+                        <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span>
                           {ingreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}
                         </div>
+                        {/* Columna 4: monto */}
+                        <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
                       </div>
                     )
                   })}

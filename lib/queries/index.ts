@@ -241,6 +241,12 @@ export async function getTarjetaTransacciones(tarjetaId?: string): Promise<Tarje
   return data ?? []
 }
 
+export async function createTarjetaTransaccion(form: Omit<TarjetaTransaccion, 'id' | 'created_at'>): Promise<TarjetaTransaccion> {
+  const { data, error } = await sb().from('tarjeta_transacciones').insert(form).select().single()
+  if (error) throw error
+  return data
+}
+
 export async function updateTarjetaTransaccion(id: string, form: Partial<Omit<TarjetaTransaccion, 'id'>>): Promise<TarjetaTransaccion> {
   const { data, error } = await sb().from('tarjeta_transacciones').update(form).eq('id', id).select().single()
   if (error) throw error
