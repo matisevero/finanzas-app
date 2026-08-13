@@ -117,7 +117,7 @@ function CustomTooltip({ active, payload, label, getTipoInfo, m }: CustomTooltip
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: info.color, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: '#475569' }}>{info.label}</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmtFull(p.value as number, m)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>{fmtFull(p.value as number, m)} <span style={{ fontWeight: 400, color: '#94a3b8' }}>({total>0?Math.round((p.value as number)/total*100):0}%)</span></span>
           </div>
         )
       })}
@@ -417,9 +417,10 @@ export default function EgresosPage() {
 
   const topAño = useMemo(() =>
     allTipos
-      .map(t => ({ label: t.label, color: t.color, value: data.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
+      .map(t => ({ key: t.key, label: t.label, color: t.color, value: data.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 8)
   , [data, allTipos])
+  const totalTopAño = useMemo(() => topAño.reduce((s, d) => s + d.value, 0), [topAño])
 
   const filtered = useMemo(() => {
     const rows = data
@@ -447,14 +448,29 @@ export default function EgresosPage() {
   const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
   const promedio      = mesesConDatos > 0 ? Math.round((egresos??[]).reduce((s,e)=>s+e.monto,0) / mesesConDatos) : 0
 
+  // Tendencia real para el resto de los widgets — mismo criterio que "Total" (mes/año activo vs período anterior).
+  const { trend: trendTarjetas, label: trendTarjetasLabel } = calcularTendencia((egresos ?? []).filter(e => e.categoria === 'tarjeta'), vistaTipo, mesActivo, añoActivo)
+  const { trend: trendUSD, label: trendUSDLabel } = calcularTendencia((egresos ?? []).filter(e => e.categoria === 'usd'), vistaTipo, mesActivo, añoActivo)
+  const { trend: trendCantidad, label: trendCantidadLabel } = calcularTendencia((egresos ?? []).map(e => ({ monto: 1, mes: e.mes, año: e.año })), vistaTipo, mesActivo, añoActivo)
+  const trendTop = topAño[0] ? calcularTendencia((egresos ?? []).filter(e => e.categoria === topAño[0].key), vistaTipo, mesActivo, añoActivo) : { trend: undefined, label: '' }
+  // "Promedio mensual" es un promedio histórico, no del período activo — su comparativa natural
+  // es año activo vs año anterior (promedio mensual de cada año completo).
+  const promedioPorAño = (año: number) => {
+    const regs = (egresos ?? []).filter(e => e.año === año)
+    const meses = new Set(regs.map(e => e.mes)).size
+    return meses > 0 ? regs.reduce((s, e) => s + e.monto, 0) / meses : 0
+  }
+  const promedioAñoAnt = promedioPorAño(añoActivo - 1)
+  const trendPromedio  = promedioAñoAnt > 0 ? Math.round((promedioPorAño(añoActivo) - promedioAñoAnt) / promedioAñoAnt * 100) : undefined
+
   const getWidgetValue = (id: string) => {
     switch (id) {
       case 'total':         return { value: fmt(total, m), sub: 'Acumulado', trend: trendMes, trendInvert: true, trendLabel: trendMesLabel, color: '#F54927' }
-      case 'tarjetas':      return { value: fmt(totalTarjetas, m), sub: `${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`, color: '#1A5E9E' }
-      case 'usd':           return { value: fmt(totalUSD, m), sub: `${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`, color: '#40B046' }
-      case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', color: '#E8A020' }
-      case 'top_categoria': return { value: topAño[0]?.label ?? '—', sub: topAño[0] ? fmt(topAño[0].value, m) : 'Sin datos', color: topAño[0]?.color ?? '#888780' }
-      case 'cantidad':      return { value: String(data.length), sub: 'Egresos registrados', color: '#5B3FA6' }
+      case 'tarjetas':      return { value: fmt(totalTarjetas, m), sub: `${total > 0 ? Math.round(totalTarjetas / total * 100) : 0}% del total`, trend: trendTarjetas, trendInvert: true, trendLabel: trendTarjetasLabel, color: '#1A5E9E' }
+      case 'usd':           return { value: fmt(totalUSD, m), sub: `${total > 0 ? Math.round(totalUSD / total * 100) : 0}% del total`, trend: trendUSD, trendInvert: true, trendLabel: trendUSDLabel, color: '#40B046' }
+      case 'promedio':      return { value: fmt(promedio, m), sub: 'Sobre meses con datos', trend: trendPromedio, trendInvert: true, trendLabel: 'vs promedio año anterior', color: '#E8A020' }
+      case 'top_categoria': return { value: topAño[0]?.label ?? '—', sub: topAño[0] ? fmt(topAño[0].value, m) : 'Sin datos', trend: trendTop.trend, trendInvert: true, trendLabel: trendTop.label, color: topAño[0]?.color ?? '#888780' }
+      case 'cantidad':      return { value: String(data.length), sub: 'Egresos registrados', trend: trendCantidad, trendInvert: true, trendLabel: trendCantidadLabel, color: '#5B3FA6' }
       default: return { value: '—', sub: '', color: '#888780' }
     }
   }
@@ -781,7 +797,7 @@ export default function EgresosPage() {
                         <Pie data={compData} cx="50%" cy="50%" innerRadius={36} outerRadius={58} paddingAngle={3} dataKey="value">
                           {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                         </Pie>
-                        <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmt(v, m), e?.payload?.name ?? '']} />
+                        <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => { const tot = compData.reduce((s, x) => s + x.value, 0); return [`${fmt(v, m)} (${tot > 0 ? Math.round(v / tot * 100) : 0}%)`, e?.payload?.name ?? ''] }} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="flex flex-col gap-1 mt-1">
@@ -791,7 +807,10 @@ export default function EgresosPage() {
                             <div className="w-1.5 h-1.5 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
                             <span className="text-slate-500 text-[10px]">{d.name}</span>
                           </div>
-                          <span className="text-slate-900 text-[10px] font-mono font-bold">{fmt(d.value, m)}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 text-[10px]">{Math.round(d.value / compData.reduce((s, x) => s + x.value, 0) * 100)}%</span>
+                            <span className="text-slate-900 text-[10px] font-mono font-bold">{fmt(d.value, m)}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -807,12 +826,13 @@ export default function EgresosPage() {
                   <div className="flex flex-col gap-3">
                     {topAño.map((d, i) => {
                       const pct = topAño[0].value > 0 ? Math.round(d.value / topAño[0].value * 100) : 0
+                      const pctTotal = totalTopAño > 0 ? Math.round(d.value / totalTopAño * 100) : 0
                       return (
                         <div key={d.label}>
                           <div className="flex justify-between mb-1">
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-bold text-slate-400 w-3">{i + 1}</span>
-                              <span className="text-xs font-medium text-slate-700">{d.label}</span>
+                              <span className="text-xs font-medium text-slate-700">{d.label} <span className="text-slate-400">({pctTotal}%)</span></span>
                             </div>
                             <span className="text-xs font-mono font-bold" style={{ color: d.color }}>{fmt(d.value, m)}</span>
                           </div>
@@ -930,7 +950,7 @@ export default function EgresosPage() {
                     <Pie data={compData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} dataKey="value">
                       {compData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => [fmtFull(v, m), e?.payload?.name ?? '']} />
+                    <Tooltip contentStyle={TT} formatter={(v: number, _: string, e: { payload?: { name?: string } }) => { const tot = compData.reduce((s, x) => s + x.value, 0); return [`${fmtFull(v, m)} (${tot > 0 ? Math.round(v / tot * 100) : 0}%)`, e?.payload?.name ?? ''] }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-3">
