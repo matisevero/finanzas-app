@@ -1,13 +1,15 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useMetas, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
-import { createMeta, updateMeta, deleteMeta, createAhorro, updateAhorro, deleteAhorro } from '@/lib/queries'
+import { useMetas, useAhorros, useAllIngresos, useAllEgresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas } from '@/hooks'
+import { createMeta, updateMeta, deleteMeta, createAhorro, updateAhorro, deleteAhorro, archivarAhorro } from '@/lib/queries'
 import { fmt } from '@/lib/utils/formatters'
 import { calcularMeta } from '@/lib/utils/calculations'
 import { META_COLORS, ICONOS_GENERALES } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
+import { fmtFull, fmtDate } from '@/lib/utils/formatters'
+import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import type { Moneda, Ahorro } from '@/types'
 
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
@@ -21,6 +23,10 @@ export default function AhorrosPage() {
   const { data: ahorros, loading: loadingAhorros, refetch: refetchAhorros } = useAhorros()
   const { data: allIngresos, loading: liAll } = useAllIngresos()
   const { data: allEgresos, loading: leAll } = useAllEgresos()
+  const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: egresoEtiquetas } = useEgresoEtiquetas()
+  const { data: ingresoEtiquetas } = useIngresoEtiquetas()
+  const [expandidoId, setExpandidoId] = useState<string|null>(null)
   const [showModal, setShowModal]   = useState(false)
   const [editId, setEditId]         = useState<string|null>(null)
   const [saving, setSaving]         = useState(false)
@@ -55,6 +61,23 @@ export default function AhorrosPage() {
     if (!confirm('¿Eliminar este ahorro? Esto no borra tus ingresos/egresos, solo la card.')) return
     await deleteAhorro(id); refetchAhorros()
   }
+  const etiquetaDeAhorro = (a: Ahorro) => (etiquetas ?? []).find(e => e.tipo === 'ahorro' && e.ahorro_id === a.id)
+
+  const movimientosEtiquetados = (a: Ahorro) => {
+    const et = etiquetaDeAhorro(a)
+    if (!et) return []
+    const egresoIds  = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id))
+    const ingresoIds = new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.ingreso_id))
+    const egr = (allEgresos ?? []).filter(e => egresoIds.has(e.id)).map(e => ({ tipo: 'egreso' as const, id: e.id, fecha: e.fecha, descripcion: e.descripcion, categoria: e.categoria, monto: e.monto, moneda: e.moneda as Moneda }))
+    const ing = (allIngresos ?? []).filter(i => ingresoIds.has(i.id)).map(i => ({ tipo: 'ingreso' as const, id: i.id, fecha: i.fecha, descripcion: i.descripcion, categoria: i.tipo, monto: i.monto, moneda: i.moneda as Moneda }))
+    return [...egr, ...ing].sort((x,y)=>y.fecha.localeCompare(x.fecha))
+  }
+
+  const handleArchivarAhorro = async (a: Ahorro, archivar: boolean) => {
+    await archivarAhorro(a.id, archivar)
+    refetchEtiquetas()
+  }
+
   const handleAjustar = async (a: Ahorro, signo: 1|-1) => {
     const val = parseFloat(ajusteValor||'0')
     if (!val) return
@@ -255,19 +278,23 @@ export default function AhorrosPage() {
             {(ahorros??[]).map(a=>{
               const auto  = automaticoDe(a)
               const total = Math.max(0, auto + a.ajuste_manual)
+              const et = etiquetaDeAhorro(a)
+              const archivado = et?.estado === 'archivada'
+              const movs = movimientosEtiquetados(a)
               return (
-                <div key={a.id} className="group bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden" style={{borderColor:a.color+'22'}}>
+                <div key={a.id} className="group bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden" style={{borderColor:a.color+'22', opacity: archivado ? 0.6 : 1}}>
                   <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-[80px]" style={{background:a.color+'08'}} />
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                       <span className="text-3xl">{a.icono}</span>
                       <div>
-                        <div className="text-lg font-semibold text-slate-900">{a.nombre}</div>
+                        <div className="text-lg font-semibold text-slate-900 flex items-center gap-2">{a.nombre}{archivado && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Archivado</span>}</div>
                         <div className="text-slate-400 text-sm">{a.categoria} · {a.moneda}</div>
                       </div>
                     </div>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity select-none">
                       <button onClick={()=>openEditAhorro(a)} className="text-slate-300 hover:text-slate-600 text-sm border-none bg-transparent cursor-pointer">✎</button>
+                      <button onClick={()=>handleArchivarAhorro(a, !archivado)} className="text-slate-300 hover:text-slate-600 text-sm border-none bg-transparent cursor-pointer">{archivado?'↺':'🗄'}</button>
                       <button onClick={()=>handleDeleteAhorro(a.id)} className="text-slate-300 hover:text-red-500 text-sm border-none bg-transparent cursor-pointer">✕</button>
                     </div>
                   </div>
@@ -292,6 +319,26 @@ export default function AhorrosPage() {
                     </div>
                   ) : (
                     <button onClick={()=>setAjusteAbierto(a.id)} className="btn-ghost w-full py-2 text-sm">+/− Ajustar manualmente</button>
+                  )}
+
+                  <button onClick={()=>setExpandidoId(v=>v===a.id?null:a.id)} className="text-slate-400 hover:text-slate-600 text-xs border-none bg-transparent cursor-pointer mt-3 px-0">
+                    {expandidoId===a.id?'▾':'▸'} Movimientos etiquetados ({movs.length})
+                  </button>
+                  {expandidoId===a.id && (
+                    <div className="mt-2 pt-2 border-t border-slate-100">
+                      {movs.length===0 ? (
+                        <div className="text-slate-400 text-xs py-2">Sin movimientos asociados — es solo informativo, no afecta el saldo de arriba.</div>
+                      ) : (
+                        <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                          {movs.map(mv=>(
+                            <div key={`${mv.tipo}-${mv.id}`} className="flex justify-between items-center text-xs py-1">
+                              <span className="text-slate-500 truncate">{fmtDate(mv.fecha)} · {mv.descripcion || (mv.tipo==='egreso' ? (TIPOS_EGRESO[mv.categoria as keyof typeof TIPOS_EGRESO]?.label ?? mv.categoria) : (TIPOS_INGRESO[mv.categoria as keyof typeof TIPOS_INGRESO]?.label ?? mv.categoria))}</span>
+                              <span className={`font-mono font-semibold flex-shrink-0 ml-2 ${mv.tipo==='egreso'?'text-red-600':'text-emerald-700'}`}>{mv.tipo==='egreso'?'-':'+'}{fmtFull(mv.monto, mv.moneda)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )

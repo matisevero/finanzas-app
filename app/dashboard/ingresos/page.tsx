@@ -4,11 +4,12 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso } from '@/lib/queries'
+import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas } from '@/hooks'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
-import { MESES_CORTOS, TIPOS_INGRESO } from '@/lib/utils/constants'
+import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
 import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
+import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
@@ -330,6 +331,37 @@ export default function IngresosPage() {
   const descripcionesQ = useDescripcionesDistintas('ingresos')
   const etiquetasQ = useEtiquetasDistintas()
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
+  const { data: proyectos, refetch: refetchProyectos } = useProyectos()
+  const { data: ahorros, refetch: refetchAhorros } = useAhorros()
+  const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: ingresoEtiquetas, refetch: refetchIngresoEtiquetas } = useIngresoEtiquetas()
+  const [pickerTipo, setPickerTipo]     = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerIngreso, setPickerIngreso] = useState<string|null>(null)
+  const [filterEtiquetas, setFilterEtiquetas] = useState<string[]>([])
+
+  const etiquetasDeIngreso = (id: string) => (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+
+  const abrirPicker = (tipo: 'proyecto'|'ahorro', ingresoId: string) => { setPickerTipo(tipo); setPickerIngreso(ingresoId) }
+
+  const handleConfirmEtiquetas = async (ids: string[]) => {
+    if (!pickerIngreso) return
+    await setEtiquetasDeIngreso(pickerIngreso, ids)
+    refetchIngresoEtiquetas()
+  }
+
+  const handleCrearProyecto = async (nombre: string) => {
+    const p = await createProyecto({ nombre, presupuesto: 0, moneda: m, icono: '📁', color: META_COLORS[Math.floor(Math.random()*META_COLORS.length)], activo: true, fecha_inicio: null, fecha_fin: null })
+    const fresh = await getEtiquetas()
+    refetchProyectos(); refetchEtiquetas()
+    return fresh.find(e => e.proyecto_id === p.id)?.id ?? null
+  }
+
+  const handleCrearAhorro = async (nombre: string) => {
+    const a = await createAhorro({ nombre, categoria: nombre, moneda: m, icono: '💰', color: META_COLORS[Math.floor(Math.random()*META_COLORS.length)], ajuste_manual: 0 })
+    const fresh = await getEtiquetas()
+    refetchAhorros(); refetchEtiquetas()
+    return fresh.find(e => e.ahorro_id === a.id)?.id ?? null
+  }
 
   const data = useMemo(() =>
     esMensual ? (ingresos ?? []).filter(i => i.mes === mesActivo) : (ingresos ?? [])
@@ -426,6 +458,7 @@ export default function IngresosPage() {
     const rows = data
       .filter(i => filterTipos.length === 0 || filterTipos.includes(i.tipo))
       .filter(i => filterQuien.length === 0 || filterQuien.includes(i.quien))
+      .filter(i => filterEtiquetas.length === 0 || etiquetasDeIngreso(i.id).some(id => filterEtiquetas.includes(id)))
       .filter(i => !search || i.descripcion.toLowerCase().includes(search.toLowerCase()) || (i.etiqueta ?? '').toLowerCase().includes(search.toLowerCase()))
     return [...rows].sort((a, b) => {
       const va = a[sortKey as keyof Ingreso] as string|number
@@ -434,7 +467,7 @@ export default function IngresosPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [data, filterTipos, filterQuien, search, sortKey, sortDir])
+  }, [data, filterTipos, filterQuien, filterEtiquetas, ingresoEtiquetas, search, sortKey, sortDir])
 
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set([HOY.getMonth() + 1]))
   const rowsByMonth = useMemo(() => {
@@ -527,12 +560,14 @@ export default function IngresosPage() {
   }
 
   const handleDuplicar = async (ingreso: Ingreso) => {
-    await createIngreso({
+    const nuevo = await createIngreso({
       tipo: ingreso.tipo, monto: ingreso.monto, moneda: ingreso.moneda,
       descripcion: ingreso.descripcion, fecha: ingreso.fecha, quien: ingreso.quien,
       recurrente: false, etiqueta: ingreso.etiqueta,
     })
-    refetch()
+    const propias = (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === ingreso.id).map(r => r.etiqueta_id)
+    if (propias.length > 0) await setEtiquetasDeIngreso(nuevo.id, propias)
+    refetch(); refetchIngresoEtiquetas()
   }
 
   const toggleSort = (key: SortKey) => {
@@ -619,8 +654,11 @@ export default function IngresosPage() {
               </div>
               <MultiDropdown label="Tipo" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterTipos} onChange={setFilterTiposR} />
               <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
-              {(filterTipos.length > 0 || filterQuien.length > 0 || search) && (
-                <button onClick={() => { setFilterTiposR([]); setFilterQuienR([]); setSearchR('') }}
+              {(etiquetas ?? []).length > 0 && (
+                <MultiDropdown label="Etiquetas" options={(etiquetas ?? []).filter(e=>e.estado==='activa').map(e => ({ key: e.id, label: e.nombre }))} selected={filterEtiquetas} onChange={v => { setFilterEtiquetas(v); setPage(1) }} />
+              )}
+              {(filterTipos.length > 0 || filterQuien.length > 0 || filterEtiquetas.length > 0 || search) && (
+                <button onClick={() => { setFilterTiposR([]); setFilterQuienR([]); setFilterEtiquetas([]); setSearchR('') }}
                   className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
                   Limpiar
                 </button>
@@ -681,7 +719,7 @@ export default function IngresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}</td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeIngreso(ingreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'tipo':        return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ingreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : ingreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{ingreso.quien}</span></td>
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
@@ -696,6 +734,8 @@ export default function IngresosPage() {
                               <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 <RowMenu items={[
                                   { label: 'Editar', onClick: () => setEditingId(ingreso.id) },
+                                  { label: 'Asociar a proyecto', onClick: () => abrirPicker('proyecto', ingreso.id) },
+                                  { label: 'Asociar a ahorro', onClick: () => abrirPicker('ahorro', ingreso.id) },
                                   { label: 'Duplicar', onClick: () => handleDuplicar(ingreso) },
                                   { label: 'Eliminar', onClick: () => handleDelete(ingreso.id), danger: true },
                                 ]} />
@@ -719,7 +759,10 @@ export default function IngresosPage() {
                         {/* Columna 1: fecha */}
                         <div className="text-slate-400 text-[12px] font-mono mb-0.5 md:mb-0 md:w-16 md:flex-shrink-0">{fmtDate(ingreso.fecha)}</div>
                         {/* Columna 2: descripción */}
-                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">{ingreso.descripcion || cfg.label}</div>
+                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">
+                          {ingreso.descripcion || cfg.label}
+                          <EtiquetaChips etiquetaIds={etiquetasDeIngreso(ingreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} />
+                        </div>
                         {/* Columna 3: categoría + quién */}
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
@@ -982,6 +1025,22 @@ export default function IngresosPage() {
         </div>
       )}
 
+      {pickerTipo && pickerIngreso && (
+        <EtiquetaPickerModal
+          open={!!pickerTipo}
+          onClose={() => { setPickerTipo(null); setPickerIngreso(null) }}
+          tipo={pickerTipo}
+          etiquetas={etiquetas ?? []}
+          proyectos={proyectos ?? []}
+          ahorros={ahorros ?? []}
+          seleccionadas={etiquetasDeIngreso(pickerIngreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
+          onConfirm={async (ids) => {
+            const otras = etiquetasDeIngreso(pickerIngreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
+            await handleConfirmEtiquetas([...otras, ...ids])
+          }}
+          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+        />
+      )}
     </div>
   )
 }

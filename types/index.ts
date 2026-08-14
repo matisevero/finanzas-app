@@ -67,7 +67,6 @@ export interface Egreso {
   quien: Quien
   recurrente: boolean
   etiqueta?: string | null
-  proyecto_id?: string | null
   created_at: string
 }
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -211,6 +210,21 @@ export interface Proyecto {
   created_at: string
 }
 export type ProyectoInsert = Omit<Proyecto, 'id' | 'user_id' | 'created_at'>
+
+export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro'
+export type EstadoEtiqueta = 'activa' | 'archivada'
+export interface Etiqueta {
+  id: string
+  user_id: string
+  nombre: string
+  tipo: TipoEtiqueta
+  proyecto_id?: string | null
+  ahorro_id?: string | null
+  color?: string | null
+  estado: EstadoEtiqueta
+  created_at: string
+}
+export type EtiquetaInsert = Omit<Etiqueta, 'id' | 'user_id' | 'created_at' | 'estado'>
 
 // ─── Precios recurrentes ──────────────────────────────────────────────────────
 export interface PrecioItem {

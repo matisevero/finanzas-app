@@ -4,11 +4,12 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso } from '@/lib/queries'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas } from '@/hooks'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
-import { MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
+import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
 import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
+import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
@@ -25,7 +26,7 @@ const PAGE_SIZE = 30
 const FORM_INIT = {
   categoria: 'tarjeta', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
-  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '', proyecto_id: '',
+  moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'categoria' | 'descripcion' | 'quien'
@@ -163,7 +164,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', proyecto_id: '' })
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -329,7 +330,37 @@ export default function EgresosPage() {
   const frecuenciaCats = useFrecuenciaCategorias('egresos')
   const descripcionesQ = useDescripcionesDistintas('egresos')
   const etiquetasQ = useEtiquetasDistintas()
-  const { data: proyectos } = useProyectos()
+  const { data: proyectos, refetch: refetchProyectos } = useProyectos()
+  const { data: ahorros, refetch: refetchAhorros } = useAhorros()
+  const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: egresoEtiquetas, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
+  const [pickerTipo, setPickerTipo]   = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerEgreso, setPickerEgreso] = useState<string|null>(null)
+  const [filterEtiquetas, setFilterEtiquetas] = useState<string[]>([])
+
+  const etiquetasDeEgreso = (id: string) => (egresoEtiquetas ?? []).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
+
+  const abrirPicker = (tipo: 'proyecto'|'ahorro', egresoId: string) => { setPickerTipo(tipo); setPickerEgreso(egresoId) }
+
+  const handleConfirmEtiquetas = async (ids: string[]) => {
+    if (!pickerEgreso) return
+    await setEtiquetasDeEgreso(pickerEgreso, ids)
+    refetchEgresoEtiquetas()
+  }
+
+  const handleCrearProyecto = async (nombre: string) => {
+    const p = await createProyecto({ nombre, presupuesto: 0, moneda: m, icono: '📁', color: META_COLORS[Math.floor(Math.random()*META_COLORS.length)], activo: true, fecha_inicio: null, fecha_fin: null })
+    const fresh = await getEtiquetas()
+    refetchProyectos(); refetchEtiquetas()
+    return fresh.find(e => e.proyecto_id === p.id)?.id ?? null
+  }
+
+  const handleCrearAhorro = async (nombre: string) => {
+    const a = await createAhorro({ nombre, categoria: nombre, moneda: m, icono: '💰', color: META_COLORS[Math.floor(Math.random()*META_COLORS.length)], ajuste_manual: 0 })
+    const fresh = await getEtiquetas()
+    refetchAhorros(); refetchEtiquetas()
+    return fresh.find(e => e.ahorro_id === a.id)?.id ?? null
+  }
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
 
   const data = useMemo(() =>
@@ -427,6 +458,7 @@ export default function EgresosPage() {
     const rows = data
       .filter(e => filterCats.length === 0 || filterCats.includes(e.categoria))
       .filter(e => filterQuien.length === 0 || filterQuien.includes(e.quien))
+      .filter(e => filterEtiquetas.length === 0 || etiquetasDeEgreso(e.id).some(id => filterEtiquetas.includes(id)))
       .filter(e => !search || e.descripcion.toLowerCase().includes(search.toLowerCase()) || (e.etiqueta ?? '').toLowerCase().includes(search.toLowerCase()))
     return [...rows].sort((a, b) => {
       const va = a[sortKey as keyof Egreso] as string|number
@@ -435,7 +467,7 @@ export default function EgresosPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [data, filterCats, filterQuien, search, sortKey, sortDir])
+  }, [data, filterCats, filterQuien, filterEtiquetas, egresoEtiquetas, search, sortKey, sortDir])
 
   const visibleRows = filtered.slice(0, page * PAGE_SIZE)
   const hasMore     = filtered.length > visibleRows.length
@@ -487,9 +519,9 @@ export default function EgresosPage() {
     setSaving(true)
     try {
       if (modalEditId) {
-        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null, proyecto_id: form.proyecto_id || null })
+        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       } else {
-        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null, proyecto_id: form.proyecto_id || null })
+        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -499,7 +531,7 @@ export default function EgresosPage() {
     setForm({
       categoria: egreso.categoria, monto: String(egreso.monto), descripcion: egreso.descripcion,
       fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
-      etiqueta: egreso.etiqueta ?? '', proyecto_id: egreso.proyecto_id ?? '',
+      etiqueta: egreso.etiqueta ?? '',
     })
     setModalEditId(egreso.id)
     setShowModal(true)
@@ -521,12 +553,14 @@ export default function EgresosPage() {
   }
 
   const handleDuplicar = async (egreso: Egreso) => {
-    await createEgreso({
+    const nuevo = await createEgreso({
       categoria: egreso.categoria, monto: egreso.monto, moneda: egreso.moneda,
       descripcion: egreso.descripcion, fecha: egreso.fecha, quien: egreso.quien,
-      recurrente: false, etiqueta: egreso.etiqueta, proyecto_id: egreso.proyecto_id,
+      recurrente: false, etiqueta: egreso.etiqueta,
     })
-    refetch()
+    const propias = (egresoEtiquetas ?? []).filter(r => r.egreso_id === egreso.id).map(r => r.etiqueta_id)
+    if (propias.length > 0) await setEtiquetasDeEgreso(nuevo.id, propias)
+    refetch(); refetchEgresoEtiquetas()
   }
 
   const toggleSort = (key: SortKey) => {
@@ -612,8 +646,11 @@ export default function EgresosPage() {
               </div>
               <MultiDropdown label="Categoría" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterCats} onChange={setFilterCatsR} />
               <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
-              {(filterCats.length > 0 || filterQuien.length > 0 || search) && (
-                <button onClick={() => { setFilterCatsR([]); setFilterQuienR([]); setSearchR('') }}
+              {(etiquetas ?? []).length > 0 && (
+                <MultiDropdown label="Etiquetas" options={(etiquetas ?? []).filter(e=>e.estado==='activa').map(e => ({ key: e.id, label: e.nombre }))} selected={filterEtiquetas} onChange={v => { setFilterEtiquetas(v); setPage(1) }} />
+              )}
+              {(filterCats.length > 0 || filterQuien.length > 0 || filterEtiquetas.length > 0 || search) && (
+                <button onClick={() => { setFilterCatsR([]); setFilterQuienR([]); setFilterEtiquetas([]); setSearchR('') }}
                   className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
                   Limpiar
                 </button>
@@ -673,7 +710,7 @@ export default function EgresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}</td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
@@ -688,6 +725,8 @@ export default function EgresosPage() {
                               <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 <RowMenu items={[
                                   { label: 'Editar', onClick: () => setEditingId(egreso.id) },
+                                  { label: 'Asociar a proyecto', onClick: () => abrirPicker('proyecto', egreso.id) },
+                                  { label: 'Asociar a ahorro', onClick: () => abrirPicker('ahorro', egreso.id) },
                                   { label: 'Duplicar', onClick: () => handleDuplicar(egreso) },
                                   { label: 'Eliminar', onClick: () => handleDelete(egreso.id), danger: true },
                                 ]} />
@@ -711,7 +750,10 @@ export default function EgresosPage() {
                         {/* Columna 1: fecha */}
                         <div className="text-slate-400 text-[12px] font-mono mb-0.5 md:mb-0 md:w-16 md:flex-shrink-0">{fmtDate(egreso.fecha)}</div>
                         {/* Columna 2: descripción */}
-                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">{egreso.descripcion || cfg.label}</div>
+                        <div className="text-slate-700 font-medium text-[15px] mb-1 md:mb-0 md:flex-1 md:min-w-0 md:truncate">
+                          {egreso.descripcion || cfg.label}
+                          <EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} />
+                        </div>
                         {/* Columna 3: categoría + quién */}
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
@@ -881,14 +923,6 @@ export default function EgresosPage() {
             <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
             <AutocompleteInput value={form.etiqueta} onChange={v => setForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
           </div>
-          {(proyectos ?? []).length > 0 && (
-            <div><FieldLabel>Proyecto <span className="text-slate-400 font-normal normal-case">(opcional)</span></FieldLabel>
-              <select value={form.proyecto_id} onChange={e => setForm(p => ({ ...p, proyecto_id: e.target.value }))} className="input-field">
-                <option value="">Sin proyecto</option>
-                {(proyectos ?? []).map(p => <option key={p.id} value={p.id}>{p.icono} {p.nombre}</option>)}
-              </select>
-            </div>
-          )}
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
             <span className="text-slate-600 text-sm">Egreso recurrente</span>
@@ -982,6 +1016,22 @@ export default function EgresosPage() {
         </div>
       )}
 
+      {pickerTipo && pickerEgreso && (
+        <EtiquetaPickerModal
+          open={!!pickerTipo}
+          onClose={() => { setPickerTipo(null); setPickerEgreso(null) }}
+          tipo={pickerTipo}
+          etiquetas={etiquetas ?? []}
+          proyectos={proyectos ?? []}
+          ahorros={ahorros ?? []}
+          seleccionadas={etiquetasDeEgreso(pickerEgreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
+          onConfirm={async (ids) => {
+            const otras = etiquetasDeEgreso(pickerEgreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
+            await handleConfirmEtiquetas([...otras, ...ids])
+          }}
+          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+        />
+      )}
     </div>
   )
 }

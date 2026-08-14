@@ -1,12 +1,12 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { useMonedasDisponibles } from '@/store/appStore'
-import { useProyectos, useAllEgresos } from '@/hooks'
-import { createProyecto, updateProyecto, deleteProyecto } from '@/lib/queries'
+import { useProyectos, useAllEgresos, useAllIngresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas } from '@/hooks'
+import { createProyecto, updateProyecto, deleteProyecto, archivarProyecto } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_EGRESO, ICONOS_GENERALES, META_COLORS } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
-import type { Moneda, Proyecto } from '@/types'
+import type { Moneda, Proyecto, Egreso, Ingreso } from '@/types'
 
 const FORM_INIT = { nombre: '', presupuesto: '', moneda: 'ARS' as Moneda, icono: '📁', color: '#1A5E9E' }
 const CAT_COLORS = ['#1A5E9E', '#40B046', '#E8A020', '#5B3FA6', '#F54927', '#1D9E75', '#D4537E', '#888780']
@@ -15,6 +15,10 @@ export default function ProyectosPage() {
   const monedasPalette = useMonedasDisponibles()
   const { data: proyectos, loading, refetch } = useProyectos()
   const { data: allEgresos, loading: loadingEgresos } = useAllEgresos()
+  const { data: allIngresos, loading: loadingIngresos } = useAllIngresos()
+  const { data: etiquetas, loading: loadingEtiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: egresoEtiquetas, loading: loadingEE } = useEgresoEtiquetas()
+  const { data: ingresoEtiquetas, loading: loadingIE } = useIngresoEtiquetas()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showModal, setShowModal]   = useState(false)
@@ -23,6 +27,10 @@ export default function ProyectosPage() {
   const [form, setForm]             = useState(FORM_INIT)
 
   const selected = (proyectos ?? []).find(p => p.id === selectedId) ?? null
+
+  // Cada Proyecto tiene exactamente una etiqueta 1 a 1 (se crea sola al crear el proyecto) —
+  // el gasto real del proyecto se calcula vía esa etiqueta, no vía un campo propio del egreso.
+  const etiquetaDe = (p: Proyecto) => (etiquetas ?? []).find(e => e.tipo === 'proyecto' && e.proyecto_id === p.id)
 
   const openNew = () => { setEditId(null); setForm(FORM_INIT); setShowModal(true) }
   const openEdit = (p: Proyecto) => {
@@ -38,38 +46,63 @@ export default function ProyectosPage() {
       const payload = { nombre: form.nombre, presupuesto: parseFloat(form.presupuesto) || 0, moneda: form.moneda, icono: form.icono, color: form.color, activo: true, fecha_inicio: null, fecha_fin: null }
       if (editId) await updateProyecto(editId, payload)
       else await createProyecto(payload)
-      setShowModal(false); refetch()
+      setShowModal(false); refetch(); refetchEtiquetas()
     } catch (e) { console.error(e) } finally { setSaving(false) }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar este proyecto? Los gastos asignados quedan sin proyecto, no se borran.')) return
+    if (!confirm('¿Eliminar este proyecto? Su etiqueta y las asociaciones a movimientos se eliminan con él (los movimientos en sí no se borran).')) return
     await deleteProyecto(id)
     if (selectedId === id) setSelectedId(null)
-    refetch()
+    refetch(); refetchEtiquetas()
   }
 
-  // Gastado por proyecto — se calcula sobre todos los egresos (sin acotar a un año), sumando
-  // solo los que están en la misma moneda del proyecto para no mezclar pesos con dólares.
-  const gastadoDe = (p: Proyecto) =>
-    (allEgresos ?? []).filter(e => e.proyecto_id === p.id && e.moneda === p.moneda).reduce((s, e) => s + e.monto, 0)
+  const handleArchivar = async (p: Proyecto, archivar: boolean) => {
+    await archivarProyecto(p.id, archivar)
+    refetchEtiquetas()
+  }
 
-  const gastosDelSeleccionado = useMemo(() =>
-    selected ? (allEgresos ?? []).filter(e => e.proyecto_id === selected.id).sort((a, b) => b.fecha.localeCompare(a.fecha)) : []
-  , [allEgresos, selected])
+  // Total gastado = egresos etiquetados − ingresos etiquetados (reembolsos/aportes al proyecto),
+  // solo en la moneda del proyecto para no mezclar pesos con dólares.
+  const gastadoDe = (p: Proyecto) => {
+    const et = etiquetaDe(p)
+    if (!et) return 0
+    const egresoIds  = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id))
+    const ingresoIds = new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.ingreso_id))
+    const gastos    = (allEgresos ?? []).filter(e => egresoIds.has(e.id) && e.moneda === p.moneda).reduce((s, e) => s + e.monto, 0)
+    const reembolsos = (allIngresos ?? []).filter(i => ingresoIds.has(i.id) && i.moneda === p.moneda).reduce((s, i) => s + i.monto, 0)
+    return gastos - reembolsos
+  }
+
+  type Movimiento = { tipo: 'egreso' | 'ingreso'; id: string; fecha: string; descripcion: string; categoria: string; monto: number; moneda: Moneda }
+
+  const movimientosDelSeleccionado = useMemo((): Movimiento[] => {
+    if (!selected) return []
+    const et = etiquetaDe(selected)
+    if (!et) return []
+    const egresoIds  = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id))
+    const ingresoIds = new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.ingreso_id))
+    const egr: Movimiento[] = (allEgresos ?? []).filter(e => egresoIds.has(e.id))
+      .map(e => ({ tipo: 'egreso' as const, id: e.id, fecha: e.fecha, descripcion: e.descripcion, categoria: e.categoria, monto: e.monto, moneda: e.moneda as Moneda }))
+    const ing: Movimiento[] = (allIngresos ?? []).filter(i => ingresoIds.has(i.id))
+      .map(i => ({ tipo: 'ingreso' as const, id: i.id, fecha: i.fecha, descripcion: i.descripcion, categoria: i.tipo, monto: i.monto, moneda: i.moneda as Moneda }))
+    return [...egr, ...ing].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  }, [allEgresos, allIngresos, egresoEtiquetas, ingresoEtiquetas, selected, etiquetas])
 
   const composicion = useMemo(() => {
     const map: Record<string, number> = {}
-    gastosDelSeleccionado.filter(e => e.moneda === selected?.moneda).forEach(e => { map[e.categoria] = (map[e.categoria] ?? 0) + e.monto })
+    movimientosDelSeleccionado.filter(m => m.tipo === 'egreso' && m.moneda === selected?.moneda).forEach(m => { map[m.categoria] = (map[m.categoria] ?? 0) + m.monto })
     return Object.entries(map)
       .map(([cat, value], i) => ({ label: TIPOS_EGRESO[cat as keyof typeof TIPOS_EGRESO]?.label ?? cat, value, color: TIPOS_EGRESO[cat as keyof typeof TIPOS_EGRESO]?.color ?? CAT_COLORS[i % CAT_COLORS.length] }))
       .sort((a, b) => b.value - a.value)
-  }, [gastosDelSeleccionado, selected])
+  }, [movimientosDelSeleccionado, selected])
 
-  if ((loading && !proyectos) || (loadingEgresos && !allEgresos)) return <LoadingSpinner />
+  if ((loading && !proyectos) || (loadingEgresos && !allEgresos) || (loadingIngresos && !allIngresos) || (loadingEtiquetas && !etiquetas) || (loadingEE && !egresoEtiquetas) || (loadingIE && !ingresoEtiquetas)) return <LoadingSpinner />
 
   // ── Vista detalle ──────────────────────────────────────────────────────────
   if (selected) {
+    const et        = etiquetaDe(selected)
+    const archivado = et?.estado === 'archivada'
     const gastado   = gastadoDe(selected)
     const restante  = selected.presupuesto - gastado
     const pctUsado  = selected.presupuesto > 0 ? Math.round(gastado / selected.presupuesto * 100) : 0
@@ -80,10 +113,11 @@ export default function ProyectosPage() {
         <button onClick={() => setSelectedId(null)} className="text-sm text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer mb-4 px-0">
           ‹ Volver a proyectos
         </button>
-        <PageHeader title={`${selected.icono} ${selected.nombre}`} subtitle="Presupuesto, gastos y composición del proyecto"
+        <PageHeader title={`${selected.icono} ${selected.nombre}`} subtitle={archivado ? 'Archivado — ya no se puede asociar a movimientos nuevos' : 'Presupuesto, gastos y composición del proyecto'}
           action={
             <div className="flex gap-2">
               <button className="btn-ghost" onClick={() => openEdit(selected)}>✎ Editar</button>
+              <button className="btn-ghost" onClick={() => handleArchivar(selected, !archivado)}>{archivado ? '↺ Reactivar' : '🗄 Archivar'}</button>
               <button className="btn-ghost" onClick={() => handleDelete(selected.id)}>✕ Eliminar</button>
             </div>
           } />
@@ -131,18 +165,21 @@ export default function ProyectosPage() {
         </Card>
 
         <Card>
-          <div className="text-slate-900 font-semibold text-[15px] mb-4">Gastos asignados ({gastosDelSeleccionado.length})</div>
-          {gastosDelSeleccionado.length === 0 ? (
-            <div className="text-center text-slate-400 text-sm py-6">Todavía no asignaste gastos a este proyecto — hacelo desde el formulario de Egresos.</div>
+          <div className="text-slate-900 font-semibold text-[15px] mb-4">Movimientos etiquetados ({movimientosDelSeleccionado.length})</div>
+          {movimientosDelSeleccionado.length === 0 ? (
+            <div className="text-center text-slate-400 text-sm py-6">Todavía no asociaste movimientos a este proyecto — hacelo desde el menú de un ingreso o egreso.</div>
           ) : (
             <div className="flex flex-col">
-              {gastosDelSeleccionado.map(e => (
-                <div key={e.id} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
+              {movimientosDelSeleccionado.map(mv => (
+                <div key={`${mv.tipo}-${mv.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-slate-400 text-xs font-mono flex-shrink-0">{fmtDate(e.fecha)}</span>
-                    <span className="text-slate-700 text-sm truncate">{e.descripcion || (TIPOS_EGRESO[e.categoria as keyof typeof TIPOS_EGRESO]?.label ?? e.categoria)}</span>
+                    <span className="text-slate-400 text-xs font-mono flex-shrink-0">{fmtDate(mv.fecha)}</span>
+                    <span className="text-slate-700 text-sm truncate">{mv.descripcion || (TIPOS_EGRESO[mv.categoria as keyof typeof TIPOS_EGRESO]?.label ?? mv.categoria)}</span>
+                    {mv.tipo === 'ingreso' && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full flex-shrink-0">reembolso</span>}
                   </div>
-                  <span className="text-red-600 font-mono font-bold text-sm flex-shrink-0">-{fmtFull(e.monto, e.moneda as Moneda)}</span>
+                  <span className={`font-mono font-bold text-sm flex-shrink-0 ${mv.tipo === 'egreso' ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {mv.tipo === 'egreso' ? '-' : '+'}{fmtFull(mv.monto, mv.moneda)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -158,24 +195,26 @@ export default function ProyectosPage() {
   // ── Vista lista ─────────────────────────────────────────────────────────────
   return (
     <div>
-      <PageHeader title="Proyecto" subtitle="Asigná gastos a un proyecto puntual y seguí su presupuesto"
+      <PageHeader title="Proyecto" subtitle="Asociá movimientos a un proyecto puntual y seguí su presupuesto"
         action={<button className="btn-primary" onClick={openNew}>+ Nuevo proyecto</button>} />
 
       {(proyectos ?? []).length === 0 ? (
-        <EmptyState icon="📁" title="Sin proyectos" description="Creá un proyecto (ej. Vacaciones, Mudanza) para agrupar gastos y controlar un presupuesto propio." action={<button className="btn-primary" onClick={openNew}>+ Nuevo proyecto</button>} />
+        <EmptyState icon="📁" title="Sin proyectos" description="Creá un proyecto (ej. Vacaciones, Mudanza) para agrupar movimientos y controlar un presupuesto propio." action={<button className="btn-primary" onClick={openNew}>+ Nuevo proyecto</button>} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {(proyectos ?? []).map(p => {
-            const gastado  = gastadoDe(p)
-            const pctUsado = p.presupuesto > 0 ? Math.round(gastado / p.presupuesto * 100) : 0
+            const gastado   = gastadoDe(p)
+            const pctUsado  = p.presupuesto > 0 ? Math.round(gastado / p.presupuesto * 100) : 0
+            const archivado = etiquetaDe(p)?.estado === 'archivada'
             return (
               <div key={p.id} onClick={() => setSelectedId(p.id)}
                 className="group cursor-pointer bg-white border-2 rounded-2xl p-6 shadow-card relative overflow-hidden hover:-translate-y-0.5 transition-all"
-                style={{ borderColor: p.color + '22' }}>
+                style={{ borderColor: p.color + '22', opacity: archivado ? 0.6 : 1 }}>
                 <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-[80px]" style={{ background: p.color + '08' }} />
                 <div className="flex items-center gap-3 mb-4">
                   <span className="text-3xl">{p.icono}</span>
                   <div className="text-lg font-semibold text-slate-900">{p.nombre}</div>
+                  {archivado && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Archivado</span>}
                 </div>
                 <div className="text-slate-500 text-sm mb-2">
                   {fmt(gastado, p.moneda as Moneda)} gastados {p.presupuesto > 0 && <>de {fmt(p.presupuesto, p.moneda as Moneda)}</>}

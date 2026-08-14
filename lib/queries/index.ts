@@ -7,6 +7,7 @@ import type {
   Meta, MetaInsert,
   Ahorro, AhorroInsert,
   Proyecto, ProyectoInsert,
+  Etiqueta, EtiquetaInsert,
   PrecioItem, PrecioHistorial,
   SaldoInicial,
   CategoriaCustom, CategoriaCustomInsert,
@@ -418,21 +419,38 @@ export async function getAhorros(): Promise<Ahorro[]> {
   return data ?? []
 }
 
+// Crea el Ahorro y, junto con él, su etiqueta 1 a 1 (tipo 'ahorro') — así queda
+// disponible de entrada para asociar movimientos, sin un paso manual aparte.
 export async function createAhorro(form: AhorroInsert): Promise<Ahorro> {
   const userId = await uid()
   const { data, error } = await sb().from('ahorros').insert({ ...form, user_id: userId }).select().single()
   if (error) throw error
+  const { error: eErr } = await sb().from('etiquetas').insert({ user_id: userId, nombre: data.nombre, tipo: 'ahorro', ahorro_id: data.id })
+  if (eErr) throw eErr
   return data
 }
 
+// Si cambia el nombre, la etiqueta del ahorro se renombra en el mismo movimiento —
+// el chip en los movimientos etiquetados se actualiza solo.
 export async function updateAhorro(id: string, updates: Partial<AhorroInsert>): Promise<Ahorro> {
   const { data, error } = await sb().from('ahorros').update(updates).eq('id', id).select().single()
   if (error) throw error
+  if (updates.nombre) {
+    const { error: eErr } = await sb().from('etiquetas').update({ nombre: updates.nombre }).eq('ahorro_id', id)
+    if (eErr) throw eErr
+  }
   return data
 }
 
+// Al borrar el Ahorro, su etiqueta (y las asociaciones a movimientos que tenía) se
+// borran solas por ON DELETE CASCADE — no hace falta limpiarlas a mano acá.
 export async function deleteAhorro(id: string) {
   const { error } = await sb().from('ahorros').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function archivarAhorro(id: string, archivar: boolean) {
+  const { error } = await sb().from('etiquetas').update({ estado: archivar ? 'archivada' : 'activa' }).eq('ahorro_id', id)
   if (error) throw error
 }
 
@@ -447,12 +465,18 @@ export async function createProyecto(form: ProyectoInsert): Promise<Proyecto> {
   const userId = await uid()
   const { data, error } = await sb().from('proyectos').insert({ ...form, user_id: userId }).select().single()
   if (error) throw error
+  const { error: eErr } = await sb().from('etiquetas').insert({ user_id: userId, nombre: data.nombre, tipo: 'proyecto', proyecto_id: data.id })
+  if (eErr) throw eErr
   return data
 }
 
 export async function updateProyecto(id: string, updates: Partial<ProyectoInsert>): Promise<Proyecto> {
   const { data, error } = await sb().from('proyectos').update(updates).eq('id', id).select().single()
   if (error) throw error
+  if (updates.nombre) {
+    const { error: eErr } = await sb().from('etiquetas').update({ nombre: updates.nombre }).eq('proyecto_id', id)
+    if (eErr) throw eErr
+  }
   return data
 }
 
@@ -461,10 +485,80 @@ export async function deleteProyecto(id: string) {
   if (error) throw error
 }
 
-export async function getEgresosByProyecto(proyectoId: string): Promise<Egreso[]> {
-  const { data, error } = await sb().from('egresos').select('*').eq('proyecto_id', proyectoId).order('fecha', { ascending: false })
+export async function archivarProyecto(id: string, archivar: boolean) {
+  const { error } = await sb().from('etiquetas').update({ estado: archivar ? 'archivada' : 'activa' }).eq('proyecto_id', id)
+  if (error) throw error
+}
+
+// ─── ETIQUETAS ───────────────────────────────────────────────────────────────
+export async function getEtiquetas(): Promise<Etiqueta[]> {
+  const { data, error } = await sb().from('etiquetas').select('*').order('created_at')
   if (error) throw error
   return data ?? []
+}
+
+export async function createEtiquetaLibre(nombre: string, color: string): Promise<Etiqueta> {
+  const userId = await uid()
+  const { data, error } = await sb().from('etiquetas').insert({ user_id: userId, nombre, tipo: 'libre', color }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateEtiquetaLibre(id: string, updates: { nombre?: string; color?: string }): Promise<Etiqueta> {
+  const { data, error } = await sb().from('etiquetas').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Cascade delete en movimiento_etiquetas está garantizado por la FK — al borrar
+// una etiqueta libre desaparece de todos los movimientos que la tenían.
+export async function deleteEtiqueta(id: string) {
+  const { error } = await sb().from('etiquetas').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Todas las relaciones movimiento↔etiqueta en un solo fetch (evita N+1 al pintar
+// chips en tablas largas). Se combinan en memoria con getEtiquetas().
+export async function getIngresoEtiquetas(): Promise<{ ingreso_id: string; etiqueta_id: string }[]> {
+  const { data, error } = await sb().from('ingreso_etiquetas').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getEgresoEtiquetas(): Promise<{ egreso_id: string; etiqueta_id: string }[]> {
+  const { data, error } = await sb().from('egreso_etiquetas').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
+// Reemplaza el set completo de etiquetas de un movimiento (lo que confirma el
+// picker multi-select) — borra las relaciones viejas y crea las nuevas.
+export async function setEtiquetasDeIngreso(ingresoId: string, etiquetaIds: string[]) {
+  const { error: delErr } = await sb().from('ingreso_etiquetas').delete().eq('ingreso_id', ingresoId)
+  if (delErr) throw delErr
+  if (etiquetaIds.length === 0) return
+  const { error } = await sb().from('ingreso_etiquetas').insert(etiquetaIds.map(etiqueta_id => ({ ingreso_id: ingresoId, etiqueta_id })))
+  if (error) throw error
+}
+
+export async function setEtiquetasDeEgreso(egresoId: string, etiquetaIds: string[]) {
+  const { error: delErr } = await sb().from('egreso_etiquetas').delete().eq('egreso_id', egresoId)
+  if (delErr) throw delErr
+  if (etiquetaIds.length === 0) return
+  const { error } = await sb().from('egreso_etiquetas').insert(etiquetaIds.map(etiqueta_id => ({ egreso_id: egresoId, etiqueta_id })))
+  if (error) throw error
+}
+
+export async function getEgresosPorEtiqueta(etiquetaId: string): Promise<Egreso[]> {
+  const { data, error } = await sb().from('egreso_etiquetas').select('egresos(*)').eq('etiqueta_id', etiquetaId)
+  if (error) throw error
+  return ((data ?? []).map((r: any) => r.egresos).filter(Boolean)) as Egreso[]
+}
+
+export async function getIngresosPorEtiqueta(etiquetaId: string): Promise<Ingreso[]> {
+  const { data, error } = await sb().from('ingreso_etiquetas').select('ingresos(*)').eq('etiqueta_id', etiquetaId)
+  if (error) throw error
+  return ((data ?? []).map((r: any) => r.ingresos).filter(Boolean)) as Ingreso[]
 }
 
 // ─── PRECIOS ─────────────────────────────────────────────────────────────────

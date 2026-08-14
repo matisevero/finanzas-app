@@ -248,9 +248,51 @@ CREATE TABLE IF NOT EXISTS public.proyectos (
 ALTER TABLE public.proyectos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "proyectos_own" ON public.proyectos FOR ALL USING (auth.uid() = user_id);
 
--- Vínculo opcional de un egreso a un proyecto (agregado después de que existe la tabla egresos y proyectos)
-ALTER TABLE public.egresos ADD COLUMN IF NOT EXISTS proyecto_id UUID REFERENCES public.proyectos(id) ON DELETE SET NULL;
-CREATE INDEX IF NOT EXISTS idx_egresos_proyecto ON public.egresos(proyecto_id);
+-- ─── ETIQUETAS (mecanismo único de asociación: libre / proyecto / ahorro) ─────
+-- Un movimiento (ingreso o egreso) mantiene su categoría propia para reportes por
+-- rubro, y además puede llevar 0+ etiquetas de cualquier tipo. Las etiquetas de
+-- tipo proyecto/ahorro se crean automáticamente (1 a 1 con la entidad) y heredan
+-- su color de ahí; las libres las crea el usuario a mano con su propio color.
+CREATE TABLE IF NOT EXISTS public.etiquetas (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id      UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+  nombre       TEXT NOT NULL,
+  tipo         TEXT NOT NULL CHECK (tipo IN ('libre','proyecto','ahorro')),
+  proyecto_id  UUID REFERENCES public.proyectos(id) ON DELETE CASCADE,
+  ahorro_id    UUID REFERENCES public.ahorros(id) ON DELETE CASCADE,
+  color        TEXT,
+  estado       TEXT NOT NULL DEFAULT 'activa' CHECK (estado IN ('activa','archivada')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT etiqueta_tipo_coherente CHECK (
+    (tipo = 'libre'    AND proyecto_id IS NULL     AND ahorro_id IS NULL) OR
+    (tipo = 'proyecto' AND proyecto_id IS NOT NULL AND ahorro_id IS NULL) OR
+    (tipo = 'ahorro'   AND ahorro_id IS NOT NULL   AND proyecto_id IS NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_etiqueta_proyecto_unico ON public.etiquetas(proyecto_id) WHERE proyecto_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_etiqueta_ahorro_unico   ON public.etiquetas(ahorro_id)   WHERE ahorro_id IS NOT NULL;
+ALTER TABLE public.etiquetas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "etiquetas_own" ON public.etiquetas FOR ALL USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.ingreso_etiquetas (
+  ingreso_id  UUID NOT NULL REFERENCES public.ingresos(id) ON DELETE CASCADE,
+  etiqueta_id UUID NOT NULL REFERENCES public.etiquetas(id) ON DELETE CASCADE,
+  PRIMARY KEY (ingreso_id, etiqueta_id)
+);
+ALTER TABLE public.ingreso_etiquetas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "ingreso_etiquetas_own" ON public.ingreso_etiquetas FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.ingresos i WHERE i.id = ingreso_id AND i.user_id = auth.uid())
+);
+
+CREATE TABLE IF NOT EXISTS public.egreso_etiquetas (
+  egreso_id   UUID NOT NULL REFERENCES public.egresos(id) ON DELETE CASCADE,
+  etiqueta_id UUID NOT NULL REFERENCES public.etiquetas(id) ON DELETE CASCADE,
+  PRIMARY KEY (egreso_id, etiqueta_id)
+);
+ALTER TABLE public.egreso_etiquetas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "egreso_etiquetas_own" ON public.egreso_etiquetas FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.egresos e WHERE e.id = egreso_id AND e.user_id = auth.uid())
+);
 
 -- ─── PRECIOS — Items ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.precio_items (
