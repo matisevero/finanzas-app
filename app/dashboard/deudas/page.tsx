@@ -2,14 +2,15 @@
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas } from '@/hooks'
-import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento } from '@/lib/queries'
+import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas, useCategoriasCustom, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
+import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento, createEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
+import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import type { Moneda } from '@/types'
 
 const HOY     = new Date()
@@ -18,12 +19,12 @@ const HOY_MES = HOY.getMonth()
 const HOY_AÑO = HOY.getFullYear()
 
 const CATEGORIAS_EVENTO = [
-  { key: 'tarjeta',  label: 'Tarjeta',    color: '#1A5E9E' },
-  { key: 'casa',     label: 'Casa',        color: '#40B046' },
-  { key: 'servicio', label: 'Servicios',   color: '#E8A020' },
-  { key: 'expensa',  label: 'Expensas',    color: '#5B3FA6' },
-  { key: 'edu',      label: 'Educación',   color: '#D4537E' },
-  { key: 'egreso',   label: 'Otro egreso', color: '#888780' },
+  { key: 'tarjeta',  label: 'Tarjeta',    color: '#1A5E9E', icon: '' },
+  { key: 'casa',     label: 'Casa',        color: '#40B046', icon: '' },
+  { key: 'servicio', label: 'Servicios',   color: '#E8A020', icon: '' },
+  { key: 'expensa',  label: 'Expensas',    color: '#5B3FA6', icon: '' },
+  { key: 'edu',      label: 'Educación',   color: '#D4537E', icon: '' },
+  { key: 'egreso',   label: 'Otro egreso', color: '#888780', icon: '' },
 ]
 
 // ─── Widgets personalizables ────────────────────────────────────────────────
@@ -37,9 +38,30 @@ const WIDGET_OPTIONS_DEU = [
 ]
 const DEFAULT_WIDGETS_DEU = ['vence_mes', 'pagado_mes', 'pct_ingresos', 'deudas_activas']
 
+// ─── Widgets personalizables — Largo Plazo ─────────────────────────────────
+const WIDGET_OPTIONS_LP = [
+  { id: 'deuda_total_lp',       label: 'Deuda total LP',              icon: '💰' },
+  { id: 'pct_deuda_ahorros_usd',label: '% deuda / ahorros en USD',    icon: '💵' },
+  { id: 'plazo_estimado',       label: 'Plazo estimado de pago',      icon: '⏳' },
+  { id: 'cuota_mensual_lp',     label: 'Cuota mensual comprometida',  icon: '🔁' },
+]
+const DEFAULT_WIDGETS_LP = ['deuda_total_lp', 'pct_deuda_ahorros_usd', 'plazo_estimado']
+
+/** Resuelve label/color de una categoría de vencimiento, sea base (CATEGORIAS_EVENTO) o custom. */
+function getCatInfo(tipoId: string, categoriasCustom: { id: string; nombre: string; color: string }[] | undefined) {
+  const base = CATEGORIAS_EVENTO.find(c => c.key === tipoId)
+  if (base) return base
+  const custom = (categoriasCustom ?? []).find(c => c.id === tipoId)
+  if (custom) return { key: custom.id, label: custom.nombre, color: custom.color, icon: '' }
+  return CATEGORIAS_EVENTO[CATEGORIAS_EVENTO.length - 1]
+}
+
 
 // ─── InlineEditEvento ─────────────────────────────────────────────────────────
-function InlineEditEvento({ ev, descripciones, onSave, onCancel }: { ev: any; descripciones?: string[]; onSave: (id: string, data: any) => Promise<void>; onCancel: () => void }) {
+function InlineEditEvento({ ev, descripciones, categoriasCustom, onRefetchCats, onSave, onCancel }: {
+  ev: any; descripciones?: string[]; categoriasCustom: any[]; onRefetchCats: () => void
+  onSave: (id: string, data: any) => Promise<void>; onCancel: () => void
+}) {
   const [form, setForm] = useState({
     descripcion: ev.descripcion ?? '',
     monto: ev.monto != null ? String(ev.monto) : '',
@@ -53,12 +75,13 @@ function InlineEditEvento({ ev, descripciones, onSave, onCancel }: { ev: any; de
     setSaving(false)
   }
   return (
-    <div className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg">
+    <div className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg flex-wrap">
       <input type="number" min="1" max="31" value={form.dia} onChange={e => setForm(p => ({ ...p, dia: e.target.value }))} className="input-field py-1 text-xs w-14 text-center" placeholder="Día" />
       <AutocompleteInput value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} suggestions={descripciones ?? []} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
-      <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className="input-field py-1 text-xs w-28">
-        {CATEGORIAS_EVENTO.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-      </select>
+      <div className="w-36">
+        <CategoriaSelector bare modulo="eventos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
+          categorias={categoriasCustom} categoriasBase={CATEGORIAS_EVENTO} onCategoriasChange={onRefetchCats} />
+      </div>
       <MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
       <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
       <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
@@ -139,7 +162,11 @@ export default function DeudasPage() {
   const { data: deudas, loading: ld, refetch: refDeudas } = useDeudas()
   const descripcionesEventosQ = useDescripcionesDistintas('eventos_calendario')
   const etiquetasQ = useEtiquetasDistintas()
+  const { data: categoriasEventoCustom, refetch: refetchCatsEvento } = useCategoriasCustom('eventos')
   const { data: ingresos } = useIngresos()
+  const { data: ahorros } = useAhorros()
+  const { data: allIngresos } = useAllIngresos()
+  const { data: allEgresos } = useAllEgresos()
   const [tab, setTab] = useState<'calendario'|'largo'>('calendario')
   const [calMes, setCalMes] = useState(HOY_MES)
   const [calAño, setCalAño] = useState(HOY_AÑO)
@@ -150,6 +177,7 @@ export default function DeudasPage() {
   const [editingDeudaId, setEditingDeudaId] = useState<string|null>(null)
   const [mostrarPagados, setMostrarPagados] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pagandoCuotaId, setPagandoCuotaId] = useState<string|null>(null)
 
   // Modal nuevo evento (calendario)
   const [showEvModal, setShowEvModal] = useState(false)
@@ -161,7 +189,9 @@ export default function DeudasPage() {
 
   // Modal nueva deuda largo plazo
   const [showDeudaModal, setShowDeudaModal] = useState(false)
-  const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_DEU)
+  const [mostrarDetallesLP, setMostrarDetallesLP] = useState(false)
+  const [widgetsCal, setWidgetsCal] = useState<string[]>(DEFAULT_WIDGETS_DEU)
+  const [widgetsLP, setWidgetsLP]   = useState<string[]>(DEFAULT_WIDGETS_LP)
   const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditDeudaId, setModalEditDeudaId] = useState<string|null>(null)
   const [deudaForm, setDeudaForm] = useState({
@@ -189,11 +219,15 @@ export default function DeudasPage() {
 
   const totalPendiente = (deudas ?? []).reduce((s, d) => s + d.pendiente, 0)
   const cuotaMensual   = (deudas ?? []).reduce((s, d) => s + d.cuota_mensual, 0)
+  // "Vence este mes" / "Restante": lo que todavía está sin pagar (para la lista y el resumen operativo).
   const venceMes       = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && !e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
   const pagadoMes      = (eventos ?? []).filter(e => e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
   const pendientes     = (eventos ?? []).filter(e => !e.pagado && e.tipo !== 'ingreso').length
+  // Total comprometido del mes (pagado + pendiente): esto es lo que se usa para el % sobre ingresos,
+  // porque pagar una deuda no hace que deje de haber implicado ese % de tus ingresos ese mes.
+  const totalComprometidoMes = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
 
-  // Gráfico anual: vencimientos reales por mes vs ingresos del mes
+  // Gráfico anual: vencimientos reales por mes vs ingresos del mes (siempre pagado+pendiente, por la misma razón)
   const chartAnual = useMemo(() => {
     const LABELS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
     return Array.from({length: 12}, (_, i) => {
@@ -205,20 +239,49 @@ export default function DeudasPage() {
     })
   }, [ingresos, eventosAño, calAño])
 
-  // % deuda vs ingresos del mes
+  // % vencimientos vs ingresos del mes (pagado + pendiente)
   const totalIngresosMes = (ingresos ?? []).filter(i => i.mes === calMes + 1 && i.año === calAño).reduce((s, i) => s + i.monto, 0)
-  const pctDeudaIngresos = totalIngresosMes > 0 ? Math.round(venceMes / totalIngresosMes * 100) : 0
+  const pctDeudaIngresos = totalIngresosMes > 0 ? Math.round(totalComprometidoMes / totalIngresosMes * 100) : 0
 
-  // mes anterior para trend — derivado de eventosAño (ya cargado). En enero, al no haber diciembre
+  // mes anterior para trends — derivado de eventosAño (ya cargado). En enero, al no haber diciembre
   // del año en curso dentro de este mismo fetch, el trend simplemente no se muestra ese mes.
-  const pagadoMesAnt = (eventosAño ?? []).filter(e => e.mes === calMes && e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const eventosMesAnt = (eventosAño ?? []).filter(e => e.mes === calMes && e.tipo !== 'ingreso' && e.monto)
+  const pagadoMesAnt        = eventosMesAnt.filter(e => e.pagado).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const totalComprometidoAnt = eventosMesAnt.reduce((s, e) => s + (e.monto ?? 0), 0)
+  const venceMesAnt         = eventosMesAnt.filter(e => !e.pagado).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const ingresosMesAnt = (ingresos ?? []).filter(i => i.mes === calMes && i.año === calAño).reduce((s, i) => s + i.monto, 0)
+  const pctAnt = ingresosMesAnt > 0 ? Math.round(totalComprometidoAnt / ingresosMesAnt * 100) : 0
+
   const trendPagado  = pagadoMesAnt > 0 ? Math.round((pagadoMes - pagadoMesAnt) / pagadoMesAnt * 100) : undefined
+  const trendVence    = venceMesAnt > 0 ? Math.round((venceMes - venceMesAnt) / venceMesAnt * 100) : undefined
+  const trendPct       = pctAnt > 0 ? Math.round(((pctDeudaIngresos - pctAnt) / pctAnt) * 100) : undefined
+
+  // ── Métricas de Largo Plazo ──────────────────────────────────────────────────
+  // Ahorro/inversión acumulado en USD (mismo criterio que la página de Ahorros): automático + ajuste manual.
+  const ahorroUSD = (ahorros ?? []).filter(a => a.moneda === 'USD').reduce((s, a) => {
+    const ing = (allIngresos ?? []).filter(i => i.tipo === a.categoria && i.moneda === 'USD').reduce((x,i)=>x+i.monto,0)
+    const egr = (allEgresos ?? []).filter(e => e.categoria === a.categoria && e.moneda === 'USD').reduce((x,e)=>x+e.monto,0)
+    return s + Math.max(0, ing - egr) + a.ajuste_manual
+  }, 0)
+  const deudaLP_USD = (deudas ?? []).filter(d => d.moneda === 'USD').reduce((s, d) => s + d.pendiente, 0)
+  const pctDeudaAhorrosUSD = ahorroUSD > 0 ? Math.round(deudaLP_USD / ahorroUSD * 100) : (deudaLP_USD > 0 ? null : 0)
+
+  // Plazo estimado: meses restantes de la deuda con el pago más largo (peor caso = respuesta más útil).
+  const deudasActivas = (deudas ?? []).filter(d => d.activa !== false && d.pendiente > 0)
+  const plazosPorDeuda = deudasActivas
+    .filter(d => d.cuota_mensual > 0)
+    .map(d => ({ d, meses: Math.ceil(d.pendiente / d.cuota_mensual) }))
+  const plazoMax = plazosPorDeuda.length > 0 ? plazosPorDeuda.reduce((a, b) => b.meses > a.meses ? b : a) : null
+  const fechaEstimadaPago = plazoMax ? (() => {
+    const f = new Date(); f.setMonth(f.getMonth() + plazoMax.meses)
+    return `${MESES[f.getMonth()]} ${f.getFullYear()}`
+  })() : null
 
   const getWidgetValue = (id: string) => {
     switch (id) {
-      case 'vence_mes':       return { value: fmt(venceMes, m), sub: `${pendientes} pendientes`, color: '#F54927' }
+      case 'vence_mes':       return { value: fmt(venceMes, m), sub: `${pendientes} pendientes`, trend: trendVence, trendInvert: true, trendLabel: 'vs mes anterior', color: '#F54927' }
       case 'pagado_mes':      return { value: fmt(pagadoMes, m), sub: 'del mes actual', trend: trendPagado, trendInvert: true, trendLabel: 'vs mes anterior', color: '#40B046' }
-      case 'pct_ingresos':    return { value: `${pctDeudaIngresos}%`, sub: 'deudas / ingresos del mes', color: pctDeudaIngresos > 40 ? '#F54927' : pctDeudaIngresos > 25 ? '#E8A020' : '#40B046' }
+      case 'pct_ingresos':    return { value: `${pctDeudaIngresos}%`, sub: 'deudas / ingresos del mes', trend: trendPct, trendInvert: true, trendLabel: 'vs mes anterior', color: pctDeudaIngresos > 40 ? '#F54927' : pctDeudaIngresos > 25 ? '#E8A020' : '#40B046' }
       case 'deudas_activas':  return { value: String((deudas ?? []).length), sub: `Cuota fija: ${fmt(cuotaMensual, m)}`, color: '#5B3FA6' }
       case 'total_pendiente': return { value: fmt(totalPendiente, m), sub: 'Saldo total de deudas LP', color: '#D4537E' }
       case 'cuota_mensual':   return { value: fmt(cuotaMensual, m), sub: 'Comprometido cada mes', color: '#1A5E9E' }
@@ -226,10 +289,30 @@ export default function DeudasPage() {
     }
   }
 
+  const getWidgetValueLP = (id: string): { value: string; sub: string; color: string; trend?: number; trendInvert?: boolean; trendLabel?: string } => {
+    switch (id) {
+      case 'deuda_total_lp':
+        return { value: fmt(totalPendiente, m), sub: `${deudasActivas.length} deuda${deudasActivas.length === 1 ? '' : 's'} activa${deudasActivas.length === 1 ? '' : 's'}`, color: '#5B3FA6' }
+      case 'pct_deuda_ahorros_usd':
+        return pctDeudaAhorrosUSD === null
+          ? { value: '—', sub: 'Tenés deuda en USD pero sin ahorro en USD registrado', color: '#F54927' }
+          : { value: `${pctDeudaAhorrosUSD}%`, sub: 'deuda USD / ahorros e inversiones USD', color: pctDeudaAhorrosUSD > 100 ? '#F54927' : pctDeudaAhorrosUSD > 50 ? '#E8A020' : '#40B046' }
+      case 'plazo_estimado':
+        return plazoMax
+          ? { value: `${plazoMax.meses} mes${plazoMax.meses === 1 ? '' : 'es'}`, sub: `Estimado: ${fechaEstimadaPago} (${plazoMax.d.nombre})`, color: '#1A5E9E' }
+          : { value: '—', sub: 'Cargá una cuota mensual para estimarlo', color: '#888780' }
+      case 'cuota_mensual_lp':
+        return { value: fmt(cuotaMensual, m), sub: 'Comprometido cada mes', color: '#D4537E' }
+      default: return { value: '—', sub: '', color: '#888780' }
+    }
+  }
+
   const changeWidget = (index: number, newId: string) => {
-    const next = [...widgets]
-    next[index] = newId
-    setWidgets(next)
+    if (tab === 'calendario') {
+      const next = [...widgetsCal]; next[index] = newId; setWidgetsCal(next)
+    } else {
+      const next = [...widgetsLP]; next[index] = newId; setWidgetsLP(next)
+    }
   }
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -289,15 +372,23 @@ export default function DeudasPage() {
   }
 
   const handleSaveDeuda = async () => {
-    if (!deudaForm.nombre || !deudaForm.total_original || !deudaForm.fecha_vencimiento) return
+    if (!deudaForm.nombre || !deudaForm.total_original) return
     setSaving(true)
     try {
+      // Si no se cargó vencimiento (alta rápida), se usa un año desde el inicio como placeholder —
+      // se puede editar después con el dato real cuando se tenga.
+      let fechaVenc = deudaForm.fecha_vencimiento
+      if (!fechaVenc) {
+        const base = deudaForm.fecha_inicio ? new Date(deudaForm.fecha_inicio + 'T00:00:00') : new Date()
+        base.setFullYear(base.getFullYear() + 1)
+        fechaVenc = base.toISOString().split('T')[0]
+      }
       if (modalEditDeudaId) {
         await updateDeuda(modalEditDeudaId, {
           nombre: deudaForm.nombre, banco: deudaForm.banco,
           cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
           moneda: deudaForm.moneda,
-          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
+          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: fechaVenc,
           cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
           color: deudaForm.color, etiqueta: deudaForm.etiqueta || null,
         })
@@ -308,12 +399,12 @@ export default function DeudasPage() {
           pendiente: parseFloat(deudaForm.total_original),
           cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
           tasa_interes: 0, moneda: deudaForm.moneda,
-          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: deudaForm.fecha_vencimiento,
-          cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
+          fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: fechaVenc,
+          cuota_actual: parseInt(deudaForm.cuota_actual) || 1, cuota_total: parseInt(deudaForm.cuota_total) || 1,
           color: deudaForm.color, activa: true, etiqueta: deudaForm.etiqueta || null,
         })
       }
-      setShowDeudaModal(false); setModalEditDeudaId(null); refDeudas()
+      setShowDeudaModal(false); setModalEditDeudaId(null); setMostrarDetallesLP(false); refDeudas()
     } catch(e) { console.error(e) } finally { setSaving(false) }
   }
 
@@ -339,6 +430,27 @@ export default function DeudasPage() {
     await deleteDeuda(id); refDeudas()
   }
 
+  // Registra el pago de la cuota del mes de una Deuda LP: descuenta del saldo, avanza la cuota,
+  // y genera el Egreso correspondiente — mismo criterio que el pago de un Vencimiento (#8).
+  const handlePagarCuotaLP = async (d: any) => {
+    const monto = d.cuota_mensual > 0 ? d.cuota_mensual : d.pendiente
+    if (!monto) return
+    if (!confirm(`¿Registrar el pago de ${fmtFull(monto, d.moneda as Moneda)} de "${d.nombre}"? Se va a crear el egreso correspondiente.`)) return
+    setPagandoCuotaId(d.id)
+    try {
+      await createEgreso({
+        categoria: 'otro', descripcion: `Cuota ${d.cuota_actual}/${d.cuota_total} — ${d.nombre}`,
+        monto, moneda: d.moneda as Moneda, fecha: new Date().toISOString().split('T')[0],
+        quien: 'ambos', recurrente: false, etiqueta: d.etiqueta ?? null,
+      })
+      await updateDeuda(d.id, {
+        pendiente: Math.max(0, d.pendiente - monto),
+        cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
+      })
+      refDeudas()
+    } catch (e) { console.error(e) } finally { setPagandoCuotaId(null) }
+  }
+
   const navMes = (dir: number) => {
     let mes = calMes + dir, año = calAño
     if (mes < 0) { mes = 11; año-- } else if (mes > 11) { mes = 0; año++ }
@@ -362,11 +474,12 @@ export default function DeudasPage() {
           </div>
         } />
 
-      {/* ── StatCards personalizables ── */}
+      {/* ── StatCards personalizables (según la tab activa) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {widgets.map((widgetId, index) => {
-          const opt = WIDGET_OPTIONS_DEU.find(o => o.id === widgetId)!
-          const wv  = getWidgetValue(widgetId)
+        {(tab === 'calendario' ? widgetsCal : widgetsLP).map((widgetId, index) => {
+          const options = tab === 'calendario' ? WIDGET_OPTIONS_DEU : WIDGET_OPTIONS_LP
+          const opt = options.find(o => o.id === widgetId)!
+          const wv  = tab === 'calendario' ? getWidgetValue(widgetId) : getWidgetValueLP(widgetId)
           return (
             <div key={index} className="relative">
               {editingWidgets && (
@@ -375,7 +488,7 @@ export default function DeudasPage() {
                     value={widgetId}
                     onChange={e => changeWidget(index, e.target.value)}
                     className="text-[10px] bg-slate-900 text-white rounded-lg px-2 py-1 border-none cursor-pointer shadow-lg">
-                    {WIDGET_OPTIONS_DEU.map(o => <option key={o.id} value={o.id}>{o.icon} {o.label}</option>)}
+                    {options.map(o => <option key={o.id} value={o.id}>{o.icon} {o.label}</option>)}
                   </select>
                 </div>
               )}
@@ -437,11 +550,11 @@ export default function DeudasPage() {
             {eventosFiltrados.length === 0 ? (
               <div className="text-slate-400 text-xs text-center py-6">Sin pendientes este mes</div>
             ) : eventosFiltrados.sort((a, b) => a.dia - b.dia).map((ev, rowIdx) => {
-              const catInfo = CATEGORIAS_EVENTO.find(c => c.key === ev.tipo) ?? CATEGORIAS_EVENTO[CATEGORIAS_EVENTO.length - 1]
+              const catInfo = getCatInfo(ev.tipo, categoriasEventoCustom ?? undefined)
               const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
               if (editingEventoId === ev.id) return (
                 <div key={ev.id} className="mb-1">
-                  <InlineEditEvento ev={ev} descripciones={descripcionesEventosQ.data ?? undefined} onSave={handleUpdateEvento} onCancel={() => setEditingEventoId(null)} />
+                  <InlineEditEvento ev={ev} descripciones={descripcionesEventosQ.data ?? undefined} categoriasCustom={categoriasEventoCustom ?? []} onRefetchCats={refetchCatsEvento} onSave={handleUpdateEvento} onCancel={() => setEditingEventoId(null)} />
                 </div>
               )
               return (
@@ -509,7 +622,7 @@ export default function DeudasPage() {
                       {dia}{isHoy && <span className="ml-1 text-[8px] bg-blue-700 text-white rounded px-1">hoy</span>}
                     </div>
                     {visible.map(ev => {
-                      const catInfo = CATEGORIAS_EVENTO.find(c => c.key === ev.tipo) ?? CATEGORIAS_EVENTO[CATEGORIAS_EVENTO.length - 1]
+                      const catInfo = getCatInfo(ev.tipo, categoriasEventoCustom ?? undefined)
                       return (
                         <div key={ev.id} onClick={() => handleToggle(ev)}
                           className={`text-[9px] font-medium px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer transition-opacity ${ev.pagado ? 'opacity-40 line-through' : ''}`}
@@ -587,8 +700,20 @@ export default function DeudasPage() {
                           {d.cuota_total > 24 && <span className="text-[9px] text-slate-400">+{d.cuota_total - 24}</span>}
                         </div>
                         <div className="text-xs text-slate-400 mt-1">{d.cuota_actual} de {d.cuota_total} · {fmtFull(d.cuota_mensual, d.moneda as Moneda)}/mes</div>
+                        {d.cuota_mensual > 0 && d.pendiente > 0 && (
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Estimado: {Math.ceil(d.pendiente / d.cuota_mensual)} mes{Math.ceil(d.pendiente / d.cuota_mensual) === 1 ? '' : 'es'} más para terminar de pagar
+                          </div>
+                        )}
                       </div>
                     </div>
+                    {d.pendiente > 0 && (
+                      <button onClick={() => handlePagarCuotaLP(d)} disabled={pagandoCuotaId === d.id}
+                        className="w-full mt-3 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all disabled:opacity-50"
+                        style={{ borderColor: d.color, color: d.color, background: d.color + '10' }}>
+                        {pagandoCuotaId === d.id ? 'Registrando...' : `Pagar cuota (${fmtFull(d.cuota_mensual > 0 ? d.cuota_mensual : d.pendiente, d.moneda as Moneda)})`}
+                      </button>
+                    )}
                   </Card>
                 )
               })}
@@ -604,16 +729,26 @@ export default function DeudasPage() {
           <div className="text-slate-400 text-xs mt-0.5">Qué % de tus ingresos del mes se va en pago de deudas</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-6">
-            <p className="text-slate-400 text-xs mb-4">Barras = ingresos del mes · Línea = cuota fija mensual · % = proporción</p>
+            <p className="text-slate-400 text-xs mb-4">% de vencimientos del mes (pagados + pendientes) sobre tus ingresos de ese mes</p>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={chartAnual} barCategoryGap="35%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => v+'%'} domain={[0, 100]} />
                 <Tooltip contentStyle={{ border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number) => [`${v}%`, '% de ingresos']}
-                  labelFormatter={(l: string) => l} />
-                <Bar dataKey="pct" name="% deudas/ingresos" radius={0} maxBarSize={40}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || !payload.length) return null
+                    const row = payload[0].payload as { month: string; ingresos: number; deudas: number; pct: number }
+                    return (
+                      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, padding: '8px 10px' }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
+                        <div>Vencimientos: {fmt(row.deudas, m)}</div>
+                        <div>Ingresos: {fmt(row.ingresos, m)}</div>
+                        <div style={{ fontWeight: 700, color: '#F54927' }}>{row.pct}% de tus ingresos</div>
+                      </div>
+                    )
+                  }} />
+                <Bar dataKey="pct" name="% vencimientos/ingresos" radius={0} maxBarSize={40}
                   fill="#F54927"
                   label={{ position: 'top', fontSize: 10, fill: '#94a3b8', formatter: (v: number) => v > 0 ? `${v}%` : '' }} />
               </BarChart>
@@ -630,9 +765,8 @@ export default function DeudasPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Categoría</FieldLabel>
-              <select value={evForm.tipo} onChange={e => setEvForm(p => ({ ...p, tipo: e.target.value }))} className="input-field">
-                {CATEGORIAS_EVENTO.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-              </select>
+              <CategoriaSelector modulo="eventos" value={evForm.tipo} onChange={v => setEvForm(p => ({ ...p, tipo: v }))}
+                categorias={categoriasEventoCustom ?? []} categoriasBase={CATEGORIAS_EVENTO} onCategoriasChange={refetchCatsEvento} />
             </div>
             <div><FieldLabel>Día del mes</FieldLabel>
               <input type="number" min="1" max="31" value={evForm.dia}
@@ -682,51 +816,59 @@ export default function DeudasPage() {
       </Modal>
 
       {/* ── Modal nueva deuda LP ── */}
-      <Modal open={showDeudaModal} onClose={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} title={modalEditDeudaId ? 'Editar deuda' : 'Nueva deuda — Largo plazo'}>
+      <Modal open={showDeudaModal} onClose={() => { setShowDeudaModal(false); setModalEditDeudaId(null); setMostrarDetallesLP(false) }} title={modalEditDeudaId ? 'Editar deuda' : 'Nueva deuda — Largo plazo'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel>
             <input value={deudaForm.nombre} onChange={e => setDeudaForm(p => ({ ...p, nombre: e.target.value }))}
               placeholder="Ej: Crédito auto" className="input-field" autoFocus />
-          </div>
-          <div><FieldLabel>Descripción / Banco</FieldLabel>
-            <input value={deudaForm.banco} onChange={e => setDeudaForm(p => ({ ...p, banco: e.target.value }))}
-              placeholder="Ej: Banco Galicia" className="input-field" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto total{modalEditDeudaId ? ' (no editable)' : ''}</FieldLabel>
               <MontoInput value={deudaForm.total_original} disabled={!!modalEditDeudaId}
                 onChange={raw => setDeudaForm(p => ({ ...p, total_original: raw }))} placeholder="0" className="disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
-            <div><FieldLabel>Cuota mensual</FieldLabel>
-              <MontoInput value={deudaForm.cuota_mensual}
-                onChange={raw => setDeudaForm(p => ({ ...p, cuota_mensual: raw }))} placeholder="0" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Cuota actual</FieldLabel>
-              <input type="number" value={deudaForm.cuota_actual}
-                onChange={e => setDeudaForm(p => ({ ...p, cuota_actual: e.target.value }))} className="input-field" />
-            </div>
-            <div><FieldLabel>Total cuotas</FieldLabel>
-              <input type="number" value={deudaForm.cuota_total}
-                onChange={e => setDeudaForm(p => ({ ...p, cuota_total: e.target.value }))} className="input-field" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Fecha inicio</FieldLabel>
-              <FechaInput value={deudaForm.fecha_inicio}
-                onChange={iso => setDeudaForm(p => ({ ...p, fecha_inicio: iso }))} />
-            </div>
-            <div><FieldLabel>Fecha vencimiento</FieldLabel>
-              <FechaInput value={deudaForm.fecha_vencimiento}
-                onChange={iso => setDeudaForm(p => ({ ...p, fecha_vencimiento: iso }))} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={deudaForm.moneda} onChange={e => setDeudaForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
                 {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+          </div>
+
+          {!modalEditDeudaId && !mostrarDetallesLP && (
+            <button type="button" onClick={() => setMostrarDetallesLP(true)}
+              className="text-xs text-blue-700 font-semibold border-none bg-transparent cursor-pointer text-left underline w-fit">
+              + Agregar más detalles (opcional — banco, cuota mensual, vencimiento, etc.)
+            </button>
+          )}
+
+          {(mostrarDetallesLP || !!modalEditDeudaId) && <>
+            <div><FieldLabel>Descripción / Banco</FieldLabel>
+              <input value={deudaForm.banco} onChange={e => setDeudaForm(p => ({ ...p, banco: e.target.value }))}
+                placeholder="Ej: Banco Galicia" className="input-field" />
+            </div>
+            <div><FieldLabel>Cuota mensual</FieldLabel>
+              <MontoInput value={deudaForm.cuota_mensual}
+                onChange={raw => setDeudaForm(p => ({ ...p, cuota_mensual: raw }))} placeholder="0" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><FieldLabel>Cuota actual</FieldLabel>
+                <input type="number" value={deudaForm.cuota_actual}
+                  onChange={e => setDeudaForm(p => ({ ...p, cuota_actual: e.target.value }))} className="input-field" />
+              </div>
+              <div><FieldLabel>Total cuotas</FieldLabel>
+                <input type="number" value={deudaForm.cuota_total}
+                  onChange={e => setDeudaForm(p => ({ ...p, cuota_total: e.target.value }))} className="input-field" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><FieldLabel>Fecha inicio</FieldLabel>
+                <FechaInput value={deudaForm.fecha_inicio}
+                  onChange={iso => setDeudaForm(p => ({ ...p, fecha_inicio: iso }))} />
+              </div>
+              <div><FieldLabel>Fecha vencimiento <span className="text-slate-400 font-normal normal-case">(opcional)</span></FieldLabel>
+                <FechaInput value={deudaForm.fecha_vencimiento}
+                  onChange={iso => setDeudaForm(p => ({ ...p, fecha_vencimiento: iso }))} />
+              </div>
             </div>
             <div><FieldLabel>Color</FieldLabel>
               <div className="flex gap-2 mt-1">
@@ -737,13 +879,14 @@ export default function DeudasPage() {
                 ))}
               </div>
             </div>
-          </div>
-          <div>
-            <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
-            <AutocompleteInput value={deudaForm.etiqueta} onChange={v => setDeudaForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
-          </div>
+            <div>
+              <FieldLabel>Etiqueta <span className="text-slate-400 font-normal normal-case">(opcional, para agrupar o filtrar después)</span></FieldLabel>
+              <AutocompleteInput value={deudaForm.etiqueta} onChange={v => setDeudaForm(p => ({ ...p, etiqueta: v }))} suggestions={etiquetasQ.data ?? []} placeholder="Ej: Viaje Brasil" />
+            </div>
+          </>}
+
           <div className="flex gap-3 pt-2">
-            <button onClick={() => { setShowDeudaModal(false); setModalEditDeudaId(null) }} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={() => { setShowDeudaModal(false); setModalEditDeudaId(null); setMostrarDetallesLP(false) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSaveDeuda} disabled={saving || !deudaForm.nombre || !deudaForm.total_original}
               className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditDeudaId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
