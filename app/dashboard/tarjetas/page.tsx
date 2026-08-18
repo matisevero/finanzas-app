@@ -2,13 +2,15 @@
 import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones } from '@/hooks'
+import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas } from '@/hooks'
 import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
+import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
+import MontoInput from '@/components/ui/MontoInput'
 import type { Moneda, Quien, TarjetaTransaccion } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
@@ -27,6 +29,8 @@ export default function TarjetasPage() {
   const esMensual = vistaTipo === 'mensual'
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()
+  const { data: personas } = usePersonas()
+  const quienOpts = useMemo(() => quienOpciones(personas), [personas])
   const { data: pagosRaw, loading: lp } = usePagosTarjeta()
   const { data: txnsRaw,  loading: lx, refetch: refTxns } = useTarjetaTransacciones()
   const [selTC, setSelTC]         = useState<string|null>(null)
@@ -230,7 +234,7 @@ export default function TarjetasPage() {
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{background:t.color}}>{t.icono}</div>
                 <div className="flex flex-col items-end gap-1">
                   {t.quien!=='ambos' && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.quien==='Mati'?'bg-blue-50 text-blue-700':'bg-pink-50 text-pink-700'}`}>{t.quien}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorQuien(t.quien).bg} ${colorQuien(t.quien).text}`}>{t.quien}</span>
                   )}
                   {multiMoneda && (
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{mon}</span>
@@ -388,11 +392,11 @@ export default function TarjetasPage() {
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: VISA Galicia" className="input-field" /></div>
           <div><FieldLabel>Banco / titular</FieldLabel><input value={form.banco} onChange={e=>setForm(p=>({...p,banco:e.target.value}))} placeholder="Ej: Galicia · Mati" className="input-field" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Monto</FieldLabel><input type="number" value={form.limite} onChange={e=>setForm(p=>({...p,limite:e.target.value}))} placeholder="0" className="input-field" /></div>
+            <div><FieldLabel>Monto</FieldLabel><MontoInput value={form.limite} onChange={raw=>setForm(p=>({...p,limite:raw}))} placeholder="0" /></div>
             <div><FieldLabel>Moneda</FieldLabel><select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">{monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Titular</FieldLabel><select value={form.quien} onChange={e=>setForm(p=>({...p,quien:e.target.value as Quien}))} className="input-field"><option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option></select></div>
+            <div><FieldLabel>Titular</FieldLabel><select value={form.quien} onChange={e=>setForm(p=>({...p,quien:e.target.value as Quien}))} className="input-field">{quienOpts.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></div>
             <div><FieldLabel>Ícono</FieldLabel><input value={form.icono} onChange={e=>setForm(p=>({...p,icono:e.target.value}))} placeholder="V" maxLength={3} className="input-field" /></div>
           </div>
           <div><FieldLabel>Color</FieldLabel>
@@ -593,7 +597,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel>
-              <input type="number" step="0.01" value={txnForm.monto} onChange={e => setTxnForm(p => ({ ...p, monto: e.target.value }))} className="input-field" />
+              <MontoInput value={txnForm.monto} onChange={raw => setTxnForm(p => ({ ...p, monto: raw }))} />
             </div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={txnForm.moneda} onChange={e => setTxnForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { fmt } from '@/lib/utils/formatters'
 import { CATS_PRECIO, COLORES_PRECIO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
+import MontoInput from '@/components/ui/MontoInput'
 import type { PrecioItem, PrecioHistorial } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
@@ -311,7 +312,7 @@ export default function PreciosPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Mes</FieldLabel><input type="month" value={valForm.mes} onChange={e=>setValForm(p=>({...p,mes:e.target.value}))} className="input-field" /></div>
-            <div><FieldLabel>Valor ($)</FieldLabel><input type="number" value={valForm.valor} onChange={e=>setValForm(p=>({...p,valor:e.target.value}))} placeholder="0" className="input-field" /></div>
+            <div><FieldLabel>Valor ($)</FieldLabel><MontoInput value={valForm.valor} onChange={raw=>setValForm(p=>({...p,valor:raw}))} placeholder="0" /></div>
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={()=>setShowValModal(false)} className="btn-ghost flex-1">Cancelar</button>

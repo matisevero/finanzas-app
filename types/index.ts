@@ -6,7 +6,24 @@ export type Moneda = string
 export type TipoIngreso = string
 export type TipoEgreso = string
 export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa'
-export type Quien = 'Mati' | 'Dani' | 'ambos'
+// Antes era una lista cerrada ('Mati' | 'Dani' | 'ambos'), igual que Moneda. Ahora las
+// personas se gestionan desde Configuración (ver Persona más abajo) y "ambos" queda como
+// el único valor fijo, sinónimo de "compartido/todos" — no es una fila en `personas`.
+export type Quien = string
+
+// ─── Persona ("quién") ─────────────────────────────────────────────────────────
+// Gestionable desde Configuración: alta, edición de nombre y archivado/baja.
+// `quien` en ingresos/egresos/tarjetas sigue siendo TEXT libre por nombre, no FK —
+// así el historial no se rompe si en algún momento se decide no propagar un rename.
+export interface Persona {
+  id: string
+  user_id: string
+  nombre: string
+  orden: number
+  estado: 'activa' | 'archivada'
+  created_at: string
+}
+export type PersonaInsert = { nombre: string; orden?: number }
 
 // ─── Categoría custom ─────────────────────────────────────────────────────────
 export interface CategoriaCustom {

@@ -6,6 +6,7 @@ import { createProyecto, updateProyecto, deleteProyecto, archivarProyecto } from
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_EGRESO, ICONOS_GENERALES, META_COLORS } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
+import MontoInput from '@/components/ui/MontoInput'
 import type { Moneda, Proyecto, Egreso, Ingreso } from '@/types'
 
 const FORM_INIT = { nombre: '', presupuesto: '', moneda: 'ARS' as Moneda, icono: '📁', color: '#1A5E9E' }
@@ -247,7 +248,7 @@ function ProyectoModal({ open, onClose, editId, form, setForm, saving, onSave, m
       <div className="flex flex-col gap-4">
         <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} placeholder="Ej: Vacaciones Brasil" className="input-field" /></div>
         <div className="grid grid-cols-2 gap-3">
-          <div><FieldLabel>Presupuesto (opcional)</FieldLabel><input type="number" value={form.presupuesto} onChange={e => setForm(p => ({ ...p, presupuesto: e.target.value }))} placeholder="0" className="input-field" /></div>
+          <div><FieldLabel>Presupuesto (opcional)</FieldLabel><MontoInput value={form.presupuesto} onChange={raw => setForm(p => ({ ...p, presupuesto: raw }))} placeholder="0" /></div>
           <div><FieldLabel>Moneda</FieldLabel>
             <select value={form.moneda} onChange={e => setForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
               {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}

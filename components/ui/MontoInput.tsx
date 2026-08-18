@@ -10,6 +10,7 @@ interface MontoInputProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
   onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
   bare?: boolean
+  disabled?: boolean
 }
 
 function toDisplay(raw: string): string {
@@ -30,7 +31,7 @@ function fromRawValue(value: string): string {
   return toDisplay(String(num).replace('.', ','))
 }
 
-export default function MontoInput({ value, onChange, placeholder = '0', className = '', onFocus, onKeyDown, onPaste, bare = false }: MontoInputProps) {
+export default function MontoInput({ value, onChange, placeholder = '0', className = '', onFocus, onKeyDown, onPaste, bare = false, disabled = false }: MontoInputProps) {
   const [display, setDisplay] = useState(() => fromRawValue(value))
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function MontoInput({ value, onChange, placeholder = '0', classNa
       onKeyDown={onKeyDown}
       onPaste={onPaste}
       placeholder={placeholder}
+      disabled={disabled}
       className={bare
         ? `w-full h-8 px-2 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-400/40 font-mono text-xs text-right ${className}`
         : `input-field font-mono ${className}`}

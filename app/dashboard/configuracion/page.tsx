@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { createClient } from '@/lib/supabase/client'
-import { useCategoriasCustom } from '@/hooks'
-import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta } from '@/lib/queries'
+import { useCategoriasCustom, usePersonas } from '@/hooks'
+import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
 import PasswordInput from '@/components/ui/PasswordInput'
-import type { Moneda, CategoriaCustom } from '@/types'
+import type { Moneda, CategoriaCustom, Persona } from '@/types'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { useRouter } from 'next/navigation'
 
@@ -106,6 +106,47 @@ export default function ConfiguracionPage() {
   const [savingCat, setSavingCat] = useState(false)
   const [editCatId, setEditCatId] = useState<string|null>(null)
   const [editCatNombre, setEditCatNombre] = useState('')
+
+  // Personas (Quién)
+  const { data: personas, refetch: refetchPersonas } = usePersonas()
+  const [nuevaPersonaNombre, setNuevaPersonaNombre] = useState('')
+  const [savingPersona, setSavingPersona] = useState(false)
+  const [editPersonaId, setEditPersonaId] = useState<string|null>(null)
+  const [editPersonaNombre, setEditPersonaNombre] = useState('')
+  const [personaMsg, setPersonaMsg] = useState<string|null>(null)
+
+  const agregarPersona = async () => {
+    if (!nuevaPersonaNombre.trim()) return
+    setSavingPersona(true)
+    try {
+      const orden = (personas ?? []).length
+      await createPersona({ nombre: nuevaPersonaNombre.trim(), orden })
+      setNuevaPersonaNombre('')
+      refetchPersonas()
+    } finally { setSavingPersona(false) }
+  }
+
+  const guardarEdicionPersona = async (id: string) => {
+    if (!editPersonaNombre.trim()) { setEditPersonaId(null); return }
+    await renombrarPersona(id, editPersonaNombre.trim())
+    setEditPersonaId(null)
+    refetchPersonas()
+  }
+
+  const quitarPersona = async (persona: Persona) => {
+    if (!confirm(`¿Quitar a "${persona.nombre}"?`)) return
+    const resultado = await eliminarOArchivarPersona(persona)
+    setPersonaMsg(resultado === 'archivada'
+      ? `${persona.nombre} tiene movimientos asociados — se archivó en vez de eliminarse. Ya no vas a poder elegirla en items nuevos, pero el historial la conserva.`
+      : `${persona.nombre} eliminada.`)
+    setTimeout(() => setPersonaMsg(null), 6000)
+    refetchPersonas()
+  }
+
+  const handleReactivarPersona = async (persona: Persona) => {
+    await reactivarPersona(persona.id)
+    refetchPersonas()
+  }
 
   // Etiquetas
   const [etiquetas, setEtiquetas] = useState<string[]>([])
@@ -616,6 +657,41 @@ export default function ConfiguracionPage() {
               onKeyDown={e=>{ if(e.key==='Enter') agregarCategoria() }}
               placeholder="Nueva categoría..." className="input-field py-2 text-sm flex-1" />
             <button onClick={agregarCategoria} disabled={savingCat || !nuevaCatNombre.trim()} className="btn-primary py-2 px-4 text-sm disabled:opacity-50">+ Agregar</button>
+          </div>
+        </Card>
+
+        {/* QUIÉN */}
+        <Card>
+          <div className="text-slate-900 font-semibold text-[15px] mb-1">Quién</div>
+          <p className="text-slate-400 text-xs mb-4">Las personas entre las que repartís ingresos y egresos. &quot;Todos&quot; es un valor fijo (compartido), no hace falta crearlo.</p>
+          {personaMsg && <div className="text-xs px-3 py-2 rounded-lg bg-blue-50 text-blue-700 mb-3">{personaMsg}</div>}
+          <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto mb-3">
+            {(personas ?? []).length === 0 && <p className="text-slate-400 text-xs italic px-1">Todavía no agregaste a nadie.</p>}
+            {(personas as Persona[] ?? []).map(p => (
+              <div key={p.id} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${p.estado === 'archivada' ? 'bg-slate-50/50' : 'bg-slate-50'}`}>
+                {editPersonaId === p.id ? (
+                  <input autoFocus value={editPersonaNombre} onChange={e=>setEditPersonaNombre(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionPersona(p.id); if(e.key==='Escape') setEditPersonaId(null) }}
+                    onBlur={() => guardarEdicionPersona(p.id)}
+                    className="input-field py-1 text-base flex-1" />
+                ) : (
+                  <span onClick={() => { setEditPersonaId(p.id); setEditPersonaNombre(p.nombre) }} className={`text-sm cursor-pointer hover:underline flex-1 ${p.estado === 'archivada' ? 'text-slate-400' : 'text-slate-700'}`}>
+                    {p.nombre}{p.estado === 'archivada' && <span className="text-[10px] text-slate-300 ml-2">archivada</span>}
+                  </span>
+                )}
+                {p.estado === 'archivada' ? (
+                  <button onClick={() => handleReactivarPersona(p)} className="text-slate-300 hover:text-emerald-600 border-none bg-transparent cursor-pointer text-xs px-1">Reactivar</button>
+                ) : (
+                  <button onClick={() => quitarPersona(p)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={nuevaPersonaNombre} onChange={e=>setNuevaPersonaNombre(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') agregarPersona() }}
+              placeholder="Nueva persona..." className="input-field py-2 text-sm flex-1" />
+            <button onClick={agregarPersona} disabled={savingPersona || !nuevaPersonaNombre.trim()} className="btn-primary py-2 px-4 text-sm disabled:opacity-50">+ Agregar</button>
           </div>
         </Card>
 

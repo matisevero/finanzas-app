@@ -8,6 +8,7 @@ import { calcularMeta } from '@/lib/utils/calculations'
 import { META_COLORS, ICONOS_GENERALES } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
+import MontoInput from '@/components/ui/MontoInput'
 import { fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import type { Moneda, Ahorro } from '@/types'
@@ -226,8 +227,8 @@ export default function AhorrosPage() {
                         <div><div className="label mb-0.5">Fecha límite</div><div className="text-sm font-mono font-bold text-slate-700">{meta.fecha_limite.slice(0,7)}</div></div>
                       </div>
                       <div className="flex gap-2">
-                        <input type="number" value={addMontos[meta.id]||''} onChange={e=>setAddMontos(p=>({...p,[meta.id]:e.target.value}))}
-                          placeholder={`Agregar ${mon}...`} className="input-field flex-1 font-mono text-sm py-2" />
+                        <MontoInput value={addMontos[meta.id]||''} onChange={raw=>setAddMontos(p=>({...p,[meta.id]:raw}))}
+                          placeholder={`Agregar ${mon}...`} className="flex-1 text-sm py-2" />
                         <button onClick={()=>handleAgregar(meta.id)} className="btn-primary py-2 px-4 text-sm flex-shrink-0" style={{background:meta.color}}>
                           + Agregar
                         </button>
@@ -312,7 +313,7 @@ export default function AhorrosPage() {
 
                   {ajusteAbierto===a.id ? (
                     <div className="flex gap-2">
-                      <input type="number" value={ajusteValor} onChange={e=>setAjusteValor(e.target.value)} placeholder={`Monto ${a.moneda}...`} className="input-field flex-1 font-mono text-sm py-2" />
+                      <MontoInput value={ajusteValor} onChange={raw=>setAjusteValor(raw)} placeholder={`Monto ${a.moneda}...`} className="flex-1 text-sm py-2" />
                       <button onClick={()=>handleAjustar(a,1)} className="btn-primary py-2 px-3 text-sm flex-shrink-0" style={{background:'#40B046'}}>+</button>
                       <button onClick={()=>handleAjustar(a,-1)} className="btn-primary py-2 px-3 text-sm flex-shrink-0" style={{background:'#F54927'}}>−</button>
                       <button onClick={()=>{setAjusteAbierto(null);setAjusteValor('')}} className="btn-ghost py-2 px-3 text-sm flex-shrink-0">✕</button>
@@ -353,8 +354,8 @@ export default function AhorrosPage() {
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Viaje a Europa" className="input-field" /></div>
           <div><FieldLabel>Descripción (opcional)</FieldLabel><input value={form.descripcion} onChange={e=>setForm(p=>({...p,descripcion:e.target.value}))} placeholder="Para qué es este ahorro" className="input-field" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Monto objetivo</FieldLabel><input type="number" value={form.monto_objetivo} onChange={e=>setForm(p=>({...p,monto_objetivo:e.target.value}))} placeholder="0" className="input-field" /></div>
-            <div><FieldLabel>Ya ahorrado</FieldLabel><input type="number" value={form.monto_actual} onChange={e=>setForm(p=>({...p,monto_actual:e.target.value}))} placeholder="0" className="input-field" /></div>
+            <div><FieldLabel>Monto objetivo</FieldLabel><MontoInput value={form.monto_objetivo} onChange={raw=>setForm(p=>({...p,monto_objetivo:raw}))} placeholder="0" /></div>
+            <div><FieldLabel>Ya ahorrado</FieldLabel><MontoInput value={form.monto_actual} onChange={raw=>setForm(p=>({...p,monto_actual:raw}))} placeholder="0" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Moneda</FieldLabel>

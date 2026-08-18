@@ -69,8 +69,7 @@ export default function AutocompleteInput({
         value={value}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        onChange={e => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
+        onChange={e => { onChange(e.target.value); setOpen(e.target.value.length > 0) }}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
         className={className}

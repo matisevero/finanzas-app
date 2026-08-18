@@ -4,9 +4,10 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas } from '@/hooks'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
 import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
+import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
 import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
 import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
@@ -141,12 +142,13 @@ function blankDraftRow(): DraftRow {
   return { id: Math.random().toString(36).slice(2), categoria: '', descripcion: '', fecha: '', monto: '', moneda: 'ARS', quien: '' }
 }
 
-function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripciones, onSave, refetchCats }: {
+function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripciones, quienOpts, onSave, refetchCats }: {
   cols: SortKey[]
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
   frecuencia?: Record<string, number>
   descripciones?: string[]
+  quienOpts: { key: string; label: string }[]
   onSave: (data: typeof FORM_INIT) => Promise<void>
   refetchCats: () => void
 }) {
@@ -156,7 +158,6 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
   const [justSaved, setJustSaved] = useState(false)
 
   const categoriasConocidas = [...tiposBase.map(t => ({ key: t.key, label: t.label })), ...categoriasCustom.map(c => ({ key: c.nombre, label: c.nombre }))]
-  const quienOpciones = [{ key: 'ambos', label: 'Ambos' }, { key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }]
 
   // Enter guarda con lo mínimo: fecha, descripción y monto. Categoría/Quién quedan en "Otro"/"Ambos" si no se eligieron.
   const puedeGuardar = (r: DraftRow) => !!(r.fecha && r.descripcion.trim() && r.monto)
@@ -205,7 +206,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
         if (col === 0) row.fecha = celdaFechaISO(val, añoActivo)
         else if (col === 1) row.descripcion = val
         else if (col === 2) row.categoria = matchOpcion(val, categoriasConocidas)
-        else if (col === 3) row.quien = matchOpcion(val, quienOpciones) as Quien | ''
+        else if (col === 3) row.quien = matchOpcion(val, quienOpts) as Quien | ''
         else if (col === 4) { const m = parseCeldaMonto(val); row.monto = m !== null ? String(m) : '' }
       })
       virtual[rowIdx] = row
@@ -239,9 +240,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
         <select value={r.quien} onChange={e => onChange({ quien: e.target.value as Quien })} onPaste={handlePasteEnCelda(startRow, 3)}
           onKeyDown={handleKey} className={cellBase}>
           <option value="">—</option>
-          <option value="ambos">Ambos</option>
-          <option value="Mati">Mati</option>
-          <option value="Dani">Dani</option>
+          {quienOpts.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
       </td>
       <td className="border border-slate-200" style={{width:130}}>
@@ -273,12 +272,13 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 }
 
 // ─── InlineEditRow ────────────────────────────────────────────────────────────
-function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, descripciones, onSave, onCancel, refetchCats }: {
+function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, descripciones, quienOpts, onSave, onCancel, refetchCats }: {
   egreso: Egreso
   tiposBase: { key: string; label: string; icon: string; color: string }[]
   categoriasCustom: CategoriaCustom[]
   frecuencia?: Record<string, number>
   descripciones?: string[]
+  quienOpts: { key: string; label: string }[]
   onSave: (id: string, data: Partial<typeof FORM_INIT>) => Promise<void>
   onCancel: () => void
   refetchCats: () => void
@@ -306,7 +306,7 @@ function InlineEditRow({ egreso, tiposBase, categoriasCustom, frecuencia, descri
       </td>
       <td className="border border-slate-200" style={{width:100}}>
         <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} onKeyDown={handleKeyDown} className={cellBase}>
-          <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
+          {quienOpts.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
       </td>
       <td className="border border-slate-200" style={{width:130}}><MontoInput bare value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} onKeyDown={handleKeyDown} className={cellBase} /></td>
@@ -334,6 +334,8 @@ export default function EgresosPage() {
   const { data: ahorros, refetch: refetchAhorros } = useAhorros()
   const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
   const { data: egresoEtiquetas, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
+  const { data: personas } = usePersonas()
+  const quienOpts = useMemo(() => quienOpciones(personas), [personas])
   const [pickerTipo, setPickerTipo]   = useState<'proyecto'|'ahorro'|null>(null)
   const [pickerEgreso, setPickerEgreso] = useState<string|null>(null)
   const [filterEtiquetas, setFilterEtiquetas] = useState<string[]>([])
@@ -583,8 +585,6 @@ export default function EgresosPage() {
   const renderTooltip = (props: TooltipProps<ValueType, NameType>) =>
     <CustomTooltip {...props} getTipoInfo={getTipoInfo} m={m} />
 
-  const quienOptions = [{ key: 'Mati', label: 'Mati' }, { key: 'Dani', label: 'Dani' }, { key: 'ambos', label: 'Ambos' }]
-
   if (loading && !egresos) return <LoadingSpinner />
 
   return (
@@ -645,7 +645,7 @@ export default function EgresosPage() {
                 <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
               <MultiDropdown label="Categoría" options={allTipos.map(t => ({ key: t.key, label: t.label }))} selected={filterCats} onChange={setFilterCatsR} />
-              <MultiDropdown label="Quién" options={quienOptions} selected={filterQuien} onChange={setFilterQuienR} />
+              <MultiDropdown label="Quién" options={quienOpts} selected={filterQuien} onChange={setFilterQuienR} />
               {(etiquetas ?? []).length > 0 && (
                 <MultiDropdown label="Etiquetas" options={(etiquetas ?? []).filter(e=>e.estado==='activa').map(e => ({ key: e.id, label: e.nombre }))} selected={filterEtiquetas} onChange={v => { setFilterEtiquetas(v); setPage(1) }} />
               )}
@@ -695,7 +695,7 @@ export default function EgresosPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} onSave={handleSheetSave} refetchCats={refetchCats} />
+                      <SheetNewRow cols={cols} tiposBase={tiposBase} categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} quienOpts={quienOpts} onSave={handleSheetSave} refetchCats={refetchCats} />
                       {visibleRows.map((egreso, rowIdx) => {
                         const cfg       = getTipoInfo(egreso.categoria)
                         const isEditing = editingId === egreso.id
@@ -703,7 +703,7 @@ export default function EgresosPage() {
 
                         if (isEditing) return (
                           <InlineEditRow key={egreso.id} egreso={egreso} tiposBase={tiposBase}
-                            categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} onSave={handleUpdate}
+                            categoriasCustom={categoriasCustom} frecuencia={frecuenciaCats.data ?? undefined} descripciones={descripcionesQ.data ?? undefined} quienOpts={quienOpts} onSave={handleUpdate}
                             onCancel={() => setEditingId(null)} refetchCats={refetchCats} />
                         )
 
@@ -712,7 +712,7 @@ export default function EgresosPage() {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
                             case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
-                            case 'quien':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span></td>
+                            case 'quien':       { const cq = colorQuien(egreso.quien); return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cq.bg} ${cq.text}`}>{egreso.quien}</span></td> }
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">-{fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
                             default: return null
                           }
@@ -757,7 +757,7 @@ export default function EgresosPage() {
                         {/* Columna 3: categoría + quién */}
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${egreso.quien === 'Mati' ? 'bg-blue-50 text-blue-700' : egreso.quien === 'Dani' ? 'bg-pink-50 text-pink-700' : 'bg-slate-100 text-slate-500'}`}>{egreso.quien}</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorQuien(egreso.quien).bg} ${colorQuien(egreso.quien).text}`}>{egreso.quien}</span>
                           {egreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}
                         </div>
                         {/* Columna 4: monto */}
@@ -915,7 +915,7 @@ export default function EgresosPage() {
             <div><FieldLabel>Fecha</FieldLabel><FechaInput value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} /></div>
             <div><FieldLabel>Quién</FieldLabel>
               <select value={form.quien} onChange={e => setForm(p => ({ ...p, quien: e.target.value as Quien }))} className="input-field">
-                <option value="ambos">Ambos</option><option value="Mati">Mati</option><option value="Dani">Dani</option>
+                {quienOpts.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
             </div>
           </div>

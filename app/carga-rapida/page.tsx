@@ -1,9 +1,10 @@
 'use client'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas } from '@/hooks'
+import { useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, usePersonas } from '@/hooks'
 import { createIngreso, createEgreso, createEvento, createDeuda } from '@/lib/queries'
 import { TIPOS_INGRESO, TIPOS_EGRESO, TIPOS_EVENTO } from '@/lib/utils/constants'
+import { quienOpciones } from '@/lib/utils/quien'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import type { Moneda, Quien } from '@/types'
 
@@ -71,6 +72,8 @@ export default function CargaRapidaPage() {
 
   const modulo: 'ingresos' | 'egresos' | null = tipo === 'ingreso' ? 'ingresos' : tipo === 'egreso' ? 'egresos' : null
   const { data: categoriasCustom } = useCategoriasCustom(modulo ?? 'ingresos')
+  const { data: personas } = usePersonas()
+  const quienOpts = useMemo(() => quienOpciones(personas), [personas])
   const frecuenciaQ = useFrecuenciaCategorias((modulo ?? 'ingresos') as 'ingresos' | 'egresos')
   const descripcionesQ = useDescripcionesDistintas(tipo === 'deuda' ? 'eventos_calendario' : (modulo ?? 'ingresos'))
 
@@ -254,7 +257,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
     if (!esDeudaLargo && form.categoria && tipo !== 'deuda') rows.push(['Categoría', catLabel(form.categoria)])
     if (esDeudaLargo && form.nombre) rows.push(['Nombre', form.nombre])
     if (form.descripcion) rows.push(['Descripción', form.descripcion])
-    if (tipo !== 'deuda' && form.quien) rows.push(['Quién', form.quien === 'ambos' ? 'Ambos' : form.quien])
+    if (tipo !== 'deuda' && form.quien) rows.push(['Quién', form.quien === 'ambos' ? 'Todos' : form.quien])
     if (esDeudaLargo) rows.push(['Vencimiento', fmtFechaLarga(form.fecha_vencimiento)])
     else rows.push(['Fecha', fmtFechaCorta(form.fecha || hoyISO())])
 
@@ -439,7 +442,7 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                   <>
                     {form.descripcion && <div onClick={() => setStep(3)} className="flex items-center justify-between px-3.5 py-3 bg-white border border-slate-200 rounded-sm mb-2 cursor-pointer"><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Descripción</span><span className="flex items-center gap-2"><span className="text-sm font-semibold text-slate-900">{form.descripcion}</span><span className="text-slate-300 text-xs">✎</span></span></div>}
                     {form.categoria && <div onClick={() => setStep(3)} className="flex items-center justify-between px-3.5 py-3 bg-white border border-slate-200 rounded-sm mb-2 cursor-pointer"><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Categoría</span><span className="flex items-center gap-2"><span className="text-sm font-semibold text-slate-900">{catLabel(form.categoria)}</span><span className="text-slate-300 text-xs">✎</span></span></div>}
-                    {form.quien && <div onClick={() => setStep(3)} className="flex items-center justify-between px-3.5 py-3 bg-white border border-slate-200 rounded-sm mb-2 cursor-pointer"><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Quién</span><span className="flex items-center gap-2"><span className="text-sm font-semibold text-slate-900">{form.quien === 'ambos' ? 'Ambos' : form.quien}</span><span className="text-slate-300 text-xs">✎</span></span></div>}
+                    {form.quien && <div onClick={() => setStep(3)} className="flex items-center justify-between px-3.5 py-3 bg-white border border-slate-200 rounded-sm mb-2 cursor-pointer"><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Quién</span><span className="flex items-center gap-2"><span className="text-sm font-semibold text-slate-900">{form.quien === 'ambos' ? 'Todos' : form.quien}</span><span className="text-slate-300 text-xs">✎</span></span></div>}
                   </>
                 )}
                 {step === 3 && (
@@ -465,9 +468,9 @@ Respondé SOLO con un JSON, sin texto extra, sin backticks, sin markdown, con es
                           ))}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {(['ambos', 'Mati', 'Dani'] as Quien[]).map(q => (
-                            <button key={q} onClick={() => set('quien', q)} className="px-3 py-2 rounded-xl border text-[12.5px] cursor-pointer" style={chipStyle(form.quien === q)}>
-                              {q === 'ambos' ? 'Ambos' : q}
+                          {quienOpts.map(o => (
+                            <button key={o.key} onClick={() => set('quien', o.key as Quien)} className="px-3 py-2 rounded-xl border text-[12.5px] cursor-pointer" style={chipStyle(form.quien === o.key)}>
+                              {o.label}
                             </button>
                           ))}
                         </div>

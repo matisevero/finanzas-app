@@ -6,6 +6,7 @@ import { useEventosMes, useIngresos, useEgresos, useDeudas } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
 import { MESES } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, LoadingSpinner, Modal, FieldLabel } from '@/components/ui'
+import MontoInput from '@/components/ui/MontoInput'
 import { proyectarCashFlow } from '@/lib/utils/calculations'
 
 const TT  = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
@@ -104,7 +105,7 @@ function CalendarioSemanal({
   const removeItem = (id: number) => onItemsChange(items.filter(i => i.id !== id))
 
   const addItem = () => {
-    const monto = parseFloat(newMonto.replace(/\./g, '').replace(',', '.'))
+    const monto = parseFloat(newMonto) // MontoInput ya entrega el raw con punto decimal
     if (!newLabel || isNaN(monto)) return
     onItemsChange([...items, {
       id: nextId.current++,
@@ -267,7 +268,7 @@ function CalendarioSemanal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel>
-              <input value={newMonto} onChange={e => setNewMonto(e.target.value)} placeholder="0" className="input-field font-mono" />
+              <MontoInput value={newMonto} onChange={raw => setNewMonto(raw)} placeholder="0" />
             </div>
             <div><FieldLabel>Tipo</FieldLabel>
               <select value={newTipo} onChange={e => setNewTipo(e.target.value as 'ingreso'|'egreso'|'deuda')} className="input-field">

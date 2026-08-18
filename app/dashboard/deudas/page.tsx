@@ -8,6 +8,7 @@ import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
+import MontoInput from '@/components/ui/MontoInput'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import type { Moneda } from '@/types'
 
@@ -58,7 +59,7 @@ function InlineEditEvento({ ev, descripciones, onSave, onCancel }: { ev: any; de
       <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className="input-field py-1 text-xs w-28">
         {CATEGORIAS_EVENTO.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
       </select>
-      <input type="number" value={form.monto} onChange={e => setForm(p => ({ ...p, monto: e.target.value }))} className="input-field py-1 text-xs w-32 text-right" placeholder="Monto" step="0.01" />
+      <MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
       <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
       <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
     </div>
@@ -97,9 +98,9 @@ function InlineEditDeuda({ d, onSave, onCancel }: { d: any; onSave: (id: string,
           <div><label className="label mb-1.5 block">Banco / descripción</label><input value={form.banco} onChange={e => setForm(p => ({ ...p, banco: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <div><label className="label mb-1.5 block">Total original</label><input type="number" step="0.01" value={form.total_original} onChange={e => setForm(p => ({ ...p, total_original: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
-          <div><label className="label mb-1.5 block">Pendiente</label><input type="number" step="0.01" value={form.pendiente} onChange={e => setForm(p => ({ ...p, pendiente: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
-          <div><label className="label mb-1.5 block">Cuota/mes</label><input type="number" step="0.01" value={form.cuota_mensual} onChange={e => setForm(p => ({ ...p, cuota_mensual: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
+          <div><label className="label mb-1.5 block">Total original</label><MontoInput value={form.total_original} onChange={raw => setForm(p => ({ ...p, total_original: raw }))} className="py-1.5 text-sm" /></div>
+          <div><label className="label mb-1.5 block">Pendiente</label><MontoInput value={form.pendiente} onChange={raw => setForm(p => ({ ...p, pendiente: raw }))} className="py-1.5 text-sm" /></div>
+          <div><label className="label mb-1.5 block">Cuota/mes</label><MontoInput value={form.cuota_mensual} onChange={raw => setForm(p => ({ ...p, cuota_mensual: raw }))} className="py-1.5 text-sm" /></div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div><label className="label mb-1.5 block">Cuota actual</label><input type="number" value={form.cuota_actual} onChange={e => setForm(p => ({ ...p, cuota_actual: e.target.value }))} className="input-field py-1.5 text-sm" /></div>
@@ -640,9 +641,9 @@ export default function DeudasPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel>
-              <input type="number" step="0.01" value={evForm.monto}
-                onChange={e => setEvForm(p => ({ ...p, monto: e.target.value }))}
-                placeholder="0" className="input-field" />
+              <MontoInput value={evForm.monto}
+                onChange={raw => setEvForm(p => ({ ...p, monto: raw }))}
+                placeholder="0" />
             </div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={evForm.moneda} onChange={e => setEvForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
@@ -693,12 +694,12 @@ export default function DeudasPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto total{modalEditDeudaId ? ' (no editable)' : ''}</FieldLabel>
-              <input type="number" step="0.01" value={deudaForm.total_original} disabled={!!modalEditDeudaId}
-                onChange={e => setDeudaForm(p => ({ ...p, total_original: e.target.value }))} placeholder="0" className="input-field disabled:opacity-50 disabled:cursor-not-allowed" />
+              <MontoInput value={deudaForm.total_original} disabled={!!modalEditDeudaId}
+                onChange={raw => setDeudaForm(p => ({ ...p, total_original: raw }))} placeholder="0" className="disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div><FieldLabel>Cuota mensual</FieldLabel>
-              <input type="number" step="0.01" value={deudaForm.cuota_mensual}
-                onChange={e => setDeudaForm(p => ({ ...p, cuota_mensual: e.target.value }))} placeholder="0" className="input-field" />
+              <MontoInput value={deudaForm.cuota_mensual}
+                onChange={raw => setDeudaForm(p => ({ ...p, cuota_mensual: raw }))} placeholder="0" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

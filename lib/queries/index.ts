@@ -11,6 +11,7 @@ import type {
   PrecioItem, PrecioHistorial,
   SaldoInicial,
   CategoriaCustom, CategoriaCustomInsert,
+  Persona, PersonaInsert,
 } from '@/types'
 
 const sb = () => createClient()
@@ -62,6 +63,57 @@ export async function updateCategoriaCustom(id: string, form: Partial<CategoriaC
   const { data, error } = await sb().from('categorias_custom').update(form).eq('id', id).select().single()
   if (error) throw error
   return data
+}
+
+// ─── PERSONAS ("quién") ────────────────────────────────────────────────────────
+export async function getPersonas(): Promise<Persona[]> {
+  const { data, error } = await sb().from('personas').select('*').order('orden').order('nombre')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createPersona(form: PersonaInsert): Promise<Persona> {
+  const userId = await uid()
+  const { data, error } = await sb()
+    .from('personas')
+    .insert({ ...form, user_id: userId })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function renombrarPersona(id: string, nombre: string): Promise<Persona> {
+  const { data, error } = await sb().from('personas').update({ nombre }).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function reactivarPersona(id: string): Promise<Persona> {
+  const { data, error } = await sb().from('personas').update({ estado: 'activa' }).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Borra la persona solo si no tiene movimientos asociados (ingresos/egresos/tarjetas
+// con quien = su nombre); si tiene, la archiva en su lugar. Archivada no aparece más
+// para asociar movimientos nuevos, pero el historial existente la conserva tal cual.
+export async function eliminarOArchivarPersona(persona: Persona): Promise<'eliminada' | 'archivada'> {
+  const userId = await uid()
+  const [ing, egr, tar] = await Promise.all([
+    sb().from('ingresos').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('quien', persona.nombre),
+    sb().from('egresos').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('quien', persona.nombre),
+    sb().from('tarjetas').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('quien', persona.nombre),
+  ])
+  const tieneMovimientos = (ing.count ?? 0) > 0 || (egr.count ?? 0) > 0 || (tar.count ?? 0) > 0
+  if (tieneMovimientos) {
+    const { error } = await sb().from('personas').update({ estado: 'archivada' }).eq('id', persona.id)
+    if (error) throw error
+    return 'archivada'
+  }
+  const { error } = await sb().from('personas').delete().eq('id', persona.id)
+  if (error) throw error
+  return 'eliminada'
 }
 
 // ─── ETIQUETAS (across ingresos/egresos/deudas) ───────────────────────────────

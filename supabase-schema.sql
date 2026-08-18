@@ -294,6 +294,26 @@ CREATE POLICY "egreso_etiquetas_own" ON public.egreso_etiquetas FOR ALL USING (
   EXISTS (SELECT 1 FROM public.egresos e WHERE e.id = egreso_id AND e.user_id = auth.uid())
 );
 
+-- ─── PERSONAS ("quién") — gestionable desde Configuración ─────────────────────
+-- El campo "quien" en ingresos/egresos/tarjetas sigue siendo TEXT libre (se
+-- compara por nombre), no FK — así renombrar una persona no rompe el historial
+-- si en algún momento se decide no propagar el cambio hacia atrás.
+CREATE TABLE IF NOT EXISTS public.personas (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id     UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+  nombre      TEXT NOT NULL,
+  orden       INTEGER NOT NULL DEFAULT 0,
+  estado      TEXT NOT NULL DEFAULT 'activa' CHECK (estado IN ('activa','archivada')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.personas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "personas_own" ON public.personas FOR ALL USING (auth.uid() = user_id);
+
+-- Migración: "Mati" y "Dani" venían hardcodeados en el código. Si corrés esto
+-- sobre una base existente, cargalos una vez por usuario, por ejemplo:
+-- INSERT INTO public.personas (user_id, nombre, orden)
+--   VALUES ('<tu-user-id>', 'Mati', 0), ('<tu-user-id>', 'Dani', 1);
+
 -- ─── PRECIOS — Items ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.precio_items (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
