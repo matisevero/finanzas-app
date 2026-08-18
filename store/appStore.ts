@@ -32,6 +32,10 @@ interface AppState {
   // Vista de tabla vs. tarjetas en desktop, para Ingresos/Egresos (mobile siempre usa tarjetas).
   vistaTablaTarjetas: 'tabla' | 'tarjetas'
   setVistaTablaTarjetas: (v: 'tabla' | 'tarjetas') => void
+
+  // Ocultar montos en toda la app (ojito). Persistente entre sesiones.
+  saldosOcultos: boolean
+  toggleSaldosOcultos: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -66,6 +70,9 @@ export const useAppStore = create<AppState>()(
 
       vistaTablaTarjetas: 'tabla',
       setVistaTablaTarjetas: (vistaTablaTarjetas) => set({ vistaTablaTarjetas }),
+
+      saldosOcultos: false,
+      toggleSaldosOcultos: () => set((s) => ({ saldosOcultos: !s.saldosOcultos })),
     }),
     {
       name: 'finanzas-store',
@@ -77,6 +84,7 @@ export const useAppStore = create<AppState>()(
         monedasCripto: s.monedasCripto,
         monedasPalette: s.monedasPalette,
         vistaTablaTarjetas: s.vistaTablaTarjetas,
+        saldosOcultos: s.saldosOcultos,
       }),
     }
   )

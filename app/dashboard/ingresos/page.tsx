@@ -6,7 +6,7 @@ import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Toolti
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
 import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso } from '@/lib/queries'
-import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
+import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
 import { StatCard, PageHeader, Card, CardTitle, ChartToggle, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
@@ -322,7 +322,7 @@ function InlineEditRow({ ingreso, tiposBase, categoriasCustom, frecuencia, descr
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function IngresosPage() {
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, vistaTablaTarjetas, setVistaTablaTarjetas } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, vistaTablaTarjetas, setVistaTablaTarjetas, saldosOcultos } = useAppStore()
   const monedasPalette = useMonedasDisponibles()
   const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading, refetch } = useIngresos()
@@ -645,10 +645,10 @@ export default function IngresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.reduce((s, i) => s + i.monto, 0), m)) : fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
-              <div className="relative flex-1 min-w-[180px]">
+              <div className="relative flex-1 min-w-[140px] max-w-[220px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
                 <input value={search} onChange={e => setSearchR(e.target.value)} placeholder="Buscar descripción..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
@@ -663,24 +663,22 @@ export default function IngresosPage() {
                   Limpiar
                 </button>
               )}
+              <div className="hidden md:flex gap-1 ml-auto flex-shrink-0">
+                <button onClick={() => setVistaTablaTarjetas('tabla')}
+                  className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tabla' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                  ▦ Tabla
+                </button>
+                <button onClick={() => setVistaTablaTarjetas('tarjetas')}
+                  className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tarjetas' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                  ▤ Tarjetas
+                </button>
+              </div>
             </div>
 
             {filtered.length === 0 ? (
               <EmptyState title="Sin resultados" description="Probá cambiando los filtros o la búsqueda." />
             ) : (
               <>
-                {/* ── Switch tabla/tarjetas (solo desktop; mobile siempre usa tarjetas) ── */}
-                <div className="hidden md:flex justify-end gap-1 mb-2">
-                  <button onClick={() => setVistaTablaTarjetas('tabla')}
-                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tabla' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
-                    ▦ Tabla
-                  </button>
-                  <button onClick={() => setVistaTablaTarjetas('tarjetas')}
-                    className={`text-xs px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${vistaTablaTarjetas === 'tarjetas' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
-                    ▤ Tarjetas
-                  </button>
-                </div>
-
                 {/* ── Vista tabla (desktop) ── */}
                 <div className={`overflow-x-auto ${vistaTablaTarjetas === 'tabla' ? 'hidden md:block' : 'hidden'}`}>
                   <table className="w-full border-collapse">
@@ -722,7 +720,7 @@ export default function IngresosPage() {
                             case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeIngreso(ingreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'tipo':        return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       { const cq = colorQuien(ingreso.quien); return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cq.bg} ${cq.text}`}>{ingreso.quien}</span></td> }
-                            case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-emerald-700 font-mono font-bold">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
+                            case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-emerald-700 font-mono font-bold">{saldosOcultos ? ocultarValor('+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)) : '+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
                             default: return null
                           }
                         }
@@ -770,7 +768,7 @@ export default function IngresosPage() {
                           {ingreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}
                         </div>
                         {/* Columna 4: monto */}
-                        <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">+{fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
+                        <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">{saldosOcultos ? ocultarValor('+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)) : '+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
                       </div>
                     )
                   })}

@@ -6,7 +6,7 @@ import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta, useMetas } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { calcularTendencia, calcularTendenciaBalance } from '@/lib/utils/tendencia'
-import { fmt, fmtFull } from '@/lib/utils/formatters'
+import { fmt, fmtFull, ocultarValor } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EGRESO, TIPOS_INGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, CardTitle, ChartToggle, ProgressBar, LoadingSpinner } from '@/components/ui'
 
@@ -30,7 +30,7 @@ const DEFAULT_WIDGETS = ['ingresos_anuales','egresos_anuales','ahorro_acumulado'
 
 export default function DashboardPage() {
   const [flowType, setFlowType] = useState<'bar'|'area'>('bar')
-  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m, saldosOcultos } = useAppStore()
   const esMensual = vistaTipo === 'mensual'
   const router = useRouter()
 
@@ -278,7 +278,7 @@ export default function DashboardPage() {
                   <div className="text-slate-500 text-[11px] font-bold uppercase tracking-widest md:mb-1">{widgetLabel(widgetId, opt.label)}</div>
                 </div>
 
-                <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{value}</div>
+                <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{saldosOcultos ? ocultarValor(value) : value}</div>
 
                 <div className="flex items-center justify-between mt-2 md:block md:mt-0">
                   {sub && <div className="text-slate-400 text-xs md:mt-1">{sub}</div>}
@@ -361,7 +361,7 @@ export default function DashboardPage() {
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
                       <span className="text-slate-500 text-xs">{d.name} <span className="text-slate-400">({pctEgreso(d.value)}%)</span></span>
                     </div>
-                    <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
+                    <span className="text-slate-900 text-xs font-mono font-bold">{saldosOcultos ? ocultarValor(fmt(d.value,m)) : fmt(d.value,m)}</span>
                   </div>
                 ))}
               </div>
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                       <div className="w-2 h-2 rounded-full" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
                       <span className="text-slate-500 text-xs">{d.name} <span className="text-slate-400">({pctIngreso(d.value)}%)</span></span>
                     </div>
-                    <span className="text-slate-900 text-xs font-mono font-bold">{fmt(d.value,m)}</span>
+                    <span className="text-slate-900 text-xs font-mono font-bold">{saldosOcultos ? ocultarValor(fmt(d.value,m)) : fmt(d.value,m)}</span>
                   </div>
                 ))}
               </div>
@@ -414,7 +414,7 @@ export default function DashboardPage() {
                 </div>
                 <span className="text-slate-700 text-sm truncate max-w-[200px] md:max-w-[160px]">{ev.descripcion}</span>
               </div>
-              <span className="font-mono text-sm font-bold text-red-500 flex-shrink-0">{fmt(ev.monto??0,m)}</span>
+              <span className="font-mono text-sm font-bold text-red-500 flex-shrink-0">{saldosOcultos ? ocultarValor(fmt(ev.monto??0,m)) : fmt(ev.monto??0,m)}</span>
             </div>
           ))}
         </Card>
@@ -439,7 +439,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono text-sm font-bold text-slate-600">{fmt(acumulado,m)}</div>
+                  <div className="font-mono text-sm font-bold text-slate-600">{saldosOcultos ? ocultarValor(fmt(acumulado,m)) : fmt(acumulado,m)}</div>
                   <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
                 </div>
               </div>
@@ -470,7 +470,7 @@ export default function DashboardPage() {
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
                   <div className="text-center flex-1">
                     <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className={`text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmtFull(actual.monto, actual.moneda)}</div>
+                    <div className={`text-2xl font-bold font-mono ${actual.monto >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{saldosOcultos ? ocultarValor(fmtFull(actual.monto, actual.moneda)) : fmtFull(actual.monto, actual.moneda)}</div>
                   </div>
                   <button onClick={() => setAhorroIdx(i => (i + 1) % ahorroPorMoneda.length)}
                     disabled={ahorroPorMoneda.length < 2}
@@ -506,7 +506,7 @@ export default function DashboardPage() {
                     className="text-slate-300 hover:text-slate-600 border-none bg-transparent cursor-pointer text-lg px-1 disabled:opacity-0">‹</button>
                   <div className="text-center flex-1">
                     <div className="text-slate-400 text-xs font-semibold mb-1">{actual.moneda}</div>
-                    <div className="text-2xl font-bold font-mono text-red-500">{fmtFull(actual.monto, actual.moneda)}</div>
+                    <div className="text-2xl font-bold font-mono text-red-500">{saldosOcultos ? ocultarValor(fmtFull(actual.monto, actual.moneda)) : fmtFull(actual.monto, actual.moneda)}</div>
                   </div>
                   <button onClick={() => setDeudaMonedaIdx(i => (i + 1) % deudaPorMoneda.length)}
                     disabled={deudaPorMoneda.length < 2}
@@ -589,7 +589,7 @@ export default function DashboardPage() {
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_EGRESO[i%PIE_COLORS_EGRESO.length]}} />
                         <span className="text-slate-600 text-sm">{d.name} <span className="text-slate-400">({pctEgreso(d.value)}%)</span></span>
                       </div>
-                      <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{saldosOcultos ? ocultarValor(fmtFull(d.value,m)) : fmtFull(d.value,m)}</span>
                     </div>
                   ))}
                 </div>
@@ -611,7 +611,7 @@ export default function DashboardPage() {
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:PIE_COLORS_INGRESO[i%PIE_COLORS_INGRESO.length]}} />
                         <span className="text-slate-600 text-sm">{d.name} <span className="text-slate-400">({pctIngreso(d.value)}%)</span></span>
                       </div>
-                      <span className="text-slate-900 text-sm font-mono font-bold">{fmtFull(d.value,m)}</span>
+                      <span className="text-slate-900 text-sm font-mono font-bold">{saldosOcultos ? ocultarValor(fmtFull(d.value,m)) : fmtFull(d.value,m)}</span>
                     </div>
                   ))}
                 </div>
@@ -627,12 +627,12 @@ export default function DashboardPage() {
                     <div key={d.id}>
                       <div className="flex justify-between mb-2">
                         <span className="text-slate-700 font-medium">{d.nombre}</span>
-                        <span className="font-mono font-bold text-lg" style={{color:d.color}}>{fmtFull(d.pendiente,m)}</span>
+                        <span className="font-mono font-bold text-lg" style={{color:d.color}}>{saldosOcultos ? ocultarValor(fmtFull(d.pendiente,m)) : fmtFull(d.pendiente,m)}</span>
                       </div>
                       <ProgressBar value={pct} color={d.color} height={8} />
                       <div className="flex justify-between mt-1 text-xs text-slate-400">
                         <span>{pct}% pagado</span>
-                        <span>Cuota: {fmtFull(d.cuota_mensual,m)}/mes</span>
+                        <span>Cuota: {saldosOcultos ? ocultarValor(fmtFull(d.cuota_mensual,m)) : fmtFull(d.cuota_mensual,m)}/mes</span>
                       </div>
                     </div>
                   )
@@ -657,7 +657,7 @@ export default function DashboardPage() {
                         <div className="text-slate-400 text-sm">{t.banco} · {t.quien}</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-mono text-lg font-bold text-slate-700">{fmtFull(acumulado,m)}</div>
+                        <div className="font-mono text-lg font-bold text-slate-700">{saldosOcultos ? ocultarValor(fmtFull(acumulado,m)) : fmtFull(acumulado,m)}</div>
                         <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
                       </div>
                     </div>

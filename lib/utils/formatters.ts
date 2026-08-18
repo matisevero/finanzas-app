@@ -35,6 +35,12 @@ export function fmtPct(n: number, decimals = 1): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(decimals)}%`
 }
 
+/** Enmascara los dígitos de un valor ya formateado (para el ojito de "ocultar saldos"),
+ *  conservando símbolo de moneda, signo, puntos y el resto del texto. */
+export function ocultarValor(display: string | number): string {
+  return String(display).replace(/\d/g, '•')
+}
+
 export function fmtDate(dateStr: string, format: 'short' | 'long' | 'month' = 'short'): string {
   const d = new Date(dateStr + 'T00:00:00')
   if (format === 'month') return d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })

@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { usePageHeader } from '@/context/PageHeaderContext'
+import { useAppStore } from '@/store/appStore'
+import { ocultarValor } from '@/lib/utils/formatters'
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 interface StatCardProps {
@@ -10,13 +12,15 @@ interface StatCardProps {
 export function StatCard({ label, value, sub, trend, trendInvert = false, trendLabel = 'vs año anterior', color = '#1A5E9E', icon }: StatCardProps) {
   const up   = trend !== undefined && trend >= 0
   const good = trendInvert ? !up : up
+  const saldosOcultos = useAppStore(s => s.saldosOcultos)
+  const valorMostrado = saldosOcultos ? ocultarValor(value) : value
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 relative overflow-hidden transition-all hover:shadow-card-hover hover:border-slate-300 cursor-default"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
       <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[64px]" style={{ background: color + '10' }} />
       {icon && <div className="text-xl mb-2">{icon}</div>}
       <div className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1">{label}</div>
-      <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{value}</div>
+      <div className="text-slate-900 text-2xl font-bold font-mono leading-tight">{valorMostrado}</div>
       {sub && <div className="text-slate-400 text-xs mt-1">{sub}</div>}
       {trend !== undefined && (
         <div className="flex items-center gap-1 mt-2">
