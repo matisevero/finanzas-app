@@ -57,38 +57,6 @@ function getCatInfo(tipoId: string, categoriasCustom: { id: string; nombre: stri
 }
 
 
-// ─── InlineEditEvento ─────────────────────────────────────────────────────────
-function InlineEditEvento({ ev, descripciones, categoriasCustom, onRefetchCats, onSave, onCancel }: {
-  ev: any; descripciones?: string[]; categoriasCustom: any[]; onRefetchCats: () => void
-  onSave: (id: string, data: any) => Promise<void>; onCancel: () => void
-}) {
-  const [form, setForm] = useState({
-    descripcion: ev.descripcion ?? '',
-    monto: ev.monto != null ? String(ev.monto) : '',
-    dia: String(ev.dia),
-    tipo: ev.tipo,
-  })
-  const [saving, setSaving] = useState(false)
-  const handle = async () => {
-    setSaving(true)
-    await onSave(ev.id, { descripcion: form.descripcion, monto: form.monto ? parseFloat(form.monto) : null, dia: parseInt(form.dia), tipo: form.tipo })
-    setSaving(false)
-  }
-  return (
-    <div className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg flex-wrap">
-      <input type="number" min="1" max="31" value={form.dia} onChange={e => setForm(p => ({ ...p, dia: e.target.value }))} className="input-field py-1 text-xs w-14 text-center" placeholder="Día" />
-      <AutocompleteInput value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} suggestions={descripciones ?? []} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
-      <div className="w-36">
-        <CategoriaSelector bare modulo="eventos" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))}
-          categorias={categoriasCustom} categoriasBase={CATEGORIAS_EVENTO} onCategoriasChange={onRefetchCats} />
-      </div>
-      <MontoInput value={form.monto} onChange={raw => setForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
-      <button onClick={handle} disabled={saving} className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer disabled:opacity-50">{saving ? '...' : '✓'}</button>
-      <button onClick={onCancel} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
-    </div>
-  )
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function DeudasPage() {
   const { añoActivo, monedaPrincipal: m } = useAppStore()
@@ -107,15 +75,16 @@ export default function DeudasPage() {
   const { data: eventos, loading: le, refetch: refEventos } = useEventosMes(calAño, calMes + 1)
   const { data: eventosAño } = useEventosAño(calAño)
   const [expanded, setExpanded] = useState<Record<string,boolean>>({})
-  const [editingEventoId, setEditingEventoId] = useState<string|null>(null)
   const [mostrarPagados, setMostrarPagados] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pagandoCuotaId, setPagandoCuotaId] = useState<string|null>(null)
 
-  // Modal nuevo evento (calendario)
+  // Modal nuevo/editar evento (calendario)
   const [showEvModal, setShowEvModal] = useState(false)
+  const [modalEditEventoId, setModalEditEventoId] = useState<string|null>(null)
   const [evForm, setEvForm] = useState({
-    descripcion: '', tipo: 'egreso', dia: String(HOY_DIA),
+    descripcion: '', tipo: 'egreso',
+    fecha: `${calAño}-${String(calMes + 1).padStart(2, '0')}-${String(HOY_DIA).padStart(2, '0')}`,
     monto: '', moneda: 'ARS' as Moneda, recurrente: false,
     cuotas: '1', gastoFijo: false,
   })
@@ -262,8 +231,16 @@ export default function DeudasPage() {
     refEventos()
   }
 
-  const handleUpdateEvento = async (id: string, data: any) => {
-    await updateEvento(id, data); setEditingEventoId(null); refEventos()
+  const openEditEventoModal = (ev: any) => {
+    setEvForm({
+      descripcion: ev.descripcion ?? '', tipo: ev.tipo,
+      fecha: `${ev.año}-${String(ev.mes).padStart(2, '0')}-${String(ev.dia).padStart(2, '0')}`,
+      monto: ev.monto != null ? String(ev.monto) : '',
+      moneda: (ev.moneda ?? 'ARS') as Moneda, recurrente: !!ev.recurrente,
+      cuotas: '1', gastoFijo: !!ev.gasto_fijo,
+    })
+    setModalEditEventoId(ev.id)
+    setShowEvModal(true)
   }
 
   const handleDeleteEvento = async (id: string) => {
@@ -281,25 +258,43 @@ export default function DeudasPage() {
     refEventos()
   }
 
+  const resetEvForm = () => setEvForm({
+    descripcion: '', tipo: 'egreso',
+    fecha: `${calAño}-${String(calMes + 1).padStart(2, '0')}-${String(HOY_DIA).padStart(2, '0')}`,
+    monto: '', moneda: 'ARS', recurrente: false, cuotas: '1', gastoFijo: false,
+  })
+
   const handleSaveEvento = async () => {
-    if (!evForm.descripcion || !evForm.dia) return
+    if (!evForm.descripcion || !evForm.fecha) return
     setSaving(true)
     try {
-      const cuotas = parseInt(evForm.cuotas) || 1
-      for (let i = 0; i < cuotas; i++) {
-        let mes = calMes + 1 + i
-        let año = calAño
-        while (mes > 12) { mes -= 12; año++ }
-        await createEvento({
-          dia: parseInt(evForm.dia), mes, año,
-          tipo: evForm.tipo as any,
-          descripcion: cuotas > 1 ? `${evForm.descripcion} (${i+1}/${cuotas})` : evForm.descripcion,
+      const [añoBase, mesBase, diaBase] = evForm.fecha.split('-').map(Number)
+
+      if (modalEditEventoId) {
+        await updateEvento(modalEditEventoId, {
+          dia: diaBase, mes: mesBase, año: añoBase,
+          tipo: evForm.tipo as any, descripcion: evForm.descripcion,
           monto: evForm.monto ? parseFloat(evForm.monto) : undefined,
-          moneda: evForm.moneda, recurrente: evForm.recurrente, pagado: false, gasto_fijo: evForm.gastoFijo,
+          moneda: evForm.moneda, recurrente: evForm.recurrente, gasto_fijo: evForm.gastoFijo,
         })
+      } else {
+        const cuotas = parseInt(evForm.cuotas) || 1
+        for (let i = 0; i < cuotas; i++) {
+          let mes = mesBase + i
+          let año = añoBase
+          while (mes > 12) { mes -= 12; año++ }
+          await createEvento({
+            dia: diaBase, mes, año,
+            tipo: evForm.tipo as any,
+            descripcion: cuotas > 1 ? `${evForm.descripcion} (${i+1}/${cuotas})` : evForm.descripcion,
+            monto: evForm.monto ? parseFloat(evForm.monto) : undefined,
+            moneda: evForm.moneda, recurrente: evForm.recurrente, pagado: false, gasto_fijo: evForm.gastoFijo,
+          })
+        }
       }
       setShowEvModal(false)
-      setEvForm({ descripcion: '', tipo: 'egreso', dia: String(HOY_DIA), monto: '', moneda: 'ARS', recurrente: false, cuotas: '1', gastoFijo: false })
+      setModalEditEventoId(null)
+      resetEvForm()
       refEventos()
     } catch(e) { console.error(e) } finally { setSaving(false) }
   }
@@ -413,7 +408,7 @@ export default function DeudasPage() {
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
               {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
             </button>
-            <button className="btn-ghost text-sm hidden md:inline-block" onClick={() => setShowEvModal(true)}>+ Vencimiento</button>
+            <button className="btn-ghost text-sm hidden md:inline-block" onClick={() => { setModalEditEventoId(null); resetEvForm(); setShowEvModal(true) }}>+ Vencimiento</button>
             <button className="btn-primary hidden md:inline-block" onClick={() => { setModalEditDeudaId(null); setMostrarDetallesLP(false); setDeudaForm({ nombre:'', banco:'', total_original:'', pendiente:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }}>+ Deuda largo plazo</button>
           </div>
         } />
@@ -486,7 +481,7 @@ export default function DeudasPage() {
             </div>
 
             {/* + Nuevo vencimiento inline trigger */}
-            <button onClick={() => setShowEvModal(true)}
+            <button onClick={() => { setModalEditEventoId(null); resetEvForm(); setShowEvModal(true) }}
               className="w-full text-left text-xs font-semibold text-red-500 hover:text-red-700 border-none bg-transparent cursor-pointer flex items-center gap-1.5 py-2 mb-2 border-b border-slate-100 transition-colors">
               <span className="text-sm font-bold">+</span> Nuevo vencimiento
             </button>
@@ -496,11 +491,6 @@ export default function DeudasPage() {
             ) : eventosFiltrados.sort((a, b) => a.dia - b.dia).map((ev, rowIdx) => {
               const catInfo = getCatInfo(ev.tipo, categoriasEventoCustom ?? undefined)
               const bg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
-              if (editingEventoId === ev.id) return (
-                <div key={ev.id} className="mb-1">
-                  <InlineEditEvento ev={ev} descripciones={descripcionesEventosQ.data ?? undefined} categoriasCustom={categoriasEventoCustom ?? []} onRefetchCats={refetchCatsEvento} onSave={handleUpdateEvento} onCancel={() => setEditingEventoId(null)} />
-                </div>
-              )
               return (
                 <div key={ev.id} className={`group flex items-center gap-3 px-2 py-2.5 rounded-lg ${bg} ${ev.pagado ? 'opacity-50' : ''}`}>
                   {/* Día badge */}
@@ -522,7 +512,7 @@ export default function DeudasPage() {
                   </div>
                   {/* Actions */}
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                    <button onClick={() => setEditingEventoId(ev.id)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Editar">✎</button>
+                    <button onClick={() => openEditEventoModal(ev)} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Editar">✎</button>
                     <button onClick={() => handleDuplicarEvento(ev)} className="text-slate-400 hover:text-emerald-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Duplicar">⧉</button>
                     <button onClick={() => handleDeleteEvento(ev.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm" title="Eliminar">✕</button>
                   </div>
@@ -697,8 +687,8 @@ export default function DeudasPage() {
         </div>
       </div>
 
-      {/* ── Modal nuevo vencimiento ── */}
-      <Modal open={showEvModal} onClose={() => setShowEvModal(false)} title="Nuevo vencimiento">
+      {/* ── Modal nuevo/editar vencimiento ── */}
+      <Modal open={showEvModal} onClose={() => { setShowEvModal(false); setModalEditEventoId(null) }} title={modalEditEventoId ? 'Editar vencimiento' : 'Nuevo vencimiento'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Descripción</FieldLabel>
             <AutocompleteInput value={evForm.descripcion} onChange={v => setEvForm(p => ({ ...p, descripcion: v }))}
@@ -709,9 +699,8 @@ export default function DeudasPage() {
               <CategoriaSelector modulo="eventos" value={evForm.tipo} onChange={v => setEvForm(p => ({ ...p, tipo: v }))}
                 categorias={categoriasEventoCustom ?? []} categoriasBase={CATEGORIAS_EVENTO} onCategoriasChange={refetchCatsEvento} />
             </div>
-            <div><FieldLabel>Día del mes</FieldLabel>
-              <input type="number" min="1" max="31" value={evForm.dia}
-                onChange={e => setEvForm(p => ({ ...p, dia: e.target.value }))} className="input-field" />
+            <div><FieldLabel>Fecha</FieldLabel>
+              <FechaInput value={evForm.fecha} onChange={iso => setEvForm(p => ({ ...p, fecha: iso }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -726,18 +715,20 @@ export default function DeudasPage() {
               </select>
             </div>
           </div>
-          <div><FieldLabel>Cantidad de cuotas</FieldLabel>
-            <div className="flex items-center gap-3">
-              <input type="number" min="1" max="60" value={evForm.cuotas}
-                onChange={e => setEvForm(p => ({ ...p, cuotas: e.target.value }))}
-                className="input-field w-24" />
-              {parseInt(evForm.cuotas) > 1 && (
-                <span className="text-slate-400 text-xs">
-                  Se crearán {evForm.cuotas} vencimientos mensuales a partir de {MESES[calMes]} {calAño}
-                </span>
-              )}
+          {!modalEditEventoId && (
+            <div><FieldLabel>Cantidad de cuotas</FieldLabel>
+              <div className="flex items-center gap-3">
+                <input type="number" min="1" max="60" value={evForm.cuotas}
+                  onChange={e => setEvForm(p => ({ ...p, cuotas: e.target.value }))}
+                  className="input-field w-24" />
+                {parseInt(evForm.cuotas) > 1 && (
+                  <span className="text-slate-400 text-xs">
+                    Se crearán {evForm.cuotas} vencimientos mensuales a partir de la fecha elegida
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex gap-4">
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={evForm.recurrente} onChange={e => setEvForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
@@ -749,9 +740,9 @@ export default function DeudasPage() {
             </label>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowEvModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={() => { setShowEvModal(false); setModalEditEventoId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSaveEvento} disabled={saving || !evForm.descripcion}
-              className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>
+              className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditEventoId ? 'Guardar cambios' : 'Guardar'}</button>
           </div>
         </div>
       </Modal>
