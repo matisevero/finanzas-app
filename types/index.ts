@@ -5,7 +5,7 @@
 export type Moneda = string
 export type TipoIngreso = string
 export type TipoEgreso = string
-export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa'
+export type TipoEvento = 'ingreso' | 'egreso' | 'tarjeta' | 'casa' | 'servicio' | 'edu' | 'expensa' | 'devolucion'
 // Antes era una lista cerrada ('Mati' | 'Dani' | 'ambos'), igual que Moneda. Ahora las
 // personas se gestionan desde Configuración (ver Persona más abajo) y "ambos" queda como
 // el único valor fijo, sinónimo de "compartido/todos" — no es una fila en `personas`.
@@ -66,6 +66,9 @@ export interface Ingreso {
   quien: Quien
   recurrente: boolean
   etiqueta?: string | null
+  cotizacion?: number | null
+  es_conversion?: boolean
+  conversion_id?: string | null
   created_at: string
 }
 export type IngresoInsert = Omit<Ingreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -84,6 +87,9 @@ export interface Egreso {
   quien: Quien
   recurrente: boolean
   etiqueta?: string | null
+  cotizacion?: number | null
+  es_conversion?: boolean
+  conversion_id?: string | null
   created_at: string
 }
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -178,6 +184,8 @@ export interface EventoCalendario {
   recurrente: boolean
   pagado: boolean
   egreso_id?: string | null
+  ingreso_id?: string | null
+  nota?: string | null
   gasto_fijo?: boolean
   created_at: string
 }
@@ -209,6 +217,7 @@ export interface Ahorro {
   icono: string
   color: string
   ajuste_manual: number
+  cantidad?: number | null
   created_at: string
 }
 export type AhorroInsert = Omit<Ahorro, 'id' | 'user_id' | 'created_at'>
@@ -228,7 +237,7 @@ export interface Proyecto {
 }
 export type ProyectoInsert = Omit<Proyecto, 'id' | 'user_id' | 'created_at'>
 
-export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro'
+export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro' | 'deuda'
 export type EstadoEtiqueta = 'activa' | 'archivada'
 export interface Etiqueta {
   id: string
@@ -237,6 +246,7 @@ export interface Etiqueta {
   tipo: TipoEtiqueta
   proyecto_id?: string | null
   ahorro_id?: string | null
+  deuda_id?: string | null
   color?: string | null
   estado: EstadoEtiqueta
   created_at: string

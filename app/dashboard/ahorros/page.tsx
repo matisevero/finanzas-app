@@ -14,7 +14,7 @@ import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import type { Moneda, Ahorro } from '@/types'
 
 const FORM_INIT = { nombre:'', descripcion:'', monto_objetivo:'', monto_actual:'0', moneda:'USD' as Moneda, fecha_limite:'', icono:'🎯', color:'#1A5E9E' }
-const AHORRO_FORM_INIT = { nombre:'', categoria:'', moneda:'ARS' as Moneda, icono:'💰', color:'#1A5E9E' }
+const AHORRO_FORM_INIT = { nombre:'', categoria:'', moneda:'ARS' as Moneda, icono:'💰', color:'#1A5E9E', cantidad:'' }
 
 export default function AhorrosPage() {
   const [tab, setTab] = useState<'metas'|'general'>('metas')
@@ -46,15 +46,16 @@ export default function AhorrosPage() {
   const openNewAhorro = () => { setAhorroEditId(null); setAhorroForm(AHORRO_FORM_INIT); setShowAhorroModal(true) }
   const openEditAhorro = (a: Ahorro) => {
     setAhorroEditId(a.id)
-    setAhorroForm({ nombre:a.nombre, categoria:a.categoria, moneda:a.moneda as Moneda, icono:a.icono, color:a.color })
+    setAhorroForm({ nombre:a.nombre, categoria:a.categoria, moneda:a.moneda as Moneda, icono:a.icono, color:a.color, cantidad: a.cantidad != null ? String(a.cantidad) : '' })
     setShowAhorroModal(true)
   }
   const handleSaveAhorro = async () => {
     if (!ahorroForm.nombre || !ahorroForm.categoria) return
     setSavingAhorro(true)
     try {
-      if (ahorroEditId) await updateAhorro(ahorroEditId, ahorroForm)
-      else await createAhorro({ ...ahorroForm, ajuste_manual: 0 })
+      const payload = { nombre: ahorroForm.nombre, categoria: ahorroForm.categoria, moneda: ahorroForm.moneda, icono: ahorroForm.icono, color: ahorroForm.color, cantidad: ahorroForm.cantidad ? parseFloat(ahorroForm.cantidad) : null }
+      if (ahorroEditId) await updateAhorro(ahorroEditId, payload)
+      else await createAhorro({ ...payload, ajuste_manual: 0 })
       setShowAhorroModal(false); refetchAhorros()
     } catch(e){ console.error(e) } finally { setSavingAhorro(false) }
   }
@@ -302,7 +303,20 @@ export default function AhorrosPage() {
 
                   <div className="text-3xl font-bold font-mono mb-4" style={{color:a.color}}>{fmt(total, a.moneda as Moneda)}</div>
 
-                  <div className="flex justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
+                  {a.cantidad != null && a.cantidad > 0 && (
+                    <div className="flex justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
+                      <span>Cantidad</span>
+                      <span className="font-mono font-semibold text-slate-700">{a.cantidad}</span>
+                    </div>
+                  )}
+                  {a.cantidad != null && a.cantidad > 0 && (
+                    <div className="flex justify-between text-xs text-slate-500 mt-1.5">
+                      <span>Precio promedio por unidad</span>
+                      <span className="font-mono font-semibold text-slate-700">{fmt(total / a.cantidad, a.moneda as Moneda)}</span>
+                    </div>
+                  )}
+
+                  <div className={`flex justify-between text-xs text-slate-500 ${a.cantidad ? 'mt-1.5' : 'pt-3 border-t border-slate-100'}`}>
                     <span>Automático (ingresos/egresos)</span>
                     <span className="font-mono font-semibold text-slate-700">{fmt(auto, a.moneda as Moneda)}</span>
                   </div>
@@ -401,6 +415,9 @@ export default function AhorrosPage() {
             <select value={ahorroForm.moneda} onChange={e=>setAhorroForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">
               {monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}
             </select>
+          </div>
+          <div><FieldLabel>Cantidad <span className="text-slate-400 font-normal normal-case">(opcional — si esto es una cripto u otro activo con unidades propias, cuántas tenés. Separado del monto invertido en {ahorroForm.moneda})</span></FieldLabel>
+            <input type="number" step="any" value={ahorroForm.cantidad} onChange={e=>setAhorroForm(p=>({...p,cantidad:e.target.value}))} placeholder="Ej: 0.0234" className="input-field font-mono" />
           </div>
           <div><FieldLabel>Ícono</FieldLabel>
             <div className="flex flex-wrap gap-2 mt-1">

@@ -3,8 +3,10 @@ import type { Ingreso, Egreso, Deuda, EventoCalendario } from '@/types'
 // ─── Resumen anual ────────────────────────────────────────────────────────────
 export function calcularResumen(ingresos: Ingreso[], egresos: Egreso[], deudas: Deuda[]) {
   return {
-    totalIngresos:    ingresos.reduce((s, i) => s + i.monto, 0),
-    totalEgresos:     egresos.reduce((s, e) => s + e.monto, 0),
+    // Los movimientos marcados como "es_conversion" (compra/venta de moneda) no son
+    // ingresos/egresos reales — es la misma plata cambiando de moneda, no gastada ni ganada.
+    totalIngresos:    ingresos.filter(i => !i.es_conversion).reduce((s, i) => s + i.monto, 0),
+    totalEgresos:     egresos.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0),
     totalDeuda:       deudas.filter(d => d.activa).reduce((s, d) => s + d.pendiente, 0),
     cuotasMensuales:  deudas.filter(d => d.activa).reduce((s, d) => s + d.cuota_mensual, 0),
   }

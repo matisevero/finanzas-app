@@ -4,8 +4,8 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso } from '@/lib/queries'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas, useAllIngresos } from '@/hooks'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateIngreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -28,6 +28,7 @@ const FORM_INIT = {
   categoria: 'tarjeta', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
   moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
+  cotizacion: '', esConversion: false, conversionId: null as string | null, vincularIngresoId: null as string | null,
 }
 
 type SortKey = 'fecha' | 'monto' | 'categoria' | 'descripcion' | 'quien'
@@ -165,7 +166,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '' })
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', cotizacion: '', esConversion: false, conversionId: null, vincularIngresoId: null })
   }
 
   const handleEnterNueva = async () => {
@@ -327,6 +328,8 @@ export default function EgresosPage() {
   const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('egresos')
+  const { data: allIngresosParaVincular } = useAllIngresos()
+  const [buscarVincularConv, setBuscarVincularConv] = useState('')
   const frecuenciaCats = useFrecuenciaCategorias('egresos')
   const descripcionesQ = useDescripcionesDistintas('egresos')
   const etiquetasQ = useEtiquetasDistintas()
@@ -368,6 +371,11 @@ export default function EgresosPage() {
   const data = useMemo(() =>
     esMensual ? (egresos ?? []).filter(e => e.mes === mesActivo) : (egresos ?? [])
   , [egresos, esMensual, mesActivo])
+
+  // Para widgets/gráficos: los movimientos de conversión de moneda no son egresos reales.
+  // La tabla de abajo (filtered, más abajo) sigue mostrando todo, para poder gestionarlos.
+  const egresosSinConv = useMemo(() => (egresos ?? []).filter(e => !e.es_conversion), [egresos])
+  const dataSinConv    = useMemo(() => data.filter(e => !e.es_conversion), [data])
 
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -423,10 +431,10 @@ export default function EgresosPage() {
     const mes = i + 1
     const point: Record<string, number|string> = { month }
     tiposBase.forEach(({ key }) => {
-      point[key] = (egresos ?? []).filter(x => x.mes === mes && x.categoria === key).reduce((s, x) => s + x.monto, 0)
+      point[key] = egresosSinConv.filter(x => x.mes === mes && x.categoria === key).reduce((s, x) => s + x.monto, 0)
     })
     return point
-  }), [egresos, tiposBase])
+  }), [egresosSinConv, tiposBase])
 
   const chartDataMensual = useMemo(() => {
     const diasEnMes = new Date(añoActivo, mesActivo, 0).getDate()
@@ -434,26 +442,26 @@ export default function EgresosPage() {
       const dia = i + 1
       const point: Record<string, number|string> = { month: String(dia) }
       tiposBase.forEach(({ key }) => {
-        point[key] = data.filter(x => Number(x.fecha.slice(8,10)) === dia && x.categoria === key).reduce((s, x) => s + x.monto, 0)
+        point[key] = dataSinConv.filter(x => Number(x.fecha.slice(8,10)) === dia && x.categoria === key).reduce((s, x) => s + x.monto, 0)
       })
       return point
     })
-  }, [data, tiposBase, añoActivo, mesActivo])
+  }, [dataSinConv, tiposBase, añoActivo, mesActivo])
 
   const chartData = esMensual ? chartDataMensual : chartDataAnual
 
   const compData = useMemo(() => {
-    const src = esMensual ? data : (compMes === -1 ? (egresos ?? []) : (egresos ?? []).filter(x => x.mes === compMes + 1))
+    const src = esMensual ? dataSinConv : (compMes === -1 ? egresosSinConv : egresosSinConv.filter(x => x.mes === compMes + 1))
     return allTipos
       .map(t => ({ name: t.label, color: t.color, value: src.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value)
-  }, [egresos, data, esMensual, compMes, allTipos])
+  }, [egresosSinConv, dataSinConv, esMensual, compMes, allTipos])
 
   const topAño = useMemo(() =>
     allTipos
-      .map(t => ({ key: t.key, label: t.label, color: t.color, value: data.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
+      .map(t => ({ key: t.key, label: t.label, color: t.color, value: dataSinConv.filter(e => e.categoria === t.key).reduce((s, e) => s + e.monto, 0) }))
       .filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 8)
-  , [data, allTipos])
+  , [dataSinConv, allTipos])
   const totalTopAño = useMemo(() => topAño.reduce((s, d) => s + d.value, 0), [topAño])
 
   const filtered = useMemo(() => {
@@ -474,24 +482,24 @@ export default function EgresosPage() {
   const visibleRows = filtered.slice(0, page * PAGE_SIZE)
   const hasMore     = filtered.length > visibleRows.length
 
-  const total         = data.reduce((s, e) => s + e.monto, 0)
+  const total         = dataSinConv.reduce((s, e) => s + e.monto, 0)
   // Tendencia real segun la vista activa (mes activo vs mes anterior, o año activo vs año anterior) —
   // antes esto se calculaba siempre contra el mes calendario real, ignorando la vista/mes elegidos.
-  const { trend: trendMes, label: trendMesLabel } = calcularTendencia(egresos ?? [], vistaTipo, mesActivo, añoActivo)
-  const totalTarjetas = data.filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
-  const totalUSD      = data.filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
-  const mesesConDatos = new Set((egresos ?? []).map(e => e.mes)).size
-  const promedio      = mesesConDatos > 0 ? Math.round((egresos??[]).reduce((s,e)=>s+e.monto,0) / mesesConDatos) : 0
+  const { trend: trendMes, label: trendMesLabel } = calcularTendencia(egresosSinConv, vistaTipo, mesActivo, añoActivo)
+  const totalTarjetas = dataSinConv.filter(e => e.categoria === 'tarjeta').reduce((s, e) => s + e.monto, 0)
+  const totalUSD      = dataSinConv.filter(e => e.categoria === 'usd').reduce((s, e) => s + e.monto, 0)
+  const mesesConDatos = new Set(egresosSinConv.map(e => e.mes)).size
+  const promedio      = mesesConDatos > 0 ? Math.round(egresosSinConv.reduce((s,e)=>s+e.monto,0) / mesesConDatos) : 0
 
   // Tendencia real para el resto de los widgets — mismo criterio que "Total" (mes/año activo vs período anterior).
-  const { trend: trendTarjetas, label: trendTarjetasLabel } = calcularTendencia((egresos ?? []).filter(e => e.categoria === 'tarjeta'), vistaTipo, mesActivo, añoActivo)
-  const { trend: trendUSD, label: trendUSDLabel } = calcularTendencia((egresos ?? []).filter(e => e.categoria === 'usd'), vistaTipo, mesActivo, añoActivo)
-  const { trend: trendCantidad, label: trendCantidadLabel } = calcularTendencia((egresos ?? []).map(e => ({ monto: 1, mes: e.mes, año: e.año })), vistaTipo, mesActivo, añoActivo)
-  const trendTop = topAño[0] ? calcularTendencia((egresos ?? []).filter(e => e.categoria === topAño[0].key), vistaTipo, mesActivo, añoActivo) : { trend: undefined, label: '' }
+  const { trend: trendTarjetas, label: trendTarjetasLabel } = calcularTendencia(egresosSinConv.filter(e => e.categoria === 'tarjeta'), vistaTipo, mesActivo, añoActivo)
+  const { trend: trendUSD, label: trendUSDLabel } = calcularTendencia(egresosSinConv.filter(e => e.categoria === 'usd'), vistaTipo, mesActivo, añoActivo)
+  const { trend: trendCantidad, label: trendCantidadLabel } = calcularTendencia(egresosSinConv.map(e => ({ monto: 1, mes: e.mes, año: e.año })), vistaTipo, mesActivo, añoActivo)
+  const trendTop = topAño[0] ? calcularTendencia(egresosSinConv.filter(e => e.categoria === topAño[0].key), vistaTipo, mesActivo, añoActivo) : { trend: undefined, label: '' }
   // "Promedio mensual" es un promedio histórico, no del período activo — su comparativa natural
   // es año activo vs año anterior (promedio mensual de cada año completo).
   const promedioPorAño = (año: number) => {
-    const regs = (egresos ?? []).filter(e => e.año === año)
+    const regs = egresosSinConv.filter(e => e.año === año)
     const meses = new Set(regs.map(e => e.mes)).size
     return meses > 0 ? regs.reduce((s, e) => s + e.monto, 0) / meses : 0
   }
@@ -520,10 +528,20 @@ export default function EgresosPage() {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
+      const conversionId = form.esConversion ? (form.conversionId ?? crypto.randomUUID()) : null
+      const payload = {
+        categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda,
+        fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null,
+        cotizacion: form.cotizacion ? parseFloat(form.cotizacion) : null,
+        es_conversion: form.esConversion, conversion_id: conversionId,
+      }
       if (modalEditId) {
-        await updateEgreso(modalEditId, { categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
+        await updateEgreso(modalEditId, payload)
       } else {
-        await createEgreso({ categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda, fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null })
+        await createEgreso(payload)
+      }
+      if (form.esConversion && form.conversionId && form.vincularIngresoId) {
+        await updateIngreso(form.vincularIngresoId, { es_conversion: true, conversion_id: conversionId })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -534,6 +552,8 @@ export default function EgresosPage() {
       categoria: egreso.categoria, monto: String(egreso.monto), descripcion: egreso.descripcion,
       fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
       etiqueta: egreso.etiqueta ?? '',
+      cotizacion: egreso.cotizacion != null ? String(egreso.cotizacion) : '',
+      esConversion: !!egreso.es_conversion, conversionId: egreso.conversion_id ?? null, vincularIngresoId: null,
     })
     setModalEditId(egreso.id)
     setShowModal(true)
@@ -637,7 +657,7 @@ export default function EgresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
@@ -708,7 +728,7 @@ export default function EgresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.es_conversion && <span className="ml-2 text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       { const cq = colorQuien(egreso.quien); return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cq.bg} ${cq.text}`}>{egreso.quien}</span></td> }
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">{saldosOcultos ? ocultarValor('-'+fmtFull(egreso.monto, egreso.moneda as Moneda)) : '-'+fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
@@ -756,6 +776,7 @@ export default function EgresosPage() {
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorQuien(egreso.quien).bg} ${colorQuien(egreso.quien).text}`}>{egreso.quien}</span>
+                          {egreso.es_conversion && <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}
                           {egreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}
                         </div>
                         {/* Columna 4: monto */}
@@ -909,6 +930,11 @@ export default function EgresosPage() {
               </select>
             </div>
           </div>
+          {form.moneda !== 'ARS' && (
+            <div><FieldLabel>Cotización <span className="text-slate-400 font-normal normal-case">(opcional — cuántos ARS vale 1 {form.moneda} ese día)</span></FieldLabel>
+              <MontoInput value={form.cotizacion} onChange={raw => setForm(p => ({ ...p, cotizacion: raw }))} placeholder="0" />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Fecha</FieldLabel><FechaInput value={form.fecha} onChange={iso => setForm(p => ({ ...p, fecha: iso }))} /></div>
             <div><FieldLabel>Quién</FieldLabel>
@@ -925,6 +951,41 @@ export default function EgresosPage() {
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
             <span className="text-slate-600 text-sm">Egreso recurrente</span>
           </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={form.esConversion} onChange={e => setForm(p => ({ ...p, esConversion: e.target.checked, conversionId: e.target.checked ? p.conversionId : null, vincularIngresoId: null }))} className="w-4 h-4 accent-purple-700 mt-0.5" />
+            <span className="text-slate-600 text-sm">Es conversión de moneda <span className="text-slate-400">(compra/venta de {form.moneda !== 'ARS' ? form.moneda : 'otra moneda'} — no cuenta como egreso real en los totales)</span></span>
+          </label>
+          {form.esConversion && (() => {
+            const yaVinculado = form.vincularIngresoId ? (allIngresosParaVincular ?? []).find(i => i.id === form.vincularIngresoId) : null
+            if (yaVinculado) return (
+              <div className="flex items-center justify-between px-3 py-2 bg-purple-50 rounded-lg text-xs">
+                <span className="text-purple-700">Vinculado con: <strong>{yaVinculado.descripcion}</strong> ({fmtFull(yaVinculado.monto, yaVinculado.moneda as Moneda)})</span>
+                <button onClick={() => setForm(p => ({ ...p, vincularIngresoId: null }))} className="text-purple-400 hover:text-purple-700 border-none bg-transparent cursor-pointer">✕</button>
+              </div>
+            )
+            const candidatos = (allIngresosParaVincular ?? [])
+              .filter(i => i.es_conversion && !i.conversion_id)
+              .filter(i => !buscarVincularConv || i.descripcion.toLowerCase().includes(buscarVincularConv.toLowerCase()))
+              .sort((a, b) => b.fecha.localeCompare(a.fecha))
+              .slice(0, 10)
+            return (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <div className="text-xs text-slate-500 mb-2">¿Con qué ingreso corresponde esta conversión? <span className="text-slate-400">(opcional)</span></div>
+                <input value={buscarVincularConv} onChange={e => setBuscarVincularConv(e.target.value)} placeholder="Buscar ingreso..." className="input-field text-xs py-1.5 mb-2" />
+                <div className="max-h-40 overflow-auto flex flex-col gap-1">
+                  {candidatos.length === 0 ? (
+                    <div className="text-center text-slate-400 text-xs py-3">Sin ingresos de conversión pendientes de vincular.</div>
+                  ) : candidatos.map(i => (
+                    <button key={i.id} onClick={() => setForm(p => ({ ...p, vincularIngresoId: i.id }))}
+                      className="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-purple-300 hover:bg-purple-50 cursor-pointer text-left bg-white">
+                      <span className="text-xs text-slate-700 truncate">{i.descripcion} · {fmtDate(i.fecha)}</span>
+                      <span className="font-mono text-xs font-bold text-emerald-600 flex-shrink-0 ml-2">{fmtFull(i.monto, i.moneda as Moneda)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
           <div className="flex gap-3 pt-2">
             {modalEditId && (
               <button onClick={() => { handleDelete(modalEditId); setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }}

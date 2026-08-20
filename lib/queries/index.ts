@@ -270,12 +270,18 @@ export async function createDeuda(form: DeudaInsert): Promise<Deuda> {
   const userId = await uid()
   const { data, error } = await sb().from('deudas').insert({ ...form, user_id: userId }).select().single()
   if (error) throw error
+  const { error: eErr } = await sb().from('etiquetas').insert({ user_id: userId, nombre: data.nombre, tipo: 'deuda', deuda_id: data.id })
+  if (eErr) throw eErr
   return data
 }
 
 export async function updateDeuda(id: string, updates: Partial<DeudaInsert>): Promise<Deuda> {
   const { data, error } = await sb().from('deudas').update(updates).eq('id', id).select().single()
   if (error) throw error
+  if (updates.nombre) {
+    const { error: eErr } = await sb().from('etiquetas').update({ nombre: updates.nombre }).eq('deuda_id', id)
+    if (eErr) throw eErr
+  }
   return data
 }
 
@@ -411,6 +417,40 @@ export async function pagarEvento(ev: {
     .update({ pagado: true, egreso_id: egreso.id })
     .eq('id', ev.id)
   if (errEv) throw errEv
+}
+
+// Marcar una Devolución como recibida: crea el Ingreso correspondiente (a diferencia de un
+// vencimiento normal, que crea un Egreso) y lo linkea vía ingreso_id.
+export async function recibirDevolucion(ev: {
+  id: string; descripcion: string; monto: number; moneda: string;
+  dia: number; mes: number; año: number;
+}): Promise<void> {
+  const userId = await uid()
+  const fecha = `${ev.año}-${String(ev.mes).padStart(2,'0')}-${String(ev.dia).padStart(2,'0')}`
+  const { data: ingreso, error: errIng } = await sb().from('ingresos')
+    .insert({
+      user_id: userId, año: ev.año, mes: ev.mes,
+      tipo: 'otro', descripcion: ev.descripcion, monto: ev.monto, moneda: ev.moneda,
+      fecha, quien: 'ambos', recurrente: false,
+    })
+    .select('id')
+    .single()
+  if (errIng) throw errIng
+  const { error: errEv } = await sb().from('eventos_calendario')
+    .update({ pagado: true, ingreso_id: ingreso.id })
+    .eq('id', ev.id)
+  if (errEv) throw errEv
+}
+
+// Desmarcar una Devolución + eliminar el ingreso vinculado
+export async function descartarDevolucion(id: string, ingresoId: string | null | undefined): Promise<void> {
+  if (ingresoId) {
+    await sb().from('ingresos').delete().eq('id', ingresoId)
+  }
+  const { error } = await sb().from('eventos_calendario')
+    .update({ pagado: false, ingreso_id: null })
+    .eq('id', id)
+  if (error) throw error
 }
 
 // Desmarcar evento como pagado + eliminar egreso vinculado
@@ -598,6 +638,22 @@ export async function setEtiquetasDeEgreso(egresoId: string, etiquetaIds: string
   if (delErr) throw delErr
   if (etiquetaIds.length === 0) return
   const { error } = await sb().from('egreso_etiquetas').insert(etiquetaIds.map(etiqueta_id => ({ egreso_id: egresoId, etiqueta_id })))
+  if (error) throw error
+}
+
+// Agrega UNA etiqueta a un movimiento sin tocar las que ya tenga (a diferencia de
+// setEtiquetasDeIngreso/Egreso, que reemplazan todo el set). Usado para vincular un
+// ingreso/egreso YA existente a una Deuda LP, por ejemplo.
+export async function agregarEtiquetaAIngreso(ingresoId: string, etiquetaId: string) {
+  const { error } = await sb().from('ingreso_etiquetas').upsert({ ingreso_id: ingresoId, etiqueta_id: etiquetaId })
+  if (error) throw error
+}
+export async function agregarEtiquetaAEgreso(egresoId: string, etiquetaId: string) {
+  const { error } = await sb().from('egreso_etiquetas').upsert({ egreso_id: egresoId, etiqueta_id: etiquetaId })
+  if (error) throw error
+}
+export async function quitarEtiquetaDeEgreso(egresoId: string, etiquetaId: string) {
+  const { error } = await sb().from('egreso_etiquetas').delete().eq('egreso_id', egresoId).eq('etiqueta_id', etiquetaId)
   if (error) throw error
 }
 

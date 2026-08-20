@@ -2,16 +2,16 @@
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas, useCategoriasCustom, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
-import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento, createEgreso } from '@/lib/queries'
-import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
+import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas, useCategoriasCustom, useAhorros, useAllIngresos, useAllEgresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas } from '@/hooks'
+import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento, createEgreso, updateEgreso, deleteEgreso, recibirDevolucion, descartarDevolucion, agregarEtiquetaAEgreso } from '@/lib/queries'
+import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
 import AutocompleteInput from '@/components/ui/AutocompleteInput'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
-import type { Moneda } from '@/types'
+import type { Moneda, Egreso, Quien } from '@/types'
 
 const HOY     = new Date()
 const HOY_DIA = HOY.getDate()
@@ -19,12 +19,13 @@ const HOY_MES = HOY.getMonth()
 const HOY_AÑO = HOY.getFullYear()
 
 const CATEGORIAS_EVENTO = [
-  { key: 'tarjeta',  label: 'Tarjeta',    color: '#1A5E9E', icon: '' },
-  { key: 'casa',     label: 'Casa',        color: '#40B046', icon: '' },
-  { key: 'servicio', label: 'Servicios',   color: '#E8A020', icon: '' },
-  { key: 'expensa',  label: 'Expensas',    color: '#5B3FA6', icon: '' },
-  { key: 'edu',      label: 'Educación',   color: '#D4537E', icon: '' },
-  { key: 'egreso',   label: 'Otro egreso', color: '#888780', icon: '' },
+  { key: 'tarjeta',    label: 'Tarjeta',     color: '#1A5E9E', icon: '' },
+  { key: 'casa',       label: 'Casa',        color: '#40B046', icon: '' },
+  { key: 'servicio',   label: 'Servicios',   color: '#E8A020', icon: '' },
+  { key: 'expensa',    label: 'Expensas',    color: '#5B3FA6', icon: '' },
+  { key: 'edu',        label: 'Educación',   color: '#D4537E', icon: '' },
+  { key: 'devolucion', label: 'Devolución',  color: '#1D9E75', icon: '' },
+  { key: 'egreso',     label: 'Otro egreso', color: '#888780', icon: '' },
 ]
 
 // ─── Widgets personalizables ────────────────────────────────────────────────
@@ -59,7 +60,8 @@ function getCatInfo(tipoId: string, categoriasCustom: { id: string; nombre: stri
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function DeudasPage() {
-  const { añoActivo, monedaPrincipal: m } = useAppStore()
+  const { añoActivo, monedaPrincipal: m, saldosOcultos } = useAppStore()
+  const oc = (s: string) => saldosOcultos ? ocultarValor(s) : s
   const monedasPalette = useMonedasDisponibles()
   const { data: deudas, loading: ld, refetch: refDeudas } = useDeudas()
   const descripcionesEventosQ = useDescripcionesDistintas('eventos_calendario')
@@ -67,6 +69,14 @@ export default function DeudasPage() {
   const { data: categoriasEventoCustom, refetch: refetchCatsEvento } = useCategoriasCustom('eventos')
   const { data: ingresos } = useIngresos()
   const { data: ahorros } = useAhorros()
+  const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: egresoEtiquetas, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
+  const { data: ingresoEtiquetas } = useIngresoEtiquetas()
+  const [detalleDeudaId, setDetalleDeudaId] = useState<string | null>(null)
+  const [vinculando, setVinculando] = useState(false)
+  const [buscarVincular, setBuscarVincular] = useState('')
+  const [editandoMovId, setEditandoMovId] = useState<string | null>(null)
+  const [movForm, setMovForm] = useState({ descripcion: '', monto: '', fecha: '' })
   const { data: allIngresos } = useAllIngresos()
   const { data: allEgresos } = useAllEgresos()
   const [tab, setTab] = useState<'calendario'|'largo'>('calendario')
@@ -86,7 +96,7 @@ export default function DeudasPage() {
     descripcion: '', tipo: 'egreso',
     fecha: `${calAño}-${String(calMes + 1).padStart(2, '0')}-${String(HOY_DIA).padStart(2, '0')}`,
     monto: '', moneda: 'ARS' as Moneda, recurrente: false,
-    cuotas: '1', gastoFijo: false,
+    cuotas: '1', gastoFijo: false, nota: '',
   })
 
   // Modal nueva deuda largo plazo
@@ -122,12 +132,13 @@ export default function DeudasPage() {
   const totalPendiente = (deudas ?? []).reduce((s, d) => s + d.pendiente, 0)
   const cuotaMensual   = (deudas ?? []).reduce((s, d) => s + d.cuota_mensual, 0)
   // "Vence este mes" / "Restante": lo que todavía está sin pagar (para la lista y el resumen operativo).
-  const venceMes       = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && !e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const venceMes       = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && e.tipo !== 'devolucion' && !e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
   const pagadoMes      = (eventos ?? []).filter(e => e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
-  const pendientes     = (eventos ?? []).filter(e => !e.pagado && e.tipo !== 'ingreso').length
+  const pendientes     = (eventos ?? []).filter(e => !e.pagado && e.tipo !== 'ingreso' && e.tipo !== 'devolucion').length
+  const devolucionesPendientes = (eventos ?? []).filter(e => e.tipo === 'devolucion' && !e.pagado && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
   // Total comprometido del mes (pagado + pendiente): esto es lo que se usa para el % sobre ingresos,
   // porque pagar una deuda no hace que deje de haber implicado ese % de tus ingresos ese mes.
-  const totalComprometidoMes = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
+  const totalComprometidoMes = (eventos ?? []).filter(e => e.tipo !== 'ingreso' && e.tipo !== 'devolucion' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
 
   // Gráfico anual: vencimientos reales por mes vs ingresos del mes (siempre pagado+pendiente, por la misma razón)
   const chartAnual = useMemo(() => {
@@ -135,7 +146,7 @@ export default function DeudasPage() {
     return Array.from({length: 12}, (_, i) => {
       const mesNum = i + 1
       const ingMes = (ingresos ?? []).filter(ing => ing.mes === mesNum && ing.año === calAño).reduce((s, ing) => s + ing.monto, 0)
-      const deudaMes = (eventosAño ?? []).filter(ev => ev.mes === mesNum && ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
+      const deudaMes = (eventosAño ?? []).filter(ev => ev.mes === mesNum && ev.tipo !== 'ingreso' && ev.tipo !== 'devolucion' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
       const pct = ingMes > 0 ? Math.round(deudaMes / ingMes * 100) : 0
       return { month: LABELS[i], ingresos: ingMes, deudas: deudaMes, pct }
     })
@@ -147,7 +158,7 @@ export default function DeudasPage() {
 
   // mes anterior para trends — derivado de eventosAño (ya cargado). En enero, al no haber diciembre
   // del año en curso dentro de este mismo fetch, el trend simplemente no se muestra ese mes.
-  const eventosMesAnt = (eventosAño ?? []).filter(e => e.mes === calMes && e.tipo !== 'ingreso' && e.monto)
+  const eventosMesAnt = (eventosAño ?? []).filter(e => e.mes === calMes && e.tipo !== 'ingreso' && e.tipo !== 'devolucion' && e.monto)
   const pagadoMesAnt        = eventosMesAnt.filter(e => e.pagado).reduce((s, e) => s + (e.monto ?? 0), 0)
   const totalComprometidoAnt = eventosMesAnt.reduce((s, e) => s + (e.monto ?? 0), 0)
   const venceMesAnt         = eventosMesAnt.filter(e => !e.pagado).reduce((s, e) => s + (e.monto ?? 0), 0)
@@ -222,11 +233,14 @@ export default function DeudasPage() {
     if (!ev.pagado) {
       if (!ev.monto) {
         await import('@/lib/queries').then(q => q.togglePagado(ev.id, true))
+      } else if (ev.tipo === 'devolucion') {
+        await recibirDevolucion({ id: ev.id, descripcion: ev.descripcion, monto: ev.monto, moneda: ev.moneda ?? 'ARS', dia: ev.dia, mes: ev.mes, año: ev.año })
       } else {
         await pagarEvento({ id: ev.id, descripcion: ev.descripcion, monto: ev.monto, moneda: ev.moneda ?? 'ARS', dia: ev.dia, mes: ev.mes, año: ev.año, tipo: ev.tipo })
       }
     } else {
-      await despagarEvento(ev.id, ev.egreso_id)
+      if (ev.tipo === 'devolucion') await descartarDevolucion(ev.id, ev.ingreso_id)
+      else await despagarEvento(ev.id, ev.egreso_id)
     }
     refEventos()
   }
@@ -237,7 +251,7 @@ export default function DeudasPage() {
       fecha: `${ev.año}-${String(ev.mes).padStart(2, '0')}-${String(ev.dia).padStart(2, '0')}`,
       monto: ev.monto != null ? String(ev.monto) : '',
       moneda: (ev.moneda ?? 'ARS') as Moneda, recurrente: !!ev.recurrente,
-      cuotas: '1', gastoFijo: !!ev.gasto_fijo,
+      cuotas: '1', gastoFijo: !!ev.gasto_fijo, nota: ev.nota ?? '',
     })
     setModalEditEventoId(ev.id)
     setShowEvModal(true)
@@ -253,7 +267,7 @@ export default function DeudasPage() {
       dia: ev.dia, mes: ev.mes, año: ev.año,
       tipo: ev.tipo, descripcion: ev.descripcion,
       monto: ev.monto, moneda: ev.moneda ?? 'ARS',
-      recurrente: false, pagado: false,
+      recurrente: false, pagado: false, nota: ev.nota ?? null,
     })
     refEventos()
   }
@@ -261,7 +275,7 @@ export default function DeudasPage() {
   const resetEvForm = () => setEvForm({
     descripcion: '', tipo: 'egreso',
     fecha: `${calAño}-${String(calMes + 1).padStart(2, '0')}-${String(HOY_DIA).padStart(2, '0')}`,
-    monto: '', moneda: 'ARS', recurrente: false, cuotas: '1', gastoFijo: false,
+    monto: '', moneda: 'ARS', recurrente: false, cuotas: '1', gastoFijo: false, nota: '',
   })
 
   const handleSaveEvento = async () => {
@@ -276,7 +290,24 @@ export default function DeudasPage() {
           tipo: evForm.tipo as any, descripcion: evForm.descripcion,
           monto: evForm.monto ? parseFloat(evForm.monto) : undefined,
           moneda: evForm.moneda, recurrente: evForm.recurrente, gasto_fijo: evForm.gastoFijo,
+          nota: evForm.nota || null,
         })
+      } else if (evForm.recurrente) {
+        // Genera este mes + los próximos 11 (mismo día, mismo tipo). El primero usa el monto
+        // cargado (si lo hay); los siguientes arrancan sin monto para completarlos mes a mes.
+        const MESES_A_GENERAR = 12
+        for (let i = 0; i < MESES_A_GENERAR; i++) {
+          let mes = mesBase + i
+          let año = añoBase
+          while (mes > 12) { mes -= 12; año++ }
+          await createEvento({
+            dia: diaBase, mes, año,
+            tipo: evForm.tipo as any, descripcion: evForm.descripcion,
+            monto: i === 0 && evForm.monto ? parseFloat(evForm.monto) : undefined,
+            moneda: evForm.moneda, recurrente: true, pagado: false, gasto_fijo: evForm.gastoFijo,
+            nota: i === 0 ? (evForm.nota || null) : null,
+          })
+        }
       } else {
         const cuotas = parseInt(evForm.cuotas) || 1
         for (let i = 0; i < cuotas; i++) {
@@ -288,7 +319,8 @@ export default function DeudasPage() {
             tipo: evForm.tipo as any,
             descripcion: cuotas > 1 ? `${evForm.descripcion} (${i+1}/${cuotas})` : evForm.descripcion,
             monto: evForm.monto ? parseFloat(evForm.monto) : undefined,
-            moneda: evForm.moneda, recurrente: evForm.recurrente, pagado: false, gasto_fijo: evForm.gastoFijo,
+            moneda: evForm.moneda, recurrente: false, pagado: false, gasto_fijo: evForm.gastoFijo,
+            nota: evForm.nota || null,
           })
         }
       }
@@ -362,10 +394,26 @@ export default function DeudasPage() {
 
   const abrirPagoLP = (d: any) => {
     setShowPagoModal(d)
+    setVinculando(false)
+    setBuscarVincular('')
     setPagoForm({
       monto: String(d.cuota_mensual > 0 ? d.cuota_mensual : d.pendiente),
       descripcion: `Cuota ${d.cuota_actual}/${d.cuota_total} — ${d.nombre}`,
     })
+  }
+
+  // Cada Deuda LP tiene su propia etiqueta 1 a 1 (se crea sola al crear la deuda) — mismo
+  // mecanismo que ya usan Proyecto y Ahorro. Es lo que permite ver sus "movimientos" vinculados.
+  const etiquetaDeDeuda = (d: any) => (etiquetas ?? []).find(e => e.tipo === 'deuda' && e.deuda_id === d.id)
+
+  const movimientosDeDeuda = (d: any): (Egreso & { _tipo: 'egreso' })[] => {
+    const et = etiquetaDeDeuda(d)
+    if (!et) return []
+    const ids = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id))
+    return (allEgresos ?? [])
+      .filter(e => ids.has(e.id))
+      .map(e => ({ ...e, _tipo: 'egreso' as const }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))
   }
 
   // Descuenta del saldo, avanza la cuota, y genera el Egreso correspondiente — mismo criterio
@@ -376,18 +424,69 @@ export default function DeudasPage() {
     if (!d || !monto || monto <= 0) return
     setPagandoCuotaId(d.id)
     try {
-      await createEgreso({
+      const egreso = await createEgreso({
         categoria: 'otro', descripcion: pagoForm.descripcion || `Pago — ${d.nombre}`,
         monto, moneda: d.moneda as Moneda, fecha: new Date().toISOString().split('T')[0],
         quien: 'ambos', recurrente: false, etiqueta: d.etiqueta ?? null,
       })
+      const et = etiquetaDeDeuda(d)
+      if (et) await agregarEtiquetaAEgreso(egreso.id, et.id)
       await updateDeuda(d.id, {
         pendiente: Math.max(0, d.pendiente - monto),
         cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
       })
       setShowPagoModal(null)
-      refDeudas()
+      refDeudas(); refetchEgresoEtiquetas()
     } catch (e) { console.error(e) } finally { setPagandoCuotaId(null) }
+  }
+
+  // Vincula un egreso YA existente (ej. la pata en USD de una compra de dólares) como pago de
+  // esta deuda, en vez de crear uno nuevo — mismo criterio de descuento de saldo que un pago nuevo.
+  const handleVincularExistente = async (d: any, egreso: Egreso) => {
+    const et = etiquetaDeDeuda(d)
+    if (!et) return
+    setPagandoCuotaId(d.id)
+    try {
+      await agregarEtiquetaAEgreso(egreso.id, et.id)
+      await updateDeuda(d.id, {
+        pendiente: Math.max(0, d.pendiente - egreso.monto),
+        cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
+      })
+      setShowPagoModal(null)
+      refDeudas(); refetchEgresoEtiquetas()
+    } catch (e) { console.error(e) } finally { setPagandoCuotaId(null) }
+  }
+
+  // Duplicar un movimiento vinculado: crea otro pago igual (hoy) y descuenta saldo de nuevo.
+  const handleDuplicarMovimiento = async (d: any, mov: Egreso) => {
+    const et = etiquetaDeDeuda(d)
+    if (!et) return
+    const egreso = await createEgreso({
+      categoria: mov.categoria, descripcion: mov.descripcion, monto: mov.monto,
+      moneda: mov.moneda as Moneda, fecha: new Date().toISOString().split('T')[0],
+      quien: mov.quien as Quien, recurrente: false, etiqueta: mov.etiqueta ?? null,
+    })
+    await agregarEtiquetaAEgreso(egreso.id, et.id)
+    await updateDeuda(d.id, { pendiente: Math.max(0, d.pendiente - mov.monto) })
+    refDeudas(); refetchEgresoEtiquetas()
+  }
+
+  // Eliminar un movimiento vinculado: borra el egreso y le devuelve ese monto al saldo pendiente.
+  const handleEliminarMovimiento = async (d: any, mov: Egreso) => {
+    if (!confirm(`¿Eliminar este pago de ${fmtFull(mov.monto, mov.moneda as Moneda)}? Vuelve a sumarse al saldo pendiente.`)) return
+    await deleteEgreso(mov.id)
+    await updateDeuda(d.id, { pendiente: d.pendiente + mov.monto })
+    refDeudas(); refetchEgresoEtiquetas()
+  }
+
+  // Editar monto/descripción/fecha de un movimiento vinculado: ajusta el pendiente por la
+  // diferencia entre el monto viejo y el nuevo.
+  const handleGuardarEdicionMovimiento = async (d: any, mov: Egreso, nuevo: { descripcion: string; monto: number; fecha: string }) => {
+    await updateEgreso(mov.id, { descripcion: nuevo.descripcion, monto: nuevo.monto, fecha: nuevo.fecha })
+    const delta = nuevo.monto - mov.monto
+    if (delta !== 0) await updateDeuda(d.id, { pendiente: Math.max(0, d.pendiente - delta) })
+    setEditandoMovId(null)
+    refDeudas(); refetchEgresoEtiquetas()
   }
 
   const navMes = (dir: number) => {
@@ -448,18 +547,25 @@ export default function DeudasPage() {
           <div className="flex items-center gap-3 md:gap-5 bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm flex-wrap w-full sm:w-auto">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Total a pagar:</span>
-              <span className="font-mono font-bold text-red-600">{fmt(venceMes, m)}</span>
+              <span className="font-mono font-bold text-red-600">{oc(fmt(venceMes, m))}</span>
             </div>
             <div className="w-px h-4 bg-slate-200" />
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Pagado:</span>
-              <span className="font-mono font-bold text-emerald-600">{fmt(pagadoMes, m)}</span>
+              <span className="font-mono font-bold text-emerald-600">{oc(fmt(pagadoMes, m))}</span>
             </div>
             <div className="w-px h-4 bg-slate-200" />
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Restante:</span>
-              <span className="font-mono font-bold text-red-600">{fmt(Math.max(0, venceMes - pagadoMes), m)}</span>
+              <span className="font-mono font-bold text-red-600">{oc(fmt(Math.max(0, venceMes - pagadoMes), m))}</span>
             </div>
+            {devolucionesPendientes > 0 && <>
+              <div className="w-px h-4 bg-slate-200" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">Te deben:</span>
+                <span className="font-mono font-bold text-emerald-600">{oc('+'+fmt(devolucionesPendientes, m))}</span>
+              </div>
+            </>}
           </div>
         )}
       </div>
@@ -501,14 +607,15 @@ export default function DeudasPage() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-medium text-slate-700 truncate ${ev.pagado ? 'line-through' : ''}`}>{ev.descripcion}</div>
+                    {ev.nota && <div className="text-slate-400 text-xs truncate">{ev.nota}</div>}
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: catInfo.color + '15', color: catInfo.color }}>{catInfo.label}</span>
                       {ev.gasto_fijo && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-50 text-purple-700">Gasto fijo</span>}
                     </div>
                   </div>
                   {/* Monto */}
-                  <div className="text-sm font-mono font-bold text-red-600 flex-shrink-0">
-                    {ev.monto != null ? fmtFull(ev.monto, 'ARS') : '—'}
+                  <div className={`text-sm font-mono font-bold flex-shrink-0 ${ev.tipo === 'devolucion' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {ev.monto != null ? oc((ev.tipo === 'devolucion' ? '+' : '') + fmtFull(ev.monto, 'ARS')) : '—'}
                   </div>
                   {/* Actions */}
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
@@ -577,7 +684,88 @@ export default function DeudasPage() {
       {/* ── Largo plazo ── */}
       {tab === 'largo' && (
         <div>
-          {(deudas ?? []).length === 0 ? (
+          {detalleDeudaId ? (() => {
+            const d = (deudas ?? []).find(x => x.id === detalleDeudaId)
+            if (!d) return (
+              <button onClick={() => setDetalleDeudaId(null)} className="text-sm text-blue-700 underline border-none bg-transparent cursor-pointer">‹ Volver</button>
+            )
+            const movs = movimientosDeDeuda(d)
+            const pagado = d.total_original - d.pendiente
+            const pct    = Math.round((pagado / d.total_original) * 100)
+            return (
+              <div>
+                <button onClick={() => setDetalleDeudaId(null)} className="text-sm text-slate-500 hover:text-slate-700 mb-4 border-none bg-transparent cursor-pointer flex items-center gap-1">‹ Volver a Largo plazo</button>
+
+                <Card className="mb-5">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <div className="text-xl font-semibold text-slate-900">{d.nombre}</div>
+                      {d.banco && <div className="text-slate-400 text-sm mt-0.5">{d.banco}</div>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => openEditDeudaModal(d)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:border-slate-300 cursor-pointer bg-white">Editar</button>
+                      {d.pendiente > 0 && (
+                        <button onClick={() => abrirPagoLP(d)} className="text-xs px-3 py-1.5 rounded-lg border-none text-white cursor-pointer" style={{ background: d.color }}>Registrar pago</button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">Pendiente</div>
+                      <div className="text-lg font-bold font-mono" style={{ color: d.color }}>{oc(fmtFull(d.pendiente, d.moneda as Moneda))}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">Pagado</div>
+                      <div className="text-lg font-bold font-mono text-emerald-600">{oc(fmtFull(pagado, d.moneda as Moneda))}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">Cuotas</div>
+                      <div className="text-lg font-bold font-mono text-slate-700">{d.cuota_actual} / {d.cuota_total}</div>
+                    </div>
+                  </div>
+                  <ProgressBar value={pct} color={d.color} height={6} />
+                  {d.cuota_mensual > 0 && d.pendiente > 0 && (
+                    <div className="text-xs text-slate-400 mt-2">
+                      Estimado: {Math.ceil(d.pendiente / d.cuota_mensual)} mes{Math.ceil(d.pendiente / d.cuota_mensual) === 1 ? '' : 'es'} más para terminar de pagar
+                    </div>
+                  )}
+                </Card>
+
+                <Card>
+                  <div className="text-slate-900 font-semibold text-[15px] mb-4">Movimientos ({movs.length})</div>
+                  {movs.length === 0 ? (
+                    <div className="text-center text-slate-400 text-sm py-6">Todavía no hay pagos registrados para esta deuda.</div>
+                  ) : movs.map(mov => (
+                    editandoMovId === mov.id ? (
+                      <div key={mov.id} className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg mb-1 flex-wrap">
+                        <input value={movForm.descripcion} onChange={e => setMovForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
+                        <MontoInput value={movForm.monto} onChange={raw => setMovForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
+                        <FechaInput value={movForm.fecha} onChange={iso => setMovForm(p => ({ ...p, fecha: iso }))} className="w-28" />
+                        <button onClick={() => handleGuardarEdicionMovimiento(d, mov, { descripcion: movForm.descripcion, monto: parseFloat(movForm.monto) || 0, fecha: movForm.fecha })}
+                          className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer">✓</button>
+                        <button onClick={() => setEditandoMovId(null)} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
+                      </div>
+                    ) : (
+                      <div key={mov.id} className="group flex items-center justify-between py-2.5 border-b border-slate-50 last:border-0">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-700 truncate">{mov.descripcion}</div>
+                          <div className="text-xs text-slate-400">{fmtDate(mov.fecha)}</div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="font-mono font-bold text-sm text-red-600">{oc('-'+fmtFull(mov.monto, mov.moneda as Moneda))}</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => { setEditandoMovId(mov.id); setMovForm({ descripcion: mov.descripcion, monto: String(mov.monto), fecha: mov.fecha }) }} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Editar">✎</button>
+                            <button onClick={() => handleDuplicarMovimiento(d, mov)} className="text-slate-400 hover:text-emerald-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Duplicar">⧉</button>
+                            <button onClick={() => handleEliminarMovimiento(d, mov)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm" title="Eliminar">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </Card>
+              </div>
+            )
+          })() : (deudas ?? []).length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <div className="text-4xl mb-3">📋</div>
               <div className="font-semibold text-slate-600 mb-1">Sin deudas de largo plazo</div>
@@ -602,7 +790,7 @@ export default function DeudasPage() {
                       </div>
                       <div className="flex items-start gap-2 flex-shrink-0 ml-3">
                         <div className="text-right">
-                          <div className="text-lg font-bold font-mono" style={{ color: d.color }}>{fmtFull(d.pendiente, d.moneda as Moneda)}</div>
+                          <div className="text-lg font-bold font-mono" style={{ color: d.color }}>{oc(fmtFull(d.pendiente, d.moneda as Moneda))}</div>
                           <div className="text-slate-400 text-xs">pendiente</div>
                         </div>
                         <div className="flex gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity select-none">
@@ -613,7 +801,7 @@ export default function DeudasPage() {
                     </div>
                     <ProgressBar value={pct} color={d.color} height={6} />
                     <div className="flex justify-between mt-1.5 mb-3">
-                      <span className="text-slate-400 text-xs">Pagado: {fmtFull(pagado, d.moneda as Moneda)}</span>
+                      <span className="text-slate-400 text-xs">Pagado: {oc(fmtFull(pagado, d.moneda as Moneda))}</span>
                       <span className="text-xs font-bold" style={{ color: d.color }}>{pct}%</span>
                     </div>
                     {/* Cuotas como cuadraditos */}
@@ -630,7 +818,7 @@ export default function DeudasPage() {
                           ))}
                           {d.cuota_total > 24 && <span className="text-[9px] text-slate-400">+{d.cuota_total - 24}</span>}
                         </div>
-                        <div className="text-xs text-slate-400 mt-1">{d.cuota_actual} de {d.cuota_total} · {fmtFull(d.cuota_mensual, d.moneda as Moneda)}/mes</div>
+                        <div className="text-xs text-slate-400 mt-1">{d.cuota_actual} de {d.cuota_total} · {oc(fmtFull(d.cuota_mensual, d.moneda as Moneda))}/mes</div>
                         {d.cuota_mensual > 0 && d.pendiente > 0 && (
                           <div className="text-[11px] text-slate-400 mt-0.5">
                             Estimado: {Math.ceil(d.pendiente / d.cuota_mensual)} mes{Math.ceil(d.pendiente / d.cuota_mensual) === 1 ? '' : 'es'} más para terminar de pagar
@@ -639,10 +827,22 @@ export default function DeudasPage() {
                       </div>
                     </div>
                     {d.pendiente > 0 && (
-                      <button onClick={() => abrirPagoLP(d)}
-                        className="w-full mt-3 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all"
-                        style={{ borderColor: d.color, color: d.color, background: d.color + '10' }}>
-                        Registrar pago
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => abrirPagoLP(d)}
+                          className="flex-1 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all"
+                          style={{ borderColor: d.color, color: d.color, background: d.color + '10' }}>
+                          Registrar pago
+                        </button>
+                        <button onClick={() => setDetalleDeudaId(d.id)}
+                          className="flex-1 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:border-slate-300 cursor-pointer transition-all bg-white">
+                          Más info
+                        </button>
+                      </div>
+                    )}
+                    {d.pendiente <= 0 && (
+                      <button onClick={() => setDetalleDeudaId(d.id)}
+                        className="w-full mt-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-500 hover:border-slate-300 cursor-pointer transition-all bg-white">
+                        Más info
                       </button>
                     )}
                   </Card>
@@ -673,8 +873,8 @@ export default function DeudasPage() {
                     return (
                       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, padding: '8px 10px' }}>
                         <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
-                        <div>Vencimientos: {fmt(row.deudas, m)}</div>
-                        <div>Ingresos: {fmt(row.ingresos, m)}</div>
+                        <div>Vencimientos: {oc(fmt(row.deudas, m))}</div>
+                        <div>Ingresos: {oc(fmt(row.ingresos, m))}</div>
                         <div style={{ fontWeight: 700, color: '#F54927' }}>{row.pct}% de tus ingresos</div>
                       </div>
                     )
@@ -715,7 +915,11 @@ export default function DeudasPage() {
               </select>
             </div>
           </div>
-          {!modalEditEventoId && (
+          <div><FieldLabel>Nota <span className="text-slate-400 font-normal normal-case">(opcional — detalle puntual, no se usa para autocompletar como la Descripción)</span></FieldLabel>
+            <input value={evForm.nota} onChange={e => setEvForm(p => ({ ...p, nota: e.target.value }))}
+              placeholder="Ej: Reintegro de Juan por el viaje" className="input-field" />
+          </div>
+          {!modalEditEventoId && !evForm.recurrente && (
             <div><FieldLabel>Cantidad de cuotas</FieldLabel>
               <div className="flex items-center gap-3">
                 <input type="number" min="1" max="60" value={evForm.cuotas}
@@ -739,6 +943,11 @@ export default function DeudasPage() {
               <span className="text-slate-600 text-sm">Gasto fijo</span>
             </label>
           </div>
+          {!modalEditEventoId && evForm.recurrente && (
+            <p className="text-slate-400 text-xs -mt-2">
+              Se van a crear los próximos 12 meses (mismo día). {evForm.monto ? 'Este mes con el monto cargado, ' : ''}los demás sin monto, para que los completes mes a mes cuando sepas cuánto es.
+            </p>
+          )}
           <div className="flex gap-3 pt-2">
             <button onClick={() => { setShowEvModal(false); setModalEditEventoId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSaveEvento} disabled={saving || !evForm.descripcion}
@@ -837,21 +1046,72 @@ export default function DeudasPage() {
       <Modal open={!!showPagoModal} onClose={() => setShowPagoModal(null)} title={`Registrar pago — ${showPagoModal?.nombre ?? ''}`}>
         <div className="flex flex-col gap-4">
           <p className="text-slate-400 text-xs -mt-1">
-            Pendiente actual: {showPagoModal ? fmtFull(showPagoModal.pendiente, showPagoModal.moneda as Moneda) : ''}
+            Pendiente actual: {showPagoModal ? oc(fmtFull(showPagoModal.pendiente, showPagoModal.moneda as Moneda)) : ''}
           </p>
-          <div><FieldLabel>Monto pagado</FieldLabel>
-            <MontoInput value={pagoForm.monto} onChange={raw => setPagoForm(p => ({ ...p, monto: raw }))} placeholder="0" />
+
+          <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+            <button onClick={() => setVinculando(false)}
+              className={`flex-1 py-1.5 rounded-md text-xs font-semibold border-none cursor-pointer transition-all ${!vinculando ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-400'}`}>
+              Nuevo pago
+            </button>
+            <button onClick={() => setVinculando(true)}
+              className={`flex-1 py-1.5 rounded-md text-xs font-semibold border-none cursor-pointer transition-all ${vinculando ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-400'}`}>
+              Vincular existente
+            </button>
           </div>
-          <div><FieldLabel>Descripción</FieldLabel>
-            <input value={pagoForm.descripcion} onChange={e => setPagoForm(p => ({ ...p, descripcion: e.target.value }))}
-              placeholder="Ej: Cuota 3/12 — Crédito auto" className="input-field" />
-          </div>
-          <p className="text-slate-400 text-xs">Esto va a crear un Egreso por este monto y va a descontarlo del saldo pendiente.</p>
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowPagoModal(null)} className="btn-ghost flex-1">Cancelar</button>
-            <button onClick={handlePagarCuotaLP} disabled={pagandoCuotaId === showPagoModal?.id || !pagoForm.monto}
-              className="btn-primary flex-1 disabled:opacity-50">{pagandoCuotaId === showPagoModal?.id ? 'Registrando...' : 'Registrar pago'}</button>
-          </div>
+
+          {!vinculando ? (
+            <>
+              <div><FieldLabel>Monto pagado</FieldLabel>
+                <MontoInput value={pagoForm.monto} onChange={raw => setPagoForm(p => ({ ...p, monto: raw }))} placeholder="0" />
+              </div>
+              <div><FieldLabel>Descripción</FieldLabel>
+                <input value={pagoForm.descripcion} onChange={e => setPagoForm(p => ({ ...p, descripcion: e.target.value }))}
+                  placeholder="Ej: Cuota 3/12 — Crédito auto" className="input-field" />
+              </div>
+              <p className="text-slate-400 text-xs">Esto va a crear un Egreso por este monto y va a descontarlo del saldo pendiente.</p>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowPagoModal(null)} className="btn-ghost flex-1">Cancelar</button>
+                <button onClick={handlePagarCuotaLP} disabled={pagandoCuotaId === showPagoModal?.id || !pagoForm.monto}
+                  className="btn-primary flex-1 disabled:opacity-50">{pagandoCuotaId === showPagoModal?.id ? 'Registrando...' : 'Registrar pago'}</button>
+              </div>
+            </>
+          ) : (() => {
+            const d = showPagoModal
+            const et = d ? etiquetaDeDeuda(d) : null
+            const yaVinculados = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et?.id).map(r => r.egreso_id))
+            const candidatos = (allEgresos ?? [])
+              .filter(e => d && e.moneda === d.moneda && !yaVinculados.has(e.id))
+              .filter(e => !buscarVincular || e.descripcion.toLowerCase().includes(buscarVincular.toLowerCase()))
+              .sort((a, b) => b.fecha.localeCompare(a.fecha))
+              .slice(0, 30)
+            return (
+              <>
+                <p className="text-slate-400 text-xs -mt-2">
+                  Solo se muestran egresos en {d?.moneda} (la misma moneda de esta deuda) — así el descuento del saldo pendiente es directo, sin conversión.
+                </p>
+                <input value={buscarVincular} onChange={e => setBuscarVincular(e.target.value)}
+                  placeholder="Buscar por descripción..." className="input-field" />
+                <div className="max-h-64 overflow-auto flex flex-col gap-1">
+                  {candidatos.length === 0 ? (
+                    <div className="text-center text-slate-400 text-sm py-6">
+                      Sin egresos en {d?.moneda} para vincular todavía.
+                    </div>
+                  ) : candidatos.map(e => (
+                    <button key={e.id} onClick={() => d && handleVincularExistente(d, e)} disabled={pagandoCuotaId === d?.id}
+                      className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer text-left bg-white disabled:opacity-50">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-700 truncate">{e.descripcion}</div>
+                        <div className="text-xs text-slate-400">{fmtDate(e.fecha)}</div>
+                      </div>
+                      <span className="font-mono font-bold text-sm text-red-600 flex-shrink-0 ml-3">{oc(fmtFull(e.monto, e.moneda as Moneda))}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setShowPagoModal(null)} className="btn-ghost">Cancelar</button>
+              </>
+            )
+          })()}
         </div>
       </Modal>
     </div>
