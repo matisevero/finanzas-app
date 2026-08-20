@@ -5,7 +5,7 @@ import type { ValueType, NameType } from 'recharts/types/component/DefaultToolti
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas, useAllEgresos } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateEgreso } from '@/lib/queries'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateEgreso, createEgreso } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -374,8 +374,8 @@ export default function IngresosPage() {
 
   // Para widgets/gráficos: los movimientos de conversión de moneda no son ingresos reales.
   // La tabla de abajo (filtered, más abajo) sigue mostrando todo, para poder gestionarlos.
-  const ingresosSinConv = useMemo(() => (ingresos ?? []).filter(i => !i.es_conversion), [ingresos])
-  const dataSinConv     = useMemo(() => data.filter(i => !i.es_conversion), [data])
+  const ingresosSinConv = useMemo(() => (ingresos ?? []).filter(i => !(i.es_conversion && i.moneda !== 'ARS')), [ingresos])
+  const dataSinConv     = useMemo(() => data.filter(i => !(i.es_conversion && i.moneda !== 'ARS')), [data])
 
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -387,6 +387,12 @@ export default function IngresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
+  const [showConvertirModal, setShowConvertirModal] = useState(false)
+  const [convertirForm, setConvertirForm] = useState({
+    deMonto: '', deMoneda: 'ARS' as Moneda, aMonto: '', aMoneda: 'USD' as Moneda,
+    fecha: new Date().toISOString().split('T')[0], descripcion: '',
+  })
+  const [convirtiendo, setConvirtiendo] = useState(false)
   const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_ING)
   const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditId, setModalEditId] = useState<string|null>(null)
@@ -530,6 +536,40 @@ export default function IngresosPage() {
     setWidgets(next)
   }
 
+  // Cotización implícita: valor en ARS de 1 unidad de la moneda extranjera involucrada.
+  const cotizacionImplicita = (() => {
+    const de = parseFloat(convertirForm.deMonto) || 0
+    const a  = parseFloat(convertirForm.aMonto) || 0
+    if (!de || !a) return null
+    if (convertirForm.deMoneda === 'ARS' && convertirForm.aMoneda !== 'ARS') return de / a
+    if (convertirForm.aMoneda === 'ARS' && convertirForm.deMoneda !== 'ARS') return a / de
+    return null
+  })()
+
+  const handleConvertir = async () => {
+    const de = parseFloat(convertirForm.deMonto)
+    const a  = parseFloat(convertirForm.aMonto)
+    if (!de || !a || !convertirForm.fecha) return
+    setConvirtiendo(true)
+    try {
+      const conversionId = crypto.randomUUID()
+      const desc = convertirForm.descripcion || `Conversión ${convertirForm.deMoneda} → ${convertirForm.aMoneda}`
+      await createEgreso({
+        categoria: 'otro', descripcion: desc, monto: de, moneda: convertirForm.deMoneda,
+        fecha: convertirForm.fecha, quien: 'ambos', recurrente: false, etiqueta: null,
+        cotizacion: cotizacionImplicita, es_conversion: true, conversion_id: conversionId,
+      })
+      await createIngreso({
+        tipo: 'otro', descripcion: desc, monto: a, moneda: convertirForm.aMoneda,
+        fecha: convertirForm.fecha, quien: 'ambos', recurrente: false, etiqueta: null,
+        cotizacion: cotizacionImplicita, es_conversion: true, conversion_id: conversionId,
+      })
+      setShowConvertirModal(false)
+      setConvertirForm({ deMonto: '', deMoneda: 'ARS', aMonto: '', aMoneda: 'USD', fecha: new Date().toISOString().split('T')[0], descripcion: '' })
+      refetch()
+    } catch (e) { console.error(e) } finally { setConvirtiendo(false) }
+  }
+
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
     setSaving(true)
@@ -625,6 +665,7 @@ export default function IngresosPage() {
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
               {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
             </button>
+            <button className="text-xs px-3 py-1.5 rounded-lg border border-purple-200 text-purple-600 hover:border-purple-400 bg-white cursor-pointer hidden md:inline-block" onClick={() => setShowConvertirModal(true)}>⇄ Convertir moneda</button>
             <button className="btn-primary hidden md:inline-block" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>
           </div>
         } />
@@ -665,7 +706,7 @@ export default function IngresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(i => !i.es_conversion).reduce((s, i) => s + i.monto, 0), m)) : fmt(filtered.filter(i => !i.es_conversion).reduce((s, i) => s + i.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(i => !(i.es_conversion && i.moneda !== 'ARS')).reduce((s, i) => s + i.monto, 0), m)) : fmt(filtered.filter(i => !(i.es_conversion && i.moneda !== 'ARS')).reduce((s, i) => s + i.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
@@ -1004,6 +1045,59 @@ export default function IngresosPage() {
             )}
             <button onClick={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditId ? 'Guardar cambios' : 'Guardar'}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Modal Convertir moneda: crea Egreso + Ingreso vinculados en un paso ── */}
+      <Modal open={showConvertirModal} onClose={() => setShowConvertirModal(false)} title="Convertir moneda">
+        <div className="flex flex-col gap-3">
+          <p className="text-slate-400 text-xs -mt-1">Crea un Egreso y un Ingreso vinculados en un solo paso. La pata en ARS cuenta normal en tus totales; la otra queda para Ahorros.</p>
+
+          <div className="bg-red-50 rounded-xl p-3.5">
+            <div className="text-[10.5px] font-bold text-red-600 uppercase tracking-wider mb-2">Vendés / gastás</div>
+            <div className="flex items-center gap-2">
+              <input type="number" value={convertirForm.deMonto} onChange={e => setConvertirForm(p => ({ ...p, deMonto: e.target.value }))}
+                placeholder="0" className="flex-1 bg-transparent border-none outline-none font-mono text-xl font-bold text-slate-900" />
+              <select value={convertirForm.deMoneda} onChange={e => setConvertirForm(p => ({ ...p, deMoneda: e.target.value as Moneda }))}
+                className="border border-red-200 rounded-lg bg-white text-xs font-bold text-red-600 px-2 py-1.5">
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-center -my-1">
+            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-sm">↓</div>
+          </div>
+
+          <div className="bg-emerald-50 rounded-xl p-3.5">
+            <div className="text-[10.5px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Recibís</div>
+            <div className="flex items-center gap-2">
+              <input type="number" value={convertirForm.aMonto} onChange={e => setConvertirForm(p => ({ ...p, aMonto: e.target.value }))}
+                placeholder="0" className="flex-1 bg-transparent border-none outline-none font-mono text-xl font-bold text-slate-900" />
+              <select value={convertirForm.aMoneda} onChange={e => setConvertirForm(p => ({ ...p, aMoneda: e.target.value as Moneda }))}
+                className="border border-emerald-200 rounded-lg bg-white text-xs font-bold text-emerald-700 px-2 py-1.5">
+                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="text-center text-xs text-slate-500">
+            {cotizacionImplicita ? <>Cotización implícita: <strong className="text-slate-900">{fmt(cotizacionImplicita, 'ARS' as Moneda)}</strong></> : 'Completá los dos montos para ver la cotización'}
+          </div>
+
+          <div><FieldLabel>Descripción <span className="text-slate-400 font-normal normal-case">(opcional)</span></FieldLabel>
+            <input value={convertirForm.descripcion} onChange={e => setConvertirForm(p => ({ ...p, descripcion: e.target.value }))}
+              placeholder={`Conversión ${convertirForm.deMoneda} → ${convertirForm.aMoneda}`} className="input-field" />
+          </div>
+          <div><FieldLabel>Fecha</FieldLabel>
+            <FechaInput value={convertirForm.fecha} onChange={iso => setConvertirForm(p => ({ ...p, fecha: iso }))} />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setShowConvertirModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={handleConvertir} disabled={convirtiendo || !convertirForm.deMonto || !convertirForm.aMonto}
+              className="btn-primary flex-1 disabled:opacity-50">{convirtiendo ? 'Creando...' : 'Crear conversión'}</button>
           </div>
         </div>
       </Modal>

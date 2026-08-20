@@ -2,11 +2,13 @@ import type { Ingreso, Egreso, Deuda, EventoCalendario } from '@/types'
 
 // ─── Resumen anual ────────────────────────────────────────────────────────────
 export function calcularResumen(ingresos: Ingreso[], egresos: Egreso[], deudas: Deuda[]) {
+  // De una conversión de moneda, solo se excluye la pata que NO es ARS (esa es la que
+  // representa "ahorro" y ya se refleja en Ahorros vía la categoría) — la pata en ARS sí
+  // cuenta normal, porque es plata real que salió/entró de tu pool de gasto del mes.
+  const esAhorroDeConversion = (m: { es_conversion?: boolean; moneda: string }) => m.es_conversion && m.moneda !== 'ARS'
   return {
-    // Los movimientos marcados como "es_conversion" (compra/venta de moneda) no son
-    // ingresos/egresos reales — es la misma plata cambiando de moneda, no gastada ni ganada.
-    totalIngresos:    ingresos.filter(i => !i.es_conversion).reduce((s, i) => s + i.monto, 0),
-    totalEgresos:     egresos.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0),
+    totalIngresos:    ingresos.filter(i => !esAhorroDeConversion(i)).reduce((s, i) => s + i.monto, 0),
+    totalEgresos:     egresos.filter(e => !esAhorroDeConversion(e)).reduce((s, e) => s + e.monto, 0),
     totalDeuda:       deudas.filter(d => d.activa).reduce((s, d) => s + d.pendiente, 0),
     cuotasMensuales:  deudas.filter(d => d.activa).reduce((s, d) => s + d.cuota_mensual, 0),
   }

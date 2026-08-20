@@ -1,13 +1,14 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useAppStore } from '@/store/appStore'
+import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { createClient } from '@/lib/supabase/client'
-import { useCategoriasCustom, usePersonas } from '@/hooks'
+import { useCategoriasCustom, usePersonas, useAllIngresos, useAllEgresos } from '@/hooks'
 import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Moneda, CategoriaCustom, Persona } from '@/types'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
+import { fmtDate } from '@/lib/utils/formatters'
 import { useRouter } from 'next/navigation'
 
 
@@ -77,6 +78,18 @@ export default function ConfiguracionPage() {
   const router = useRouter()
   const sb = createClient()
   const { monedaPrincipal, monedasAhorro, monedasCripto, monedasPalette, setMonedaPrincipal, setMonedasAhorro, setMonedasCripto, setMonedasPalette, añoActivo, setAñoActivo } = useAppStore()
+  const monedasDisponibles = useMonedasDisponibles()
+  const { data: allIngresosCotiz } = useAllIngresos()
+  const { data: allEgresosCotiz } = useAllEgresos()
+
+  // Historial de cotizaciones: derivado de las transacciones reales (Ingresos/Egresos con
+  // moneda != ARS que tengan el campo Cotización cargado) — no es un dato nuevo a mantener,
+  // se completa solo a medida que cargás movimientos.
+  const historialCotizaciones = (() => {
+    const deIngresos = (allIngresosCotiz ?? []).filter(i => i.moneda !== 'ARS' && i.cotizacion != null).map(i => ({ fecha: i.fecha, moneda: i.moneda, valor: i.cotizacion as number, origen: i.descripcion }))
+    const deEgresos   = (allEgresosCotiz ?? []).filter(e => e.moneda !== 'ARS' && e.cotizacion != null).map(e => ({ fecha: e.fecha, moneda: e.moneda, valor: e.cotizacion as number, origen: e.descripcion }))
+    return [...deIngresos, ...deEgresos].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  })()
 
   const [email, setEmail]     = useState('')
   const [nombre, setNombre]   = useState('')
@@ -613,6 +626,24 @@ export default function ConfiguracionPage() {
         <Card>
           <div className="text-slate-900 font-semibold text-[15px] mb-4">Sesión</div>
           <button onClick={logout} className="btn-danger">Cerrar sesión →</button>
+        </Card>
+
+        {/* COTIZACIONES — historial derivado de las transacciones reales, no un dato a cargar aparte */}
+        <Card className="md:col-span-2">
+          <div className="text-slate-900 font-semibold text-[15px] mb-1">Historial de cotizaciones</div>
+          <div className="text-slate-400 text-xs mb-4">Se completa solo con la Cotización que cargues en cada Ingreso/Egreso en moneda distinta a ARS — no hace falta cargarlo acá aparte.</div>
+          {historialCotizaciones.length === 0 ? (
+            <div className="text-center text-slate-400 text-sm py-4">Todavía no cargaste ninguna Cotización en tus movimientos. Aparece como campo opcional al elegir una moneda distinta a ARS en Ingresos o Egresos.</div>
+          ) : (
+            <div className="flex flex-col gap-1 max-h-56 overflow-auto">
+              {historialCotizaciones.map((c, i) => (
+                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50">
+                  <span className="text-sm text-slate-600">{fmtDate(c.fecha)} <span className="text-slate-400">·</span> <span className="font-semibold">{c.moneda}</span> <span className="text-slate-400 text-xs">({c.origen})</span></span>
+                  <span className="font-mono text-sm font-bold text-slate-900">${c.valor.toLocaleString('es-AR')}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         {/* CATEGORÍAS */}

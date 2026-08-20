@@ -374,8 +374,8 @@ export default function EgresosPage() {
 
   // Para widgets/gráficos: los movimientos de conversión de moneda no son egresos reales.
   // La tabla de abajo (filtered, más abajo) sigue mostrando todo, para poder gestionarlos.
-  const egresosSinConv = useMemo(() => (egresos ?? []).filter(e => !e.es_conversion), [egresos])
-  const dataSinConv    = useMemo(() => data.filter(e => !e.es_conversion), [data])
+  const egresosSinConv = useMemo(() => (egresos ?? []).filter(e => !(e.es_conversion && e.moneda !== 'ARS')), [egresos])
+  const dataSinConv    = useMemo(() => data.filter(e => !(e.es_conversion && e.moneda !== 'ARS')), [data])
 
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -657,7 +657,7 @@ export default function EgresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.filter(e => !e.es_conversion).reduce((s, e) => s + e.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(e => !(e.es_conversion && e.moneda !== 'ARS')).reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.filter(e => !(e.es_conversion && e.moneda !== 'ARS')).reduce((s, e) => s + e.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
