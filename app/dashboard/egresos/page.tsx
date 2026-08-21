@@ -4,8 +4,8 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas, useAllIngresos } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateIngreso } from '@/lib/queries'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -28,7 +28,7 @@ const FORM_INIT = {
   categoria: 'tarjeta', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
   moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
-  cotizacion: '', esConversion: false, conversionId: null as string | null, vincularIngresoId: null as string | null,
+  cotizacion: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'categoria' | 'descripcion' | 'quien'
@@ -166,7 +166,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', cotizacion: '', esConversion: false, conversionId: null, vincularIngresoId: null })
+    await onSave({ categoria: r.categoria || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', cotizacion: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -328,8 +328,6 @@ export default function EgresosPage() {
   const esMensual = vistaTipo === 'mensual'
   const { data: egresos, loading, refetch } = useEgresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('egresos')
-  const { data: allIngresosParaVincular } = useAllIngresos()
-  const [buscarVincularConv, setBuscarVincularConv] = useState('')
   const frecuenciaCats = useFrecuenciaCategorias('egresos')
   const descripcionesQ = useDescripcionesDistintas('egresos')
   const etiquetasQ = useEtiquetasDistintas()
@@ -374,8 +372,8 @@ export default function EgresosPage() {
 
   // Para widgets/gráficos: los movimientos de conversión de moneda no son egresos reales.
   // La tabla de abajo (filtered, más abajo) sigue mostrando todo, para poder gestionarlos.
-  const egresosSinConv = useMemo(() => (egresos ?? []).filter(e => !(e.es_conversion && e.moneda !== 'ARS')), [egresos])
-  const dataSinConv    = useMemo(() => data.filter(e => !(e.es_conversion && e.moneda !== 'ARS')), [data])
+  const egresosSinConv = egresos ?? []
+  const dataSinConv    = data
 
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -528,20 +526,15 @@ export default function EgresosPage() {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
-      const conversionId = form.esConversion ? (form.conversionId ?? crypto.randomUUID()) : null
       const payload = {
         categoria: form.categoria, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda,
         fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null,
         cotizacion: form.cotizacion ? parseFloat(form.cotizacion) : null,
-        es_conversion: form.esConversion, conversion_id: conversionId,
       }
       if (modalEditId) {
         await updateEgreso(modalEditId, payload)
       } else {
         await createEgreso(payload)
-      }
-      if (form.esConversion && form.conversionId && form.vincularIngresoId) {
-        await updateIngreso(form.vincularIngresoId, { es_conversion: true, conversion_id: conversionId })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -553,7 +546,6 @@ export default function EgresosPage() {
       fecha: egreso.fecha, moneda: egreso.moneda as Moneda, quien: egreso.quien, recurrente: egreso.recurrente,
       etiqueta: egreso.etiqueta ?? '',
       cotizacion: egreso.cotizacion != null ? String(egreso.cotizacion) : '',
-      esConversion: !!egreso.es_conversion, conversionId: egreso.conversion_id ?? null, vincularIngresoId: null,
     })
     setModalEditId(egreso.id)
     setShowModal(true)
@@ -657,7 +649,7 @@ export default function EgresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(e => !(e.es_conversion && e.moneda !== 'ARS')).reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.filter(e => !(e.es_conversion && e.moneda !== 'ARS')).reduce((s, e) => s + e.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.reduce((s, e) => s + e.monto, 0), m)) : fmt(filtered.reduce((s, e) => s + e.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
@@ -728,7 +720,7 @@ export default function EgresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(egreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.es_conversion && <span className="ml-2 text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(egreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{egreso.descripcion || cfg.label}</span>{egreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeEgreso(egreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'categoria':   return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       { const cq = colorQuien(egreso.quien); return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cq.bg} ${cq.text}`}>{egreso.quien}</span></td> }
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-red-600 font-mono font-bold">{saldosOcultos ? ocultarValor('-'+fmtFull(egreso.monto, egreso.moneda as Moneda)) : '-'+fmtFull(egreso.monto, egreso.moneda as Moneda)}</span></td>
@@ -776,8 +768,7 @@ export default function EgresosPage() {
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorQuien(egreso.quien).bg} ${colorQuien(egreso.quien).text}`}>{egreso.quien}</span>
-                          {egreso.es_conversion && <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}
-                          {egreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}
+                                                    {egreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{egreso.etiqueta}</span>}
                         </div>
                         {/* Columna 4: monto */}
                         <div className="text-red-600 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">{saldosOcultos ? ocultarValor('-'+fmtFull(egreso.monto, egreso.moneda as Moneda)) : '-'+fmtFull(egreso.monto, egreso.moneda as Moneda)}</div>
@@ -951,41 +942,6 @@ export default function EgresosPage() {
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
             <span className="text-slate-600 text-sm">Egreso recurrente</span>
           </label>
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" checked={form.esConversion} onChange={e => setForm(p => ({ ...p, esConversion: e.target.checked, conversionId: e.target.checked ? p.conversionId : null, vincularIngresoId: null }))} className="w-4 h-4 accent-purple-700 mt-0.5" />
-            <span className="text-slate-600 text-sm">Es conversión de moneda <span className="text-slate-400">(compra/venta de {form.moneda !== 'ARS' ? form.moneda : 'otra moneda'} — no cuenta como egreso real en los totales)</span></span>
-          </label>
-          {form.esConversion && (() => {
-            const yaVinculado = form.vincularIngresoId ? (allIngresosParaVincular ?? []).find(i => i.id === form.vincularIngresoId) : null
-            if (yaVinculado) return (
-              <div className="flex items-center justify-between px-3 py-2 bg-purple-50 rounded-lg text-xs">
-                <span className="text-purple-700">Vinculado con: <strong>{yaVinculado.descripcion}</strong> ({fmtFull(yaVinculado.monto, yaVinculado.moneda as Moneda)})</span>
-                <button onClick={() => setForm(p => ({ ...p, vincularIngresoId: null }))} className="text-purple-400 hover:text-purple-700 border-none bg-transparent cursor-pointer">✕</button>
-              </div>
-            )
-            const candidatos = (allIngresosParaVincular ?? [])
-              .filter(i => i.es_conversion && !i.conversion_id)
-              .filter(i => !buscarVincularConv || i.descripcion.toLowerCase().includes(buscarVincularConv.toLowerCase()))
-              .sort((a, b) => b.fecha.localeCompare(a.fecha))
-              .slice(0, 10)
-            return (
-              <div className="bg-slate-50 rounded-lg p-3">
-                <div className="text-xs text-slate-500 mb-2">¿Con qué ingreso corresponde esta conversión? <span className="text-slate-400">(opcional)</span></div>
-                <input value={buscarVincularConv} onChange={e => setBuscarVincularConv(e.target.value)} placeholder="Buscar ingreso..." className="input-field text-xs py-1.5 mb-2" />
-                <div className="max-h-40 overflow-auto flex flex-col gap-1">
-                  {candidatos.length === 0 ? (
-                    <div className="text-center text-slate-400 text-xs py-3">Sin ingresos de conversión pendientes de vincular.</div>
-                  ) : candidatos.map(i => (
-                    <button key={i.id} onClick={() => setForm(p => ({ ...p, vincularIngresoId: i.id }))}
-                      className="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-purple-300 hover:bg-purple-50 cursor-pointer text-left bg-white">
-                      <span className="text-xs text-slate-700 truncate">{i.descripcion} · {fmtDate(i.fecha)}</span>
-                      <span className="font-mono text-xs font-bold text-emerald-600 flex-shrink-0 ml-2">{fmtFull(i.monto, i.moneda as Moneda)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
           <div className="flex gap-3 pt-2">
             {modalEditId && (
               <button onClick={() => { handleDelete(modalEditId); setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }}
@@ -1075,7 +1031,9 @@ export default function EgresosPage() {
         </div>
       )}
 
-      {pickerTipo && pickerEgreso && (
+      {pickerTipo && pickerEgreso && (() => {
+        const egresoPicker = (egresos ?? []).find(e => e.id === pickerEgreso)
+        return (
         <EtiquetaPickerModal
           open={!!pickerTipo}
           onClose={() => { setPickerTipo(null); setPickerEgreso(null) }}
@@ -1089,8 +1047,28 @@ export default function EgresosPage() {
             await handleConfirmEtiquetas([...otras, ...ids])
           }}
           onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+          modo="compra"
+          origenMoneda={egresoPicker?.moneda}
+          origenMonto={egresoPicker?.monto}
+          onConfirmConversion={async (ahorroId, montoConvertido, cotizacionUsdRef) => {
+            const ahorro = (ahorros ?? []).find(a => a.id === ahorroId)
+            if (!ahorro || !egresoPicker) return
+            const esCripto = ['BTC', 'ETH'].includes(ahorro.moneda)
+            if (esCripto) {
+              await updateAhorro(ahorroId, { cantidad: (ahorro.cantidad ?? 0) + montoConvertido })
+            } else {
+              await updateAhorro(ahorroId, { ajuste_manual: ahorro.ajuste_manual + montoConvertido })
+            }
+            const cotiz = esCripto ? cotizacionUsdRef : (egresoPicker.monto / montoConvertido)
+            const notaTxt = esCripto
+              ? `Compra de ${montoConvertido} ${ahorro.moneda}${cotiz ? ` — cotización USD ref: $${cotiz.toLocaleString('es-AR')}` : ''}`
+              : `Compra de ${montoConvertido} ${ahorro.moneda} — cotización: $${cotiz!.toLocaleString('es-AR')} por ${ahorro.moneda}`
+            await updateEgreso(egresoPicker.id, { cotizacion: cotiz ?? null, nota: notaTxt })
+            refetchAhorros(); refetch()
+          }}
         />
-      )}
+        )
+      })()}
     </div>
   )
 }

@@ -67,8 +67,7 @@ export interface Ingreso {
   recurrente: boolean
   etiqueta?: string | null
   cotizacion?: number | null
-  es_conversion?: boolean
-  conversion_id?: string | null
+  nota?: string | null
   created_at: string
 }
 export type IngresoInsert = Omit<Ingreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>
@@ -88,8 +87,7 @@ export interface Egreso {
   recurrente: boolean
   etiqueta?: string | null
   cotizacion?: number | null
-  es_conversion?: boolean
-  conversion_id?: string | null
+  nota?: string | null
   created_at: string
 }
 export type EgresoInsert = Omit<Egreso, 'id' | 'user_id' | 'año' | 'mes' | 'created_at'>

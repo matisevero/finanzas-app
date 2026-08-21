@@ -4,8 +4,8 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas, useAllEgresos } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateEgreso, createEgreso } from '@/lib/queries'
+import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -28,7 +28,7 @@ const FORM_INIT = {
   tipo: 'salario', monto: '', descripcion: '',
   fecha: new Date().toISOString().split('T')[0],
   moneda: 'ARS' as Moneda, quien: 'ambos' as Quien, recurrente: false, etiqueta: '',
-  cotizacion: '', esConversion: false, conversionId: null as string | null, vincularEgresoId: null as string | null,
+  cotizacion: '',
 }
 
 type SortKey = 'fecha' | 'monto' | 'tipo' | 'descripcion' | 'quien'
@@ -165,7 +165,7 @@ function SheetNewRow({ cols, tiposBase, categoriasCustom, frecuencia, descripcio
 
   const commitFila = async (r: DraftRow) => {
     if (!puedeGuardar(r)) return
-    await onSave({ tipo: r.tipo || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', cotizacion: '', esConversion: false, conversionId: null, vincularEgresoId: null })
+    await onSave({ tipo: r.tipo || 'otro', descripcion: r.descripcion, monto: r.monto, fecha: r.fecha, moneda: r.moneda, quien: (r.quien || 'ambos') as Quien, recurrente: false, etiqueta: '', cotizacion: '' })
   }
 
   const handleEnterNueva = async () => {
@@ -328,8 +328,6 @@ export default function IngresosPage() {
   const esMensual = vistaTipo === 'mensual'
   const { data: ingresos, loading, refetch } = useIngresos()
   const { data: rawCategorias, refetch: refetchCats } = useCategoriasCustom('ingresos')
-  const { data: allEgresosParaVincular } = useAllEgresos()
-  const [buscarVincularConv, setBuscarVincularConv] = useState('')
   const frecuenciaCats = useFrecuenciaCategorias('ingresos')
   const descripcionesQ = useDescripcionesDistintas('ingresos')
   const etiquetasQ = useEtiquetasDistintas()
@@ -374,8 +372,8 @@ export default function IngresosPage() {
 
   // Para widgets/gráficos: los movimientos de conversión de moneda no son ingresos reales.
   // La tabla de abajo (filtered, más abajo) sigue mostrando todo, para poder gestionarlos.
-  const ingresosSinConv = useMemo(() => (ingresos ?? []).filter(i => !(i.es_conversion && i.moneda !== 'ARS')), [ingresos])
-  const dataSinConv     = useMemo(() => data.filter(i => !(i.es_conversion && i.moneda !== 'ARS')), [data])
+  const ingresosSinConv = ingresos ?? []
+  const dataSinConv     = data
 
   const periodoLabel = esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `${añoActivo}`
 
@@ -387,12 +385,6 @@ export default function IngresosPage() {
   const [filterQuien, setFilterQuien] = useState<string[]>([])
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
-  const [showConvertirModal, setShowConvertirModal] = useState(false)
-  const [convertirForm, setConvertirForm] = useState({
-    deMonto: '', deMoneda: 'ARS' as Moneda, aMonto: '', aMoneda: 'USD' as Moneda,
-    fecha: new Date().toISOString().split('T')[0], descripcion: '',
-  })
-  const [convirtiendo, setConvirtiendo] = useState(false)
   const [widgets, setWidgets]           = useState<string[]>(DEFAULT_WIDGETS_ING)
   const [editingWidgets, setEditingWidgets] = useState(false)
   const [modalEditId, setModalEditId] = useState<string|null>(null)
@@ -536,58 +528,19 @@ export default function IngresosPage() {
     setWidgets(next)
   }
 
-  // Cotización implícita: valor en ARS de 1 unidad de la moneda extranjera involucrada.
-  const cotizacionImplicita = (() => {
-    const de = parseFloat(convertirForm.deMonto) || 0
-    const a  = parseFloat(convertirForm.aMonto) || 0
-    if (!de || !a) return null
-    if (convertirForm.deMoneda === 'ARS' && convertirForm.aMoneda !== 'ARS') return de / a
-    if (convertirForm.aMoneda === 'ARS' && convertirForm.deMoneda !== 'ARS') return a / de
-    return null
-  })()
-
-  const handleConvertir = async () => {
-    const de = parseFloat(convertirForm.deMonto)
-    const a  = parseFloat(convertirForm.aMonto)
-    if (!de || !a || !convertirForm.fecha) return
-    setConvirtiendo(true)
-    try {
-      const conversionId = crypto.randomUUID()
-      const desc = convertirForm.descripcion || `Conversión ${convertirForm.deMoneda} → ${convertirForm.aMoneda}`
-      await createEgreso({
-        categoria: 'otro', descripcion: desc, monto: de, moneda: convertirForm.deMoneda,
-        fecha: convertirForm.fecha, quien: 'ambos', recurrente: false, etiqueta: null,
-        cotizacion: cotizacionImplicita, es_conversion: true, conversion_id: conversionId,
-      })
-      await createIngreso({
-        tipo: 'otro', descripcion: desc, monto: a, moneda: convertirForm.aMoneda,
-        fecha: convertirForm.fecha, quien: 'ambos', recurrente: false, etiqueta: null,
-        cotizacion: cotizacionImplicita, es_conversion: true, conversion_id: conversionId,
-      })
-      setShowConvertirModal(false)
-      setConvertirForm({ deMonto: '', deMoneda: 'ARS', aMonto: '', aMoneda: 'USD', fecha: new Date().toISOString().split('T')[0], descripcion: '' })
-      refetch()
-    } catch (e) { console.error(e) } finally { setConvirtiendo(false) }
-  }
-
   const handleSave = async () => {
     if (!form.monto || !form.fecha) return
     setSaving(true)
     try {
-      const conversionId = form.esConversion ? (form.conversionId ?? crypto.randomUUID()) : null
       const payload = {
         tipo: form.tipo, descripcion: form.descripcion, monto: parseFloat(form.monto), moneda: form.moneda,
         fecha: form.fecha, quien: form.quien, recurrente: form.recurrente, etiqueta: form.etiqueta || null,
         cotizacion: form.cotizacion ? parseFloat(form.cotizacion) : null,
-        es_conversion: form.esConversion, conversion_id: conversionId,
       }
       if (modalEditId) {
         await updateIngreso(modalEditId, payload)
       } else {
         await createIngreso(payload)
-      }
-      if (form.esConversion && form.conversionId && form.vincularEgresoId) {
-        await updateEgreso(form.vincularEgresoId, { es_conversion: true, conversion_id: conversionId })
       }
       setShowModal(false); setForm(FORM_INIT); setModalEditId(null); refetch()
     } catch (e) { console.error(e) } finally { setSaving(false) }
@@ -599,7 +552,6 @@ export default function IngresosPage() {
       fecha: ingreso.fecha, moneda: ingreso.moneda as Moneda, quien: ingreso.quien, recurrente: ingreso.recurrente,
       etiqueta: ingreso.etiqueta ?? '',
       cotizacion: ingreso.cotizacion != null ? String(ingreso.cotizacion) : '',
-      esConversion: !!ingreso.es_conversion, conversionId: ingreso.conversion_id ?? null, vincularEgresoId: null,
     })
     setModalEditId(ingreso.id)
     setShowModal(true)
@@ -665,7 +617,6 @@ export default function IngresosPage() {
               className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${editingWidgets ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
               {editingWidgets ? '✓ Listo' : '⚙ Personalizar widgets'}
             </button>
-            <button className="text-xs px-3 py-1.5 rounded-lg border border-purple-200 text-purple-600 hover:border-purple-400 bg-white cursor-pointer hidden md:inline-block" onClick={() => setShowConvertirModal(true)}>⇄ Convertir moneda</button>
             <button className="btn-primary hidden md:inline-block" onClick={() => { setForm(FORM_INIT); setModalEditId(null); setShowModal(true) }}>+ Nuevo ingreso</button>
           </div>
         } />
@@ -706,7 +657,7 @@ export default function IngresosPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <div className="text-slate-900 font-semibold text-[15px]">Transacciones</div>
-              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.filter(i => !(i.es_conversion && i.moneda !== 'ARS')).reduce((s, i) => s + i.monto, 0), m)) : fmt(filtered.filter(i => !(i.es_conversion && i.moneda !== 'ARS')).reduce((s, i) => s + i.monto, 0), m)}</span>
+              <span className="text-slate-400 text-xs">{filtered.length} registros · {saldosOcultos ? ocultarValor(fmt(filtered.reduce((s, i) => s + i.monto, 0), m)) : fmt(filtered.reduce((s, i) => s + i.monto, 0), m)}</span>
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
@@ -778,7 +729,7 @@ export default function IngresosPage() {
                         const cellFor = (col: SortKey) => {
                           switch (col) {
                             case 'fecha':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{fmtDate(ingreso.fecha)}</span></td>
-                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.es_conversion && <span className="ml-2 text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeIngreso(ingreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
+                            case 'descripcion': return <td key={col} className="border border-slate-200 py-2 px-2 text-sm"><span onClick={() => openEditModal(ingreso)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{ingreso.descripcion || cfg.label}</span>{ingreso.etiqueta && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}<EtiquetaChips etiquetaIds={etiquetasDeIngreso(ingreso.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} /></td>
                             case 'tipo':        return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:150}}><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span></td>
                             case 'quien':       { const cq = colorQuien(ingreso.quien); return <td key={col} className="border border-slate-200 py-2 px-2 text-sm" style={{width:100}}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cq.bg} ${cq.text}`}>{ingreso.quien}</span></td> }
                             case 'monto':       return <td key={col} className="border border-slate-200 py-2 px-2 text-sm text-right" style={{width:130}}><span className="text-emerald-700 font-mono font-bold">{saldosOcultos ? ocultarValor('+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)) : '+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</span></td>
@@ -826,8 +777,7 @@ export default function IngresosPage() {
                         <div className="flex items-center gap-1.5 flex-wrap md:flex-nowrap md:order-3 md:w-[190px] md:flex-shrink-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${colorQuien(ingreso.quien).bg} ${colorQuien(ingreso.quien).text}`}>{ingreso.quien}</span>
-                          {ingreso.es_conversion && <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">Conversión</span>}
-                          {ingreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}
+                                                    {ingreso.etiqueta && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{ingreso.etiqueta}</span>}
                         </div>
                         {/* Columna 4: monto */}
                         <div className="text-emerald-700 font-mono font-bold text-[17px] mb-1.5 md:mb-0 md:order-4 md:text-[15px] md:w-[130px] md:flex-shrink-0 md:text-right">{saldosOcultos ? ocultarValor('+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)) : '+'+fmtFull(ingreso.monto, ingreso.moneda as Moneda)}</div>
@@ -1001,41 +951,6 @@ export default function IngresosPage() {
             <input type="checkbox" checked={form.recurrente} onChange={e => setForm(p => ({ ...p, recurrente: e.target.checked }))} className="w-4 h-4 accent-blue-700" />
             <span className="text-slate-600 text-sm">Ingreso recurrente</span>
           </label>
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" checked={form.esConversion} onChange={e => setForm(p => ({ ...p, esConversion: e.target.checked, conversionId: e.target.checked ? p.conversionId : null, vincularEgresoId: null }))} className="w-4 h-4 accent-purple-700 mt-0.5" />
-            <span className="text-slate-600 text-sm">Es conversión de moneda <span className="text-slate-400">(compra/venta de {form.moneda !== 'ARS' ? form.moneda : 'otra moneda'} — no cuenta como ingreso real en los totales)</span></span>
-          </label>
-          {form.esConversion && (() => {
-            const yaVinculado = form.vincularEgresoId ? (allEgresosParaVincular ?? []).find(e => e.id === form.vincularEgresoId) : null
-            if (yaVinculado) return (
-              <div className="flex items-center justify-between px-3 py-2 bg-purple-50 rounded-lg text-xs">
-                <span className="text-purple-700">Vinculado con: <strong>{yaVinculado.descripcion}</strong> ({fmtFull(yaVinculado.monto, yaVinculado.moneda as Moneda)})</span>
-                <button onClick={() => setForm(p => ({ ...p, vincularEgresoId: null }))} className="text-purple-400 hover:text-purple-700 border-none bg-transparent cursor-pointer">✕</button>
-              </div>
-            )
-            const candidatos = (allEgresosParaVincular ?? [])
-              .filter(e => e.es_conversion && !e.conversion_id)
-              .filter(e => !buscarVincularConv || e.descripcion.toLowerCase().includes(buscarVincularConv.toLowerCase()))
-              .sort((a, b) => b.fecha.localeCompare(a.fecha))
-              .slice(0, 10)
-            return (
-              <div className="bg-slate-50 rounded-lg p-3">
-                <div className="text-xs text-slate-500 mb-2">¿Con qué egreso corresponde esta conversión? <span className="text-slate-400">(opcional)</span></div>
-                <input value={buscarVincularConv} onChange={e => setBuscarVincularConv(e.target.value)} placeholder="Buscar egreso..." className="input-field text-xs py-1.5 mb-2" />
-                <div className="max-h-40 overflow-auto flex flex-col gap-1">
-                  {candidatos.length === 0 ? (
-                    <div className="text-center text-slate-400 text-xs py-3">Sin egresos de conversión pendientes de vincular.</div>
-                  ) : candidatos.map(e => (
-                    <button key={e.id} onClick={() => setForm(p => ({ ...p, vincularEgresoId: e.id }))}
-                      className="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-200 hover:border-purple-300 hover:bg-purple-50 cursor-pointer text-left bg-white">
-                      <span className="text-xs text-slate-700 truncate">{e.descripcion} · {fmtDate(e.fecha)}</span>
-                      <span className="font-mono text-xs font-bold text-red-600 flex-shrink-0 ml-2">{fmtFull(e.monto, e.moneda as Moneda)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
           <div className="flex gap-3 pt-2">
             {modalEditId && (
               <button onClick={() => { handleDelete(modalEditId); setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }}
@@ -1045,59 +960,6 @@ export default function IngresosPage() {
             )}
             <button onClick={() => { setShowModal(false); setForm(FORM_INIT); setModalEditId(null) }} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={handleSave} disabled={saving || !form.monto || !form.fecha} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : modalEditId ? 'Guardar cambios' : 'Guardar'}</button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ── Modal Convertir moneda: crea Egreso + Ingreso vinculados en un paso ── */}
-      <Modal open={showConvertirModal} onClose={() => setShowConvertirModal(false)} title="Convertir moneda">
-        <div className="flex flex-col gap-3">
-          <p className="text-slate-400 text-xs -mt-1">Crea un Egreso y un Ingreso vinculados en un solo paso. La pata en ARS cuenta normal en tus totales; la otra queda para Ahorros.</p>
-
-          <div className="bg-red-50 rounded-xl p-3.5">
-            <div className="text-[10.5px] font-bold text-red-600 uppercase tracking-wider mb-2">Vendés / gastás</div>
-            <div className="flex items-center gap-2">
-              <input type="number" value={convertirForm.deMonto} onChange={e => setConvertirForm(p => ({ ...p, deMonto: e.target.value }))}
-                placeholder="0" className="flex-1 bg-transparent border-none outline-none font-mono text-xl font-bold text-slate-900" />
-              <select value={convertirForm.deMoneda} onChange={e => setConvertirForm(p => ({ ...p, deMoneda: e.target.value as Moneda }))}
-                className="border border-red-200 rounded-lg bg-white text-xs font-bold text-red-600 px-2 py-1.5">
-                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex justify-center -my-1">
-            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-sm">↓</div>
-          </div>
-
-          <div className="bg-emerald-50 rounded-xl p-3.5">
-            <div className="text-[10.5px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Recibís</div>
-            <div className="flex items-center gap-2">
-              <input type="number" value={convertirForm.aMonto} onChange={e => setConvertirForm(p => ({ ...p, aMonto: e.target.value }))}
-                placeholder="0" className="flex-1 bg-transparent border-none outline-none font-mono text-xl font-bold text-slate-900" />
-              <select value={convertirForm.aMoneda} onChange={e => setConvertirForm(p => ({ ...p, aMoneda: e.target.value as Moneda }))}
-                className="border border-emerald-200 rounded-lg bg-white text-xs font-bold text-emerald-700 px-2 py-1.5">
-                {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="text-center text-xs text-slate-500">
-            {cotizacionImplicita ? <>Cotización implícita: <strong className="text-slate-900">{fmt(cotizacionImplicita, 'ARS' as Moneda)}</strong></> : 'Completá los dos montos para ver la cotización'}
-          </div>
-
-          <div><FieldLabel>Descripción <span className="text-slate-400 font-normal normal-case">(opcional)</span></FieldLabel>
-            <input value={convertirForm.descripcion} onChange={e => setConvertirForm(p => ({ ...p, descripcion: e.target.value }))}
-              placeholder={`Conversión ${convertirForm.deMoneda} → ${convertirForm.aMoneda}`} className="input-field" />
-          </div>
-          <div><FieldLabel>Fecha</FieldLabel>
-            <FechaInput value={convertirForm.fecha} onChange={iso => setConvertirForm(p => ({ ...p, fecha: iso }))} />
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowConvertirModal(false)} className="btn-ghost flex-1">Cancelar</button>
-            <button onClick={handleConvertir} disabled={convirtiendo || !convertirForm.deMonto || !convertirForm.aMonto}
-              className="btn-primary flex-1 disabled:opacity-50">{convirtiendo ? 'Creando...' : 'Crear conversión'}</button>
           </div>
         </div>
       </Modal>
@@ -1178,7 +1040,9 @@ export default function IngresosPage() {
         </div>
       )}
 
-      {pickerTipo && pickerIngreso && (
+      {pickerTipo && pickerIngreso && (() => {
+        const ingresoPicker = (ingresos ?? []).find(i => i.id === pickerIngreso)
+        return (
         <EtiquetaPickerModal
           open={!!pickerTipo}
           onClose={() => { setPickerTipo(null); setPickerIngreso(null) }}
@@ -1192,8 +1056,31 @@ export default function IngresosPage() {
             await handleConfirmEtiquetas([...otras, ...ids])
           }}
           onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+          modo="venta"
+          origenMoneda={ingresoPicker?.moneda}
+          origenMonto={ingresoPicker?.monto}
+          onConfirmConversion={async (ahorroId, montoConvertido, cotizacionUsdRef) => {
+            const ahorro = (ahorros ?? []).find(a => a.id === ahorroId)
+            if (!ahorro || !ingresoPicker) return
+            const esCripto = ['BTC', 'ETH'].includes(ahorro.moneda)
+            if (esCripto) {
+              await updateAhorro(ahorroId, { cantidad: Math.max(0, (ahorro.cantidad ?? 0) - montoConvertido) })
+            } else {
+              await updateAhorro(ahorroId, { ajuste_manual: ahorro.ajuste_manual - montoConvertido })
+            }
+            // Venta de fiat (USD/EUR/USDT): el Ingreso ya está en ARS, la cotización sale de ARS ÷ vendido.
+            // Venta de cripto: el Ingreso está en USD (se liquida en USD, no directo a ARS) — acá la
+            // cotización sale sola del propio movimiento (USD recibido ÷ unidades vendidas).
+            const cotiz = esCripto ? (montoConvertido ? ingresoPicker.monto / montoConvertido : cotizacionUsdRef) : (ingresoPicker.monto / montoConvertido)
+            const notaTxt = esCripto
+              ? `Venta de ${montoConvertido} ${ahorro.moneda}${cotiz ? ` — $${cotiz.toLocaleString('es-AR')} USD por ${ahorro.moneda}` : ''}`
+              : `Venta de ${montoConvertido} ${ahorro.moneda} — cotización: $${cotiz!.toLocaleString('es-AR')} por ${ahorro.moneda}`
+            await updateIngreso(ingresoPicker.id, { cotizacion: cotiz ?? null, nota: notaTxt })
+            refetchAhorros(); refetch()
+          }}
         />
-      )}
+        )
+      })()}
     </div>
   )
 }
