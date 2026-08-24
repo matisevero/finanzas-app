@@ -86,6 +86,7 @@ export default function DeudasPage() {
   const { data: eventosAño } = useEventosAño(calAño)
   const [expanded, setExpanded] = useState<Record<string,boolean>>({})
   const [mostrarPagados, setMostrarPagados] = useState(false)
+  const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pagandoCuotaId, setPagandoCuotaId] = useState<string|null>(null)
 
@@ -189,6 +190,32 @@ export default function DeudasPage() {
     const f = new Date(); f.setMonth(f.getMonth() + plazoMax.meses)
     return `${MESES[f.getMonth()]} ${f.getFullYear()}`
   })() : null
+
+  // Proyección de pago por moneda: deuda pendiente en esa moneda ÷ lo que ahorramos en promedio
+  // por mes en esa misma moneda (histórico real, mismo criterio de "automático" que usa Ahorros:
+  // ingresos - egresos de las categorías vinculadas a algún Ahorro en esa moneda).
+  const proyeccionesPago = useMemo(() => {
+    const monedasConDeuda = Array.from(new Set(deudasActivas.map(d => d.moneda)))
+    return monedasConDeuda.map(moneda => {
+      const deudaTotal = deudasActivas.filter(d => d.moneda === moneda).reduce((s, d) => s + d.pendiente, 0)
+      const categoriasAhorro = new Set((ahorros ?? []).filter(a => a.moneda === moneda).map(a => a.categoria))
+      const porMes: Record<string, number> = {}
+      ;(allIngresos ?? []).filter(i => i.moneda === moneda && categoriasAhorro.has(i.tipo)).forEach(i => {
+        const key = `${i.año}-${i.mes}`; porMes[key] = (porMes[key] ?? 0) + i.monto
+      })
+      ;(allEgresos ?? []).filter(e => e.moneda === moneda && categoriasAhorro.has(e.categoria)).forEach(e => {
+        const key = `${e.año}-${e.mes}`; porMes[key] = (porMes[key] ?? 0) - e.monto
+      })
+      const mesesConDatos = Object.keys(porMes)
+      const ahorroMensualProm = mesesConDatos.length > 0 ? mesesConDatos.reduce((s, k) => s + porMes[k], 0) / mesesConDatos.length : 0
+      const mesesRestantes = ahorroMensualProm > 0 ? Math.ceil(deudaTotal / ahorroMensualProm) : null
+      const fechaEstimada = mesesRestantes ? (() => {
+        const f = new Date(); f.setMonth(f.getMonth() + mesesRestantes)
+        return `${MESES[f.getMonth()]} ${f.getFullYear()}`
+      })() : null
+      return { moneda, deudaTotal, ahorroMensualProm, mesesRestantes, fechaEstimada, mesesConDatos: mesesConDatos.length }
+    })
+  }, [deudasActivas, ahorros, allIngresos, allEgresos])
 
   const getWidgetValue = (id: string) => {
     switch (id) {
@@ -344,9 +371,10 @@ export default function DeudasPage() {
         fechaVenc = base.toISOString().split('T')[0]
       }
       if (modalEditDeudaId) {
+        const nuevoPendiente = parseFloat(deudaForm.pendiente) || 0
         await updateDeuda(modalEditDeudaId, {
           nombre: deudaForm.nombre, banco: deudaForm.banco,
-          pendiente: parseFloat(deudaForm.pendiente) || 0,
+          pendiente: nuevoPendiente, activa: nuevoPendiente > 0,
           cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
           moneda: deudaForm.moneda,
           fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: fechaVenc,
@@ -406,6 +434,11 @@ export default function DeudasPage() {
   // mecanismo que ya usan Proyecto y Ahorro. Es lo que permite ver sus "movimientos" vinculados.
   const etiquetaDeDeuda = (d: any) => (etiquetas ?? []).find(e => e.tipo === 'deuda' && e.deuda_id === d.id)
 
+  // Al llegar a $0 se archiva sola (mismo patrón que Proyecto/Ahorro/Persona) — deja de aparecer
+  // en la lista activa, pero sigue accesible desde "Ver archivadas" para consultarla. Si el saldo
+  // vuelve a subir (se corrigió un pago, se eliminó un movimiento, etc.) se reactiva sola también.
+  const pendienteYActiva = (nuevoPendiente: number) => ({ pendiente: Math.max(0, nuevoPendiente), activa: nuevoPendiente > 0 })
+
   const movimientosDeDeuda = (d: any): (Egreso & { _tipo: 'egreso' })[] => {
     const et = etiquetaDeDeuda(d)
     if (!et) return []
@@ -432,7 +465,7 @@ export default function DeudasPage() {
       const et = etiquetaDeDeuda(d)
       if (et) await agregarEtiquetaAEgreso(egreso.id, et.id)
       await updateDeuda(d.id, {
-        pendiente: Math.max(0, d.pendiente - monto),
+        ...pendienteYActiva(d.pendiente - monto),
         cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
       })
       setShowPagoModal(null)
@@ -449,7 +482,7 @@ export default function DeudasPage() {
     try {
       await agregarEtiquetaAEgreso(egreso.id, et.id)
       await updateDeuda(d.id, {
-        pendiente: Math.max(0, d.pendiente - egreso.monto),
+        ...pendienteYActiva(d.pendiente - egreso.monto),
         cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
       })
       setShowPagoModal(null)
@@ -467,7 +500,7 @@ export default function DeudasPage() {
       quien: mov.quien as Quien, recurrente: false, etiqueta: mov.etiqueta ?? null,
     })
     await agregarEtiquetaAEgreso(egreso.id, et.id)
-    await updateDeuda(d.id, { pendiente: Math.max(0, d.pendiente - mov.monto) })
+    await updateDeuda(d.id, pendienteYActiva(d.pendiente - mov.monto))
     refDeudas(); refetchEgresoEtiquetas()
   }
 
@@ -475,7 +508,7 @@ export default function DeudasPage() {
   const handleEliminarMovimiento = async (d: any, mov: Egreso) => {
     if (!confirm(`¿Eliminar este pago de ${fmtFull(mov.monto, mov.moneda as Moneda)}? Vuelve a sumarse al saldo pendiente.`)) return
     await deleteEgreso(mov.id)
-    await updateDeuda(d.id, { pendiente: d.pendiente + mov.monto })
+    await updateDeuda(d.id, pendienteYActiva(d.pendiente + mov.monto))
     refDeudas(); refetchEgresoEtiquetas()
   }
 
@@ -484,7 +517,7 @@ export default function DeudasPage() {
   const handleGuardarEdicionMovimiento = async (d: any, mov: Egreso, nuevo: { descripcion: string; monto: number; fecha: string }) => {
     await updateEgreso(mov.id, { descripcion: nuevo.descripcion, monto: nuevo.monto, fecha: nuevo.fecha })
     const delta = nuevo.monto - mov.monto
-    if (delta !== 0) await updateDeuda(d.id, { pendiente: Math.max(0, d.pendiente - delta) })
+    if (delta !== 0) await updateDeuda(d.id, pendienteYActiva(d.pendiente - delta))
     setEditandoMovId(null)
     refDeudas(); refetchEgresoEtiquetas()
   }
@@ -773,17 +806,25 @@ export default function DeudasPage() {
               <button onClick={() => { setModalEditDeudaId(null); setMostrarDetallesLP(false); setDeudaForm({ nombre:'', banco:'', total_original:'', pendiente:'', cuota_mensual:'', fecha_inicio:new Date().toISOString().split('T')[0], fecha_vencimiento:'', cuota_actual:'1', cuota_total:'1', moneda:'ARS', color:'#5B3FA6', etiqueta:'' }); setShowDeudaModal(true) }} className="btn-primary hidden md:inline-block">+ Nueva deuda LP</button>
             </div>
           ) : (
+            <>
+            <div className="flex justify-end mb-3">
+              <button onClick={() => setMostrarArchivadas(p => !p)}
+                className={`px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer transition-all ${mostrarArchivadas ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-400'}`}>
+                {mostrarArchivadas ? 'Ocultar archivadas' : 'Ver archivadas'}
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {(deudas ?? []).map(d => {
+              {(deudas ?? []).filter(d => mostrarArchivadas || d.activa !== false).map(d => {
                 const pagado = d.total_original - d.pendiente
                 const pct    = Math.round((pagado / d.total_original) * 100)
                 const isExp  = expanded[d.id]
                 return (
-                  <Card key={d.id} className="group">
+                  <Card key={d.id} className={`group ${d.activa === false ? 'opacity-60' : ''}`}>
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
                           <div onClick={() => openEditDeudaModal(d)} className="text-base font-semibold text-slate-900 truncate cursor-pointer hover:underline hover:font-bold">{d.nombre}</div>
+                          {d.activa === false && <span className="flex-shrink-0 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Archivada — pagada</span>}
                           {d.etiqueta && <span className="flex-shrink-0 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{d.etiqueta}</span>}
                         </div>
                         {d.banco && <div className="text-slate-400 text-xs mt-0.5">{d.banco}</div>}
@@ -849,11 +890,51 @@ export default function DeudasPage() {
                 )
               })}
             </div>
+            </>
+          )}
+
+          {proyeccionesPago.length > 0 && (
+            <div className="mt-6">
+              <div className="mb-3">
+                <div className="text-slate-900 font-semibold text-[15px]">Proyección de pago</div>
+                <div className="text-slate-400 text-xs mt-0.5">Cuándo terminarías de pagar, según lo que ahorrás por mes en cada moneda</div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {proyeccionesPago.map(p => (
+                  <div key={p.moneda} className="bg-white border border-slate-200 rounded-2xl p-5">
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{p.moneda}</div>
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="text-xs text-slate-400">Deuda pendiente</span>
+                      <span className="font-mono font-bold text-slate-900">{oc(fmtFull(p.deudaTotal, p.moneda as Moneda))}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between mb-3">
+                      <span className="text-xs text-slate-400">Ahorro promedio/mes</span>
+                      <span className="font-mono font-bold text-emerald-600">{p.mesesConDatos > 0 ? oc(fmtFull(p.ahorroMensualProm, p.moneda as Moneda)) : '—'}</span>
+                    </div>
+                    <div className="pt-3 border-t border-slate-100">
+                      {p.mesesRestantes ? (
+                        <>
+                          <div className="text-lg font-bold text-blue-700">{p.mesesRestantes} mes{p.mesesRestantes === 1 ? '' : 'es'}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">Estimado: {p.fechaEstimada}</div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-slate-400">
+                          {p.mesesConDatos === 0
+                            ? `Todavía no hay movimientos etiquetados a un Ahorro en ${p.moneda} para estimar un ritmo de ahorro.`
+                            : `No estás ahorrando en ${p.moneda} en promedio — a este ritmo no se proyecta un pago.`}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── Gráfico anual % deuda vs ingresos ── */}
+      {/* ── Gráfico anual % deuda vs ingresos (solo Calendario) ── */}
+      {tab === 'calendario' && (
       <div className="mt-6">
         <div className="mb-3">
           <div className="text-slate-900 font-semibold text-[15px]">Vencimientos vs Ingresos — {calAño}</div>
@@ -886,6 +967,7 @@ export default function DeudasPage() {
             </ResponsiveContainer>
         </div>
       </div>
+      )}
 
       {/* ── Modal nuevo/editar vencimiento ── */}
       <Modal open={showEvModal} onClose={() => { setShowEvModal(false); setModalEditEventoId(null) }} title={modalEditEventoId ? 'Editar vencimiento' : 'Nuevo vencimiento'}>
