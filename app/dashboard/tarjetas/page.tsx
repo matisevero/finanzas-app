@@ -2,8 +2,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion } from '@/lib/queries'
+import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos } from '@/hooks'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
@@ -14,7 +14,7 @@ import MontoInput from '@/components/ui/MontoInput'
 import type { Moneda, Quien, TarjetaTransaccion } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
-const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10' }
+const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10', ultimos_4:'' }
 const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75']
 const CAT_COLORS: Record<string,{bg:string,c:string}> = {
   'Alimentación':{bg:'#E9F6EA',c:'#3B6D11'},'Tecnología':{bg:'#E6F1FB',c:'#185FA5'},
@@ -33,11 +33,20 @@ export default function TarjetasPage() {
   const quienOpts = useMemo(() => quienOpciones(personas), [personas])
   const { data: pagosRaw, loading: lp } = usePagosTarjeta()
   const { data: txnsRaw,  loading: lx, refetch: refTxns } = useTarjetaTransacciones()
+  const { data: ingresosRaw } = useIngresos()
   const [selTC, setSelTC]         = useState<string|null>(null)
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
   const [showModal, setShowModal]   = useState(false)
   const [showPDFModal, setShowPDFModal] = useState(false)
+  const [showCargaModal, setShowCargaModal] = useState(false)
+  const [cargaTarjetaId, setCargaTarjetaId] = useState<string|null>(null)
+  const [cargaModo, setCargaModo] = useState<'total'|'item'|'bloque'>('total')
+  const [cargaForm, setCargaForm] = useState({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS' as Moneda, fecha: new Date().toISOString().split('T')[0] })
+  const [cargaItems, setCargaItems] = useState<{ descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string }[]>([])
+  const [cargaBloqueTexto, setCargaBloqueTexto] = useState('')
+  const [cargaBloqueMoneda, setCargaBloqueMoneda] = useState<Moneda>('ARS')
+  const [guardandoCarga, setGuardandoCarga] = useState(false)
   const [pdfTarjetaId, setPdfTarjetaId] = useState<string|null>(null)
   const [pdfLoading, setPdfLoading]   = useState(false)
   const [pdfError, setPdfError]       = useState('')
@@ -92,6 +101,61 @@ export default function TarjetasPage() {
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
   }
 
+  // Parsea texto pegado línea por línea: "Descripción .... monto" al final de cada línea.
+  // Acepta formato es-AR (puntos de miles, coma decimal) y un "$" opcional antes del número.
+  const parsearBloque = (texto: string, moneda: Moneda) => {
+    return texto.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      const match = line.match(/^(.*?)[\s:]*\$?\s*(-?[\d.,]+)\s*$/)
+      if (!match) return null
+      const descripcion = match[1].trim()
+      const montoStr = match[2].replace(/\./g, '').replace(',', '.')
+      const monto = parseFloat(montoStr)
+      if (!descripcion || isNaN(monto)) return null
+      return { descripcion, categoria: 'Otros', monto: Math.abs(monto), moneda, fecha: new Date().toISOString().split('T')[0] }
+    }).filter((x): x is { descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string } => x !== null)
+  }
+
+  const abrirCargaModal = () => {
+    setCargaTarjetaId(selTC && !selTC.includes('|') ? selTC : (tarjetas??[])[0]?.id ?? null)
+    setCargaModo('total')
+    setCargaForm({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS', fecha: new Date().toISOString().split('T')[0] })
+    setCargaItems([])
+    setCargaBloqueTexto('')
+    setShowCargaModal(true)
+  }
+
+  const agregarItemALista = () => {
+    if (!cargaForm.descripcion || !cargaForm.monto) return
+    setCargaItems(prev => [...prev, { descripcion: cargaForm.descripcion, categoria: cargaForm.categoria, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, fecha: cargaForm.fecha }])
+    setCargaForm(p => ({ ...p, descripcion: '', monto: '' }))
+  }
+
+  const handleGuardarCargaTotal = async () => {
+    if (!cargaTarjetaId || !cargaForm.monto) return
+    setGuardandoCarga(true)
+    try {
+      await createTarjetaTransaccion({
+        tarjeta_id: cargaTarjetaId, descripcion: cargaForm.descripcion || 'Saldo inicial', categoria: cargaForm.categoria,
+        fecha: cargaForm.fecha, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, tipo: 'credito', etiqueta: null,
+      })
+      setShowCargaModal(false); refTxns()
+    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+  }
+
+  const handleGuardarCargaItems = async (items: typeof cargaItems) => {
+    if (!cargaTarjetaId || items.length === 0) return
+    setGuardandoCarga(true)
+    try {
+      for (const it of items) {
+        await createTarjetaTransaccion({
+          tarjeta_id: cargaTarjetaId, descripcion: it.descripcion, categoria: it.categoria,
+          fecha: it.fecha, monto: it.monto, moneda: it.moneda, tipo: 'credito', etiqueta: null,
+        })
+      }
+      setShowCargaModal(false); setCargaItems([]); refTxns()
+    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+  }
+
   const handleDuplicarTxn = async (t: TarjetaTransaccion) => {
     await createTarjetaTransaccion({
       tarjeta_id: t.tarjeta_id, descripcion: t.descripcion, categoria: t.categoria,
@@ -107,6 +171,26 @@ export default function TarjetasPage() {
   }, [])
   const [saving, setSaving]       = useState(false)
   const [form, setForm]           = useState(FORM_INIT)
+  const [tarjetaEditId, setTarjetaEditId] = useState<string|null>(null)
+
+  const openEditTarjetaModal = (t: any) => {
+    setForm({
+      nombre: t.nombre, banco: t.banco, limite: String(t.limite ?? ''), moneda: t.moneda,
+      color: t.color, icono: t.icono, quien: t.quien,
+      dia_cierre: String(t.dia_cierre ?? 1), dia_vencimiento: String(t.dia_vencimiento ?? 10),
+      ultimos_4: t.ultimos_4 ?? '',
+    })
+    setTarjetaEditId(t.id)
+    setShowModal(true)
+  }
+
+  const handleDeleteTarjeta = async (t: any) => {
+    if (!confirm(`¿Eliminar "${t.nombre}"? Si tiene movimientos cargados se va a archivar en vez de borrarse, para no perder el historial.`)) return
+    const resultado = await eliminarOArchivarTarjeta(t.id)
+    if (selTC === t.id) setSelTC(null)
+    refTarjetas()
+    if (resultado === 'archivada') alert('La tarjeta tenía movimientos cargados, así que se archivó en vez de borrarse — el historial sigue intacto pero ya no aparece en la lista.')
+  }
 
   const activaId   = selTC ?? 'todas'
 
@@ -125,22 +209,33 @@ export default function TarjetasPage() {
 
   const MESES_DISP = esMensual ? [MESES_CORTOS[mesActivo-1]] : MESES_CORTOS
 
+  // Clave compuesta tarjeta+moneda — así una tarjeta con pagos en ARS y USD no los mezcla en
+  // un solo número sin sentido, y al elegir el chip de una moneda específica se ve solo esa.
   const pagosPorTC = useMemo(() => {
     const map: Record<string, Record<number,number>> = {}
     ;(pagos??[]).forEach(p => {
-      if (!map[p.tarjeta_id]) map[p.tarjeta_id]={}
-      map[p.tarjeta_id][p.mes] = p.monto
+      const key = `${p.tarjeta_id}|${p.moneda}`
+      if (!map[key]) map[key]={}
+      map[key][p.mes] = (map[key][p.mes] ?? 0) + p.monto
     })
     return map
   }, [pagos])
+
+  // "id" puede venir como tarjetaId solo (tarjeta de una única moneda) o "tarjetaId|MONEDA"
+  // (chip específico de una tarjeta multi-moneda). Si viene solo el id, suma todas sus monedas
+  // — aceptable ahí porque en la práctica esa tarjeta ya tiene una sola moneda de todos modos.
+  const pagosDe = (id: string, mes: number): number => {
+    if (id.includes('|')) return pagosPorTC[id]?.[mes] ?? 0
+    return Object.keys(pagosPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (pagosPorTC[k][mes] ?? 0), 0)
+  }
 
   const chartData = useMemo(() => MESES_DISP.map((month) => {
     const mes = MESES_CORTOS.indexOf(month) + 1
     const point: Record<string,number|string> = { month }
     if (activaId==='todas') {
-      ;(tarjetas??[]).forEach(t => { point[t.id] = pagosPorTC[t.id]?.[mes]??0 })
+      ;(tarjetas??[]).forEach(t => { point[t.id] = pagosDe(t.id, mes) })
     } else {
-      point['pago'] = pagosPorTC[activaId]?.[mes]??0
+      point['pago'] = pagosDe(activaId, mes)
     }
     return point
   }), [tarjetas, pagosPorTC, activaId, MESES_DISP])
@@ -182,14 +277,41 @@ export default function TarjetasPage() {
     return result
   }, [tarjetas, txns])
 
+  // Vencimientos del mes activo — independiente de si estás en vista mensual o anual, porque un
+  // vencimiento siempre es un concepto mensual. Un ítem por (tarjeta, moneda) igual que las cards.
+  const vencimientosDelMes = useMemo(() => {
+    const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string; total: number }[] = []
+    ;(tarjetas??[]).forEach(t => {
+      const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && Number(x.fecha.slice(0,4))===añoActivo && Number(x.fecha.slice(5,7))===mesActivo)
+      const monedas = [...new Set(txnsDelMes.map(x=>x.moneda))]
+      if (monedas.length === 0) return
+      monedas.forEach(mon => {
+        const total = txnsDelMes.filter(x=>x.moneda===mon).reduce((s,x)=>s+x.monto, 0)
+        if (total > 0) result.push({ tarjeta: t, moneda: mon, total })
+      })
+    })
+    return result.sort((a,b) => a.tarjeta.dia_vencimiento - b.tarjeta.dia_vencimiento)
+  }, [tarjetas, txnsRaw, añoActivo, mesActivo])
+
+  const [exportadoIds, setExportadoIds] = useState<Set<string>>(new Set())
+  const handleExportarADeuda = async (t: NonNullable<typeof tarjetas>[number], moneda: string, total: number) => {
+    const diaClamp = Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate())
+    await createEvento({
+      dia: diaClamp, mes: mesActivo, año: añoActivo, tipo: 'tarjeta',
+      descripcion: `${t.nombre}${t.banco ? ' — ' + t.banco : ''}`,
+      monto: total, moneda: moneda as Moneda, recurrente: false, pagado: false,
+    })
+    setExportadoIds(prev => new Set(prev).add(`${t.id}|${moneda}`))
+  }
+
   if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
   const monedaActiva = activaId==='todas' ? null : activaId.includes('|') ? activaId.split('|')[1] : null
 
   const kpiPagos   = activaId==='todas'
-    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+(pagosPorTC[t.id]?.[i+1]??0),0))
-    : MESES_DISP.map((_,i)=>pagosPorTC[activaId]?.[i+1]??0)
+    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+pagosDe(t.id, i+1),0))
+    : MESES_DISP.map((_,i)=>pagosDe(activaId, i+1))
   const kpiTotal   = kpiPagos.reduce((a,b)=>a+b,0)
   const kpiUlt     = kpiPagos[kpiPagos.length-1]
   const kpiPen     = kpiPagos[kpiPagos.length-2]
@@ -197,17 +319,36 @@ export default function TarjetasPage() {
   const kpiMayor   = Math.max(...kpiPagos)
   const kpiMayorMes = MESES_DISP[kpiPagos.indexOf(kpiMayor)]
 
+  // % sobre ingresos (mismo criterio que el Dashboard) — comparado en la misma moneda que se
+  // está mostrando (la del chip elegido, o la principal en "Todas"), con el mismo alcance
+  // (mes activo o año activo según la vista).
+  const monedaParaPct = ((monedaActiva ?? m) as Moneda)
+  const ingresosPeriodo = (ingresosRaw ?? []).filter(i => i.moneda === monedaParaPct && (!esMensual || i.mes === mesActivo)).reduce((s,i)=>s+i.monto,0)
+  const pctSobreIngresos = ingresosPeriodo > 0 ? Math.round(kpiTotal / ingresosPeriodo * 100) : null
+  // Mes anterior, para la comparativa — mismo límite ya aceptado en otras pantallas: en enero no
+  // hay diciembre del año en curso dentro de este mismo fetch (año-acotado), así que ese mes no
+  // muestra comparativa.
+  const mesAnteriorNum = mesActivo === 1 ? null : mesActivo - 1
+  const pagosMesAnt = mesAnteriorNum ? (pagosRaw ?? []).filter(p => p.año === añoActivo && p.mes === mesAnteriorNum && p.moneda === monedaParaPct && (tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva)).reduce((s,p)=>s+p.monto,0) : 0
+  const ingresosMesAnt = mesAnteriorNum ? (ingresosRaw ?? []).filter(i => i.año === añoActivo && i.mes === mesAnteriorNum && i.moneda === monedaParaPct).reduce((s,i)=>s+i.monto,0) : 0
+  const pctMesAnt = ingresosMesAnt > 0 ? Math.round(pagosMesAnt / ingresosMesAnt * 100) : null
+  const trendPct = (esMensual && mesAnteriorNum && pctSobreIngresos !== null && pctMesAnt !== null && pctMesAnt > 0)
+    ? Math.round(((pctSobreIngresos - pctMesAnt) / pctMesAnt) * 100) : null
+
   // Trend real de "Total pagado" — mes activo vs mes anterior, o año activo vs año anterior según la vista.
   const tarjetaIdActiva  = activaId === 'todas' ? null : activaId.split('|')[0]
-  const pagosParaTrend   = (pagosRaw ?? []).filter(p => tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva)
+  const pagosParaTrend   = (pagosRaw ?? []).filter(p =>
+    (tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva) &&
+    (monedaActiva === null || p.moneda === monedaActiva))
   const trendTotalPagado = calcularTendencia(pagosParaTrend, vistaTipo, mesActivo, añoActivo)
 
   return (
     <div>
       <PageHeader title="Tarjetas de crédito" subtitle="Seguimiento de pagos y transacciones"
         action={<div className="flex gap-2 flex-wrap justify-end">
+          <button className="btn-ghost text-sm" onClick={abrirCargaModal}>+ Cargar movimientos</button>
           <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfError('') }}>Importar PDF</button>
-          <button className="btn-primary" onClick={()=>setShowModal(true)}>+ Nueva tarjeta</button>
+          <button className="btn-primary" onClick={()=>{setForm(FORM_INIT);setTarjetaEditId(null);setShowModal(true)}}>+ Nueva tarjeta</button>
         </div>} />
 
       {/* ── Selector de tarjetas — full width ── */}
@@ -228,8 +369,10 @@ export default function TarjetasPage() {
           const multiMoneda = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1
           return (
             <div key={cardId} onClick={()=>setSelTC(cardId)}
-              className="flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[155px]"
+              className="group relative flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[155px]"
               style={{borderColor: isActive ? t.color : '#f1f5f9'}}>
+              <button onClick={e=>{e.stopPropagation(); openEditTarjetaModal(t)}}
+                className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-none bg-transparent cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-xs">✎</button>
               <div className="flex justify-between items-start mb-2">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{background:t.color}}>{t.icono}</div>
                 <div className="flex flex-col items-end gap-1">
@@ -242,7 +385,7 @@ export default function TarjetasPage() {
                 </div>
               </div>
               <div className="text-sm font-semibold text-slate-900">{t.nombre}</div>
-              <div className="text-xs text-slate-400">{t.banco}</div>
+              <div className="text-xs text-slate-400">{t.banco}{t.ultimos_4 && <span className="font-mono"> ····{t.ultimos_4}</span>}</div>
               <div className="text-lg font-bold font-mono mt-1" style={{color:t.color}}>
                 {mon==='USD'?'US$':mon==='EUR'?'€':'$'}{(ultMes||totalMon).toLocaleString('es-AR',{maximumFractionDigits:0})}
               </div>
@@ -251,6 +394,44 @@ export default function TarjetasPage() {
           )
         })}
       </div>
+
+      {/* ── Vencimientos del mes ── */}
+      {vencimientosDelMes.length > 0 && (
+        <Card className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-slate-900 font-semibold text-[15px]">Vencimientos — {MESES_CORTOS[mesActivo-1]} {añoActivo}</div>
+              <div className="text-slate-400 text-xs mt-0.5">Cuándo y cuánto hay que pagar de cada tarjeta este mes</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            {vencimientosDelMes.map(({tarjeta: t, moneda: mon, total}) => {
+              const key = `${t.id}|${mon}`
+              const yaExportado = exportadoIds.has(key)
+              return (
+                <div key={key} className="flex items-center justify-between py-2.5 border-b border-slate-50 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
+                      <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{t.dia_vencimiento}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-700 truncate">{t.nombre}</div>
+                      <div className="text-xs text-slate-400">{t.banco} · vence el {t.dia_vencimiento}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="font-mono font-bold text-sm text-red-600">{fmtFull(total, mon as Moneda)}</span>
+                    <button onClick={() => handleExportarADeuda(t, mon, total)} disabled={yaExportado}
+                      className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${yaExportado ? 'border-emerald-200 text-emerald-600 bg-emerald-50 cursor-default' : 'border-slate-200 text-slate-500 hover:border-slate-400 bg-white'}`}>
+                      {yaExportado ? '✓ Exportado' : 'Exportar a Deuda'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
@@ -330,8 +511,8 @@ export default function TarjetasPage() {
               <BarChart data={chartData} barCategoryGap="30%" barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="month" tick={{fill:'#94a3b8',fontSize:10}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fill:'#94a3b8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,m)} />
-                <Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,m)]} />
+                <YAxis tick={{fill:'#94a3b8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>v===0?'':fmt(v,(monedaActiva ?? m) as Moneda)} />
+                <Tooltip contentStyle={TT} formatter={(v:number)=>[fmt(v,(monedaActiva ?? m) as Moneda)]} />
                 {activaId==='todas'
                   ? (tarjetas??[]).map((t,i)=><Bar key={t.id} dataKey={t.id} name={t.nombre} fill={CHART_COLORS[i%CHART_COLORS.length]} radius={0} maxBarSize={28} stackId="s" />)
                   : <Bar dataKey="pago" fill={tcActiva?.color||'#1A5E9E'} radius={0} maxBarSize={40} />
@@ -344,9 +525,10 @@ export default function TarjetasPage() {
           <Card>
             <div className="flex flex-col gap-3">
               {[
-                {l:`Total pagado ${periodoLabel}`, v:fmt(kpiTotal,m), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
-                {l:`Último pago (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,m), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
-                {l:'Mes más caro', v:fmt(kpiMayor,m), s:kpiMayorMes},
+                {l:`Total pagado ${periodoLabel}`, v:fmt(kpiTotal,(monedaActiva ?? m) as Moneda), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
+                {l:`Último pago (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,(monedaActiva ?? m) as Moneda), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
+                {l:'Mes más caro', v:fmt(kpiMayor,(monedaActiva ?? m) as Moneda), s:kpiMayorMes},
+                {l:'% sobre ingresos', v:pctSobreIngresos!==null?`${pctSobreIngresos}%`:'—', s:trendPct!==null?(trendPct>=0?'▲':'▼')+' '+Math.abs(trendPct)+'% vs mes anterior':(pctSobreIngresos===null?`Sin ingresos en ${monedaParaPct} este período`:''), c:pctSobreIngresos!==null?(pctSobreIngresos>40?'#F54927':pctSobreIngresos>25?'#E8A020':'#40B046'):undefined},
               ].map(k=>(
                 <div key={k.l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                   <div className="label mb-1">{k.l}</div>
@@ -386,8 +568,8 @@ export default function TarjetasPage() {
         </div>
       </div>
 
-      {/* Modal nueva tarjeta */}
-      <Modal open={showModal} onClose={()=>{setShowModal(false);setForm(FORM_INIT)}} title="Nueva tarjeta">
+      {/* Modal nueva/editar tarjeta */}
+      <Modal open={showModal} onClose={()=>{setShowModal(false);setForm(FORM_INIT);setTarjetaEditId(null)}} title={tarjetaEditId ? 'Editar tarjeta' : 'Nueva tarjeta'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: VISA Galicia" className="input-field" /></div>
           <div><FieldLabel>Banco / titular</FieldLabel><input value={form.banco} onChange={e=>setForm(p=>({...p,banco:e.target.value}))} placeholder="Ej: Galicia · Mati" className="input-field" /></div>
@@ -399,6 +581,11 @@ export default function TarjetasPage() {
             <div><FieldLabel>Titular</FieldLabel><select value={form.quien} onChange={e=>setForm(p=>({...p,quien:e.target.value as Quien}))} className="input-field">{quienOpts.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></div>
             <div><FieldLabel>Ícono</FieldLabel><input value={form.icono} onChange={e=>setForm(p=>({...p,icono:e.target.value}))} placeholder="V" maxLength={3} className="input-field" /></div>
           </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div><FieldLabel>Últimos 4 dígitos</FieldLabel><input value={form.ultimos_4} onChange={e=>setForm(p=>({...p,ultimos_4:e.target.value.replace(/\D/g,'').slice(0,4)}))} placeholder="1234" maxLength={4} className="input-field font-mono" /></div>
+            <div><FieldLabel>Día de cierre</FieldLabel><input type="number" min="1" max="31" value={form.dia_cierre} onChange={e=>setForm(p=>({...p,dia_cierre:e.target.value}))} className="input-field" /></div>
+            <div><FieldLabel>Día de vencimiento</FieldLabel><input type="number" min="1" max="31" value={form.dia_vencimiento} onChange={e=>setForm(p=>({...p,dia_vencimiento:e.target.value}))} className="input-field" /></div>
+          </div>
           <div><FieldLabel>Color</FieldLabel>
             <div className="flex gap-2 mt-1">
               {['#1A5E9E','#F54927','#7F77DD','#EF9F27','#D4537E','#1D9E75','#639922'].map(c=>(
@@ -407,18 +594,25 @@ export default function TarjetasPage() {
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={()=>{setShowModal(false);setForm(FORM_INIT)}} className="btn-ghost flex-1">Cancelar</button>
+            {tarjetaEditId && (
+              <button onClick={() => { const t=(tarjetas??[]).find(x=>x.id===tarjetaEditId); if(t) { handleDeleteTarjeta(t); setShowModal(false); setForm(FORM_INIT); setTarjetaEditId(null) } }}
+                className="text-red-500 hover:text-red-600 border-none bg-transparent cursor-pointer text-sm px-2">Eliminar</button>
+            )}
+            <div className="flex-1" />
+            <button onClick={()=>{setShowModal(false);setForm(FORM_INIT);setTarjetaEditId(null)}} className="btn-ghost">Cancelar</button>
             <button onClick={async()=>{
               if(!form.nombre) return; setSaving(true)
               try {
-                const {createClient}=await import('@/lib/supabase/client')
-                const sb=createClient()
-                const {data:{user}}=await sb.auth.getUser()
-                if(!user) return
-                await sb.from('tarjetas').insert({...form,user_id:user.id,limite:parseFloat(form.limite)||0,dia_cierre:parseInt(form.dia_cierre),dia_vencimiento:parseInt(form.dia_vencimiento),activa:true})
-                setShowModal(false); setForm(FORM_INIT); refTarjetas()
+                const payload = {
+                  nombre: form.nombre, banco: form.banco, moneda: form.moneda, color: form.color, icono: form.icono, quien: form.quien,
+                  limite: parseFloat(form.limite)||0, dia_cierre: parseInt(form.dia_cierre), dia_vencimiento: parseInt(form.dia_vencimiento),
+                  ultimos_4: form.ultimos_4 || null,
+                }
+                if (tarjetaEditId) await updateTarjeta(tarjetaEditId, payload)
+                else await createTarjeta(payload)
+                setShowModal(false); setForm(FORM_INIT); setTarjetaEditId(null); refTarjetas()
               } catch(e){console.error(e)} finally{setSaving(false)}
-            }} disabled={saving||!form.nombre} className="btn-primary flex-1 disabled:opacity-50">{saving?'Guardando...':'Guardar'}</button>
+            }} disabled={saving||!form.nombre} className="btn-primary disabled:opacity-50">{saving?'Guardando...':tarjetaEditId?'Guardar cambios':'Guardar'}</button>
           </div>
         </div>
       </Modal>
@@ -583,6 +777,130 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
             <button onClick={()=>{ setShowPDFModal(false); setPdfStep('upload'); setPdfTxns([]) }} className="btn-primary">Cerrar</button>
           </div>
         )}
+      </Modal>
+
+      {/* ── Modal cargar movimientos (para que una tarjeta no arranque en cero) ── */}
+      <Modal open={showCargaModal} onClose={() => setShowCargaModal(false)} title="Cargar movimientos">
+        <div className="flex flex-col gap-4">
+          <div><FieldLabel>Tarjeta</FieldLabel>
+            <select value={cargaTarjetaId ?? ''} onChange={e => setCargaTarjetaId(e.target.value)} className="input-field">
+              <option value="">Seleccioná una tarjeta</option>
+              {(tarjetas??[]).map(t => <option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
+            </select>
+          </div>
+
+          <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+            {[{k:'total',l:'Monto total'},{k:'item',l:'Item por item'},{k:'bloque',l:'Pegar bloque'}].map(o => (
+              <button key={o.k} onClick={() => setCargaModo(o.k as any)}
+                className={`flex-1 py-1.5 rounded-md text-xs font-semibold border-none cursor-pointer transition-all ${cargaModo===o.k ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-400'}`}>
+                {o.l}
+              </button>
+            ))}
+          </div>
+
+          {cargaModo === 'total' && (
+            <>
+              <p className="text-slate-400 text-xs -mt-2">Un solo movimiento con el total que ya tenías acumulado (ej: "Saldo previo a la app").</p>
+              <div><FieldLabel>Descripción</FieldLabel>
+                <input value={cargaForm.descripcion} onChange={e => setCargaForm(p => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: Saldo inicial" className="input-field" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><FieldLabel>Monto</FieldLabel><MontoInput value={cargaForm.monto} onChange={raw => setCargaForm(p => ({ ...p, monto: raw }))} placeholder="0" /></div>
+                <div><FieldLabel>Moneda</FieldLabel>
+                  <select value={cargaForm.moneda} onChange={e => setCargaForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
+                    {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div><FieldLabel>Fecha</FieldLabel><FechaInput value={cargaForm.fecha} onChange={iso => setCargaForm(p => ({ ...p, fecha: iso }))} /></div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowCargaModal(false)} className="btn-ghost flex-1">Cancelar</button>
+                <button onClick={handleGuardarCargaTotal} disabled={guardandoCarga || !cargaTarjetaId || !cargaForm.monto}
+                  className="btn-primary flex-1 disabled:opacity-50">{guardandoCarga ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </>
+          )}
+
+          {cargaModo === 'item' && (
+            <>
+              <p className="text-slate-400 text-xs -mt-2">Cargá de a uno — cada "Agregar" lo suma a la lista de abajo, y "Guardar todos" los crea juntos al final.</p>
+              <div><FieldLabel>Descripción</FieldLabel>
+                <input value={cargaForm.descripcion} onChange={e => setCargaForm(p => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: Supermercado Coto" className="input-field" />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div><FieldLabel>Categoría</FieldLabel>
+                  <select value={cargaForm.categoria} onChange={e => setCargaForm(p => ({ ...p, categoria: e.target.value }))} className="input-field">
+                    {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><FieldLabel>Monto</FieldLabel><MontoInput value={cargaForm.monto} onChange={raw => setCargaForm(p => ({ ...p, monto: raw }))} placeholder="0" /></div>
+                <div><FieldLabel>Moneda</FieldLabel>
+                  <select value={cargaForm.moneda} onChange={e => setCargaForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">
+                    {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-end gap-3">
+                <div className="flex-1"><FieldLabel>Fecha</FieldLabel><FechaInput value={cargaForm.fecha} onChange={iso => setCargaForm(p => ({ ...p, fecha: iso }))} /></div>
+                <button onClick={agregarItemALista} disabled={!cargaForm.descripcion || !cargaForm.monto} className="btn-ghost disabled:opacity-50">+ Agregar</button>
+              </div>
+              {cargaItems.length > 0 && (
+                <div className="max-h-48 overflow-auto flex flex-col gap-1 border-t border-slate-100 pt-2">
+                  {cargaItems.map((it, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50">
+                      <span className="text-xs text-slate-600 truncate">{it.descripcion}</span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="font-mono text-xs font-bold text-slate-900">{fmtFull(it.monto, it.moneda)}</span>
+                        <button onClick={() => setCargaItems(prev => prev.filter((_,j) => j!==i))} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs">✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowCargaModal(false)} className="btn-ghost flex-1">Cancelar</button>
+                <button onClick={() => handleGuardarCargaItems(cargaItems)} disabled={guardandoCarga || !cargaTarjetaId || cargaItems.length===0}
+                  className="btn-primary flex-1 disabled:opacity-50">{guardandoCarga ? 'Guardando...' : `Guardar ${cargaItems.length || ''} item${cargaItems.length===1?'':'s'}`}</button>
+              </div>
+            </>
+          )}
+
+          {cargaModo === 'bloque' && (
+            <>
+              <p className="text-slate-400 text-xs -mt-2">Pegá una línea por movimiento, con el monto al final (ej: "Supermercado Coto 15.230"). Se arma la lista abajo para revisar antes de guardar.</p>
+              <div><FieldLabel>Moneda de todo el bloque</FieldLabel>
+                <select value={cargaBloqueMoneda} onChange={e => setCargaBloqueMoneda(e.target.value as Moneda)} className="input-field">
+                  {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <textarea value={cargaBloqueTexto} onChange={e => setCargaBloqueTexto(e.target.value)} rows={6}
+                placeholder={'Supermercado Coto 15.230\nNetflix 3.500\nUber 890'} className="input-field font-mono text-xs" />
+              {(() => {
+                const parseados = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
+                return (
+                  <>
+                    {parseados.length > 0 && (
+                      <div className="max-h-48 overflow-auto flex flex-col gap-1 border-t border-slate-100 pt-2">
+                        <div className="text-xs text-slate-400">{parseados.length} movimiento{parseados.length===1?'':'s'} detectado{parseados.length===1?'':'s'}</div>
+                        {parseados.map((it, i) => (
+                          <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50">
+                            <span className="text-xs text-slate-600 truncate">{it.descripcion}</span>
+                            <span className="font-mono text-xs font-bold text-slate-900 flex-shrink-0">{fmtFull(it.monto, it.moneda)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={() => setShowCargaModal(false)} className="btn-ghost flex-1">Cancelar</button>
+                      <button onClick={() => handleGuardarCargaItems(parseados)} disabled={guardandoCarga || !cargaTarjetaId || parseados.length===0}
+                        className="btn-primary flex-1 disabled:opacity-50">{guardandoCarga ? 'Guardando...' : `Guardar ${parseados.length || ''} item${parseados.length===1?'':'s'}`}</button>
+                    </div>
+                  </>
+                )
+              })()}
+            </>
+          )}
+        </div>
       </Modal>
 
       <Modal open={showTxnModal} onClose={() => { setShowTxnModal(false); setTxnEditId(null) }} title="Editar transacción">

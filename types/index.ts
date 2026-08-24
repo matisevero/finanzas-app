@@ -137,9 +137,11 @@ export interface Tarjeta {
   quien: Quien
   dia_cierre: number
   dia_vencimiento: number
+  ultimos_4?: string | null
   activa: boolean
   created_at: string
 }
+export type TarjetaInsert = Omit<Tarjeta, 'id' | 'user_id' | 'created_at'>
 
 export interface TarjetaTransaccion {
   id: string

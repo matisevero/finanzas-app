@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   Ingreso, IngresoInsert, Egreso, EgresoInsert,
   Deuda, DeudaInsert, PagoDeuda,
-  Tarjeta, TarjetaTransaccion, PagoTarjeta,
+  Tarjeta, TarjetaInsert, TarjetaTransaccion, PagoTarjeta,
   EventoCalendario, EventoInsert,
   Meta, MetaInsert,
   Ahorro, AhorroInsert,
@@ -306,6 +306,37 @@ export async function getTarjetas(): Promise<Tarjeta[]> {
   const { data, error } = await sb().from('tarjetas').select('*').eq('activa', true).order('created_at')
   if (error) throw error
   return data ?? []
+}
+
+export async function createTarjeta(form: Partial<TarjetaInsert>): Promise<Tarjeta> {
+  const userId = await uid()
+  const { data, error } = await sb().from('tarjetas').insert({ ...form, user_id: userId, activa: true }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateTarjeta(id: string, updates: Partial<TarjetaInsert>): Promise<Tarjeta> {
+  const { data, error } = await sb().from('tarjetas').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Igual criterio que Personas/Proyectos: si tiene transacciones u otra data vinculada, se
+// archiva (activa=false, ya no aparece pero el historial queda intacto); si está limpia, se borra.
+export async function eliminarOArchivarTarjeta(id: string): Promise<'eliminada' | 'archivada'> {
+  const [txns, pagos] = await Promise.all([
+    sb().from('tarjeta_transacciones').select('id', { count: 'exact', head: true }).eq('tarjeta_id', id),
+    sb().from('pagos_tarjeta').select('id', { count: 'exact', head: true }).eq('tarjeta_id', id),
+  ])
+  const tieneData = (txns.count ?? 0) > 0 || (pagos.count ?? 0) > 0
+  if (tieneData) {
+    const { error } = await sb().from('tarjetas').update({ activa: false }).eq('id', id)
+    if (error) throw error
+    return 'archivada'
+  }
+  const { error } = await sb().from('tarjetas').delete().eq('id', id)
+  if (error) throw error
+  return 'eliminada'
 }
 
 export async function getTarjetaTransacciones(tarjetaId?: string): Promise<TarjetaTransaccion[]> {
