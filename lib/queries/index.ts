@@ -584,6 +584,15 @@ export async function getProyectos(): Promise<Proyecto[]> {
   return data ?? []
 }
 
+export async function asegurarEtiquetaDeDeuda(deudaId: string, nombre: string): Promise<{ id: string }> {
+  const { data: existente } = await sb().from('etiquetas').select('id').eq('deuda_id', deudaId).maybeSingle()
+  if (existente) return existente
+  const userId = await uid()
+  const { data, error } = await sb().from('etiquetas').insert({ user_id: userId, nombre, tipo: 'deuda', deuda_id: deudaId }).select('id').single()
+  if (error) throw error
+  return data
+}
+
 export async function createProyecto(form: ProyectoInsert): Promise<Proyecto> {
   const userId = await uid()
   const { data, error } = await sb().from('proyectos').insert({ ...form, user_id: userId }).select().single()

@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useDeudas, useEventosMes, useEventosAño, useIngresos, useDescripcionesDistintas, useEtiquetasDistintas, useCategoriasCustom, useAhorros, useAllIngresos, useAllEgresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas } from '@/hooks'
-import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento, createEgreso, updateEgreso, deleteEgreso, recibirDevolucion, descartarDevolucion, agregarEtiquetaAEgreso } from '@/lib/queries'
+import { createDeuda, updateDeuda, deleteDeuda, pagarEvento, despagarEvento, updateEvento, deleteEvento, createEvento, createEgreso, updateEgreso, deleteEgreso, recibirDevolucion, descartarDevolucion, agregarEtiquetaAEgreso, asegurarEtiquetaDeDeuda } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EVENTO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, FieldLabel, ProgressBar, Tabs, StatCard } from '@/components/ui'
@@ -76,7 +76,7 @@ export default function DeudasPage() {
   const [vinculando, setVinculando] = useState(false)
   const [buscarVincular, setBuscarVincular] = useState('')
   const [editandoMovId, setEditandoMovId] = useState<string | null>(null)
-  const [movForm, setMovForm] = useState({ descripcion: '', monto: '', fecha: '' })
+  const [movForm, setMovForm] = useState({ descripcion: '', monto: '', fecha: '', nota: '' })
   const { data: allIngresos } = useAllIngresos()
   const { data: allEgresos } = useAllEgresos()
   const [tab, setTab] = useState<'calendario'|'largo'>('calendario')
@@ -418,7 +418,7 @@ export default function DeudasPage() {
 
   // ── Registrar pago de una Deuda LP (modal con monto y descripción editables) ──
   const [showPagoModal, setShowPagoModal] = useState<any>(null) // la deuda sobre la que se está pagando
-  const [pagoForm, setPagoForm] = useState({ monto: '', descripcion: '' })
+  const [pagoForm, setPagoForm] = useState({ monto: '', descripcion: '', nota: '', fecha: new Date().toISOString().split('T')[0] })
 
   const abrirPagoLP = (d: any) => {
     setShowPagoModal(d)
@@ -427,6 +427,7 @@ export default function DeudasPage() {
     setPagoForm({
       monto: String(d.cuota_mensual > 0 ? d.cuota_mensual : d.pendiente),
       descripcion: `Cuota ${d.cuota_actual}/${d.cuota_total} — ${d.nombre}`,
+      nota: '', fecha: new Date().toISOString().split('T')[0],
     })
   }
 
@@ -459,11 +460,11 @@ export default function DeudasPage() {
     try {
       const egreso = await createEgreso({
         categoria: 'otro', descripcion: pagoForm.descripcion || `Pago — ${d.nombre}`,
-        monto, moneda: d.moneda as Moneda, fecha: new Date().toISOString().split('T')[0],
-        quien: 'ambos', recurrente: false, etiqueta: d.etiqueta ?? null,
+        monto, moneda: d.moneda as Moneda, fecha: pagoForm.fecha || new Date().toISOString().split('T')[0],
+        quien: 'ambos', recurrente: false, etiqueta: d.etiqueta ?? null, nota: pagoForm.nota || null,
       })
-      const et = etiquetaDeDeuda(d)
-      if (et) await agregarEtiquetaAEgreso(egreso.id, et.id)
+      const et = await asegurarEtiquetaDeDeuda(d.id, d.nombre)
+      await agregarEtiquetaAEgreso(egreso.id, et.id)
       await updateDeuda(d.id, {
         ...pendienteYActiva(d.pendiente - monto),
         cuota_actual: Math.min(d.cuota_actual + 1, d.cuota_total),
@@ -476,10 +477,9 @@ export default function DeudasPage() {
   // Vincula un egreso YA existente (ej. la pata en USD de una compra de dólares) como pago de
   // esta deuda, en vez de crear uno nuevo — mismo criterio de descuento de saldo que un pago nuevo.
   const handleVincularExistente = async (d: any, egreso: Egreso) => {
-    const et = etiquetaDeDeuda(d)
-    if (!et) return
     setPagandoCuotaId(d.id)
     try {
+      const et = await asegurarEtiquetaDeDeuda(d.id, d.nombre)
       await agregarEtiquetaAEgreso(egreso.id, et.id)
       await updateDeuda(d.id, {
         ...pendienteYActiva(d.pendiente - egreso.monto),
@@ -492,13 +492,12 @@ export default function DeudasPage() {
 
   // Duplicar un movimiento vinculado: crea otro pago igual (hoy) y descuenta saldo de nuevo.
   const handleDuplicarMovimiento = async (d: any, mov: Egreso) => {
-    const et = etiquetaDeDeuda(d)
-    if (!et) return
     const egreso = await createEgreso({
       categoria: mov.categoria, descripcion: mov.descripcion, monto: mov.monto,
       moneda: mov.moneda as Moneda, fecha: new Date().toISOString().split('T')[0],
       quien: mov.quien as Quien, recurrente: false, etiqueta: mov.etiqueta ?? null,
     })
+    const et = await asegurarEtiquetaDeDeuda(d.id, d.nombre)
     await agregarEtiquetaAEgreso(egreso.id, et.id)
     await updateDeuda(d.id, pendienteYActiva(d.pendiente - mov.monto))
     refDeudas(); refetchEgresoEtiquetas()
@@ -514,8 +513,8 @@ export default function DeudasPage() {
 
   // Editar monto/descripción/fecha de un movimiento vinculado: ajusta el pendiente por la
   // diferencia entre el monto viejo y el nuevo.
-  const handleGuardarEdicionMovimiento = async (d: any, mov: Egreso, nuevo: { descripcion: string; monto: number; fecha: string }) => {
-    await updateEgreso(mov.id, { descripcion: nuevo.descripcion, monto: nuevo.monto, fecha: nuevo.fecha })
+  const handleGuardarEdicionMovimiento = async (d: any, mov: Egreso, nuevo: { descripcion: string; monto: number; fecha: string; nota: string }) => {
+    await updateEgreso(mov.id, { descripcion: nuevo.descripcion, monto: nuevo.monto, fecha: nuevo.fecha, nota: nuevo.nota || null })
     const delta = nuevo.monto - mov.monto
     if (delta !== 0) await updateDeuda(d.id, pendienteYActiva(d.pendiente - delta))
     setEditandoMovId(null)
@@ -770,24 +769,30 @@ export default function DeudasPage() {
                     <div className="text-center text-slate-400 text-sm py-6">Todavía no hay pagos registrados para esta deuda.</div>
                   ) : movs.map(mov => (
                     editandoMovId === mov.id ? (
-                      <div key={mov.id} className="flex items-center gap-2 px-2 py-2 bg-blue-50 rounded-lg mb-1 flex-wrap">
-                        <input value={movForm.descripcion} onChange={e => setMovForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
-                        <MontoInput value={movForm.monto} onChange={raw => setMovForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
-                        <FechaInput value={movForm.fecha} onChange={iso => setMovForm(p => ({ ...p, fecha: iso }))} className="w-28" />
-                        <button onClick={() => handleGuardarEdicionMovimiento(d, mov, { descripcion: movForm.descripcion, monto: parseFloat(movForm.monto) || 0, fecha: movForm.fecha })}
-                          className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer">✓</button>
-                        <button onClick={() => setEditandoMovId(null)} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕</button>
+                      <div key={mov.id} className="flex flex-col gap-2 px-2 py-2 bg-blue-50 rounded-lg mb-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input value={movForm.descripcion} onChange={e => setMovForm(p => ({ ...p, descripcion: e.target.value }))} className="input-field py-1 text-xs flex-1" placeholder="Descripción" />
+                          <MontoInput value={movForm.monto} onChange={raw => setMovForm(p => ({ ...p, monto: raw }))} className="w-32 text-right" placeholder="Monto" />
+                          <FechaInput value={movForm.fecha} onChange={iso => setMovForm(p => ({ ...p, fecha: iso }))} className="w-28" />
+                        </div>
+                        <input value={movForm.nota} onChange={e => setMovForm(p => ({ ...p, nota: e.target.value }))} className="input-field py-1 text-xs" placeholder="Detalle (opcional) — más info que la descripción" />
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => handleGuardarEdicionMovimiento(d, mov, { descripcion: movForm.descripcion, monto: parseFloat(movForm.monto) || 0, fecha: movForm.fecha, nota: movForm.nota })}
+                            className="text-xs bg-blue-700 text-white px-2 py-1 rounded-lg border-none cursor-pointer">✓ Guardar</button>
+                          <button onClick={() => setEditandoMovId(null)} className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-lg border-none cursor-pointer">✕ Cancelar</button>
+                        </div>
                       </div>
                     ) : (
                       <div key={mov.id} className="group flex items-center justify-between py-2.5 border-b border-slate-50 last:border-0">
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-slate-700 truncate">{mov.descripcion}</div>
                           <div className="text-xs text-slate-400">{fmtDate(mov.fecha)}</div>
+                          {mov.nota && <div className="text-xs text-slate-400 italic truncate mt-0.5">{mov.nota}</div>}
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
                           <span className="font-mono font-bold text-sm text-red-600">{oc('-'+fmtFull(mov.monto, mov.moneda as Moneda))}</span>
                           <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => { setEditandoMovId(mov.id); setMovForm({ descripcion: mov.descripcion, monto: String(mov.monto), fecha: mov.fecha }) }} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Editar">✎</button>
+                            <button onClick={() => { setEditandoMovId(mov.id); setMovForm({ descripcion: mov.descripcion, monto: String(mov.monto), fecha: mov.fecha, nota: mov.nota ?? '' }) }} className="text-slate-400 hover:text-blue-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Editar">✎</button>
                             <button onClick={() => handleDuplicarMovimiento(d, mov)} className="text-slate-400 hover:text-emerald-600 border-none bg-transparent cursor-pointer px-1 text-sm" title="Duplicar">⧉</button>
                             <button onClick={() => handleEliminarMovimiento(d, mov)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer px-1 text-sm" title="Eliminar">✕</button>
                           </div>
@@ -1150,6 +1155,13 @@ export default function DeudasPage() {
               <div><FieldLabel>Descripción</FieldLabel>
                 <input value={pagoForm.descripcion} onChange={e => setPagoForm(p => ({ ...p, descripcion: e.target.value }))}
                   placeholder="Ej: Cuota 3/12 — Crédito auto" className="input-field" />
+              </div>
+              <div><FieldLabel>Fecha</FieldLabel>
+                <FechaInput value={pagoForm.fecha} onChange={iso => setPagoForm(p => ({ ...p, fecha: iso }))} />
+              </div>
+              <div><FieldLabel>Detalle <span className="text-slate-400 font-normal normal-case">(opcional — más info que la descripción)</span></FieldLabel>
+                <input value={pagoForm.nota} onChange={e => setPagoForm(p => ({ ...p, nota: e.target.value }))}
+                  placeholder="Ej: Pagado con USD comprados el 3/8" className="input-field" />
               </div>
               <p className="text-slate-400 text-xs">Esto va a crear un Egreso por este monto y va a descontarlo del saldo pendiente.</p>
               <div className="flex gap-3 pt-2">
