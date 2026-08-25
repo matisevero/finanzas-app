@@ -317,7 +317,7 @@ export default function TarjetasPage() {
   const totalGlobal = tarjetasConMoneda.filter(x=>x.moneda===m).reduce((s,{tarjeta:t, moneda:mon})=>{
     const txnsMon = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
     const totalMon = txnsMon.reduce((ss,x)=>ss+x.monto,0)
-    const ultMes = txnsMon.filter(x=>new Date(x.fecha).getMonth()===new Date().getMonth()).reduce((ss,x)=>ss+x.monto,0)
+    const ultMes = txnsMon.filter(x=>Number(x.fecha.slice(5,7))===new Date().getMonth()+1).reduce((ss,x)=>ss+x.monto,0)
     return s + (ultMes||totalMon)
   }, 0)
 
@@ -430,7 +430,7 @@ export default function TarjetasPage() {
           const isActive = activaId===cardId
           const txnsMes  = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
           const totalMon = txnsMes.reduce((s,x)=>s+x.monto,0)
-          const ultMes   = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon && new Date(x.fecha).getMonth()===new Date().getMonth()).reduce((s,x)=>s+x.monto,0)
+          const ultMes   = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon && Number(x.fecha.slice(5,7))===new Date().getMonth()+1).reduce((s,x)=>s+x.monto,0)
           const multiMoneda = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1
           return (
             <div key={cardId} onClick={()=>setSelTC(cardId)}
