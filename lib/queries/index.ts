@@ -6,12 +6,13 @@ import type {
   EventoCalendario, EventoInsert,
   Meta, MetaInsert,
   Ahorro, AhorroInsert,
-  Proyecto, ProyectoInsert,
+  Proyecto, ProyectoInsert, ProyectoPresupuesto, ProyectoMovimientoManual, ProyectoMovimientoManualInsert,
   Etiqueta, EtiquetaInsert,
   PrecioItem, PrecioHistorial,
   SaldoInicial,
   CategoriaCustom, CategoriaCustomInsert,
   Persona, PersonaInsert,
+  Moneda,
 } from '@/types'
 
 const sb = () => createClient()
@@ -619,6 +620,49 @@ export async function deleteProyecto(id: string) {
 
 export async function archivarProyecto(id: string, archivar: boolean) {
   const { error } = await sb().from('etiquetas').update({ estado: archivar ? 'archivada' : 'activa' }).eq('proyecto_id', id)
+  if (error) throw error
+}
+
+// ─── PROYECTOS: presupuesto por moneda ───────────────────────────────────────
+export async function getProyectoPresupuestos(): Promise<ProyectoPresupuesto[]> {
+  const { data, error } = await sb().from('proyecto_presupuestos').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
+// Reemplaza el set completo de presupuestos de un proyecto (una fila por moneda).
+export async function setPresupuestosDeProyecto(proyectoId: string, presupuestos: { moneda: Moneda; monto: number }[]) {
+  const { error: delErr } = await sb().from('proyecto_presupuestos').delete().eq('proyecto_id', proyectoId)
+  if (delErr) throw delErr
+  const filas = presupuestos.filter(p => p.monto > 0)
+  if (filas.length === 0) return
+  const { error } = await sb().from('proyecto_presupuestos').insert(filas.map(p => ({ proyecto_id: proyectoId, moneda: p.moneda, monto: p.monto })))
+  if (error) throw error
+}
+
+// ─── PROYECTOS: movimientos manuales (estimado/pendiente, todavía sin Egreso) ─
+export async function getProyectoMovimientosManuales(proyectoId?: string): Promise<ProyectoMovimientoManual[]> {
+  let q = sb().from('proyecto_movimientos_manuales').select('*').order('fecha', { ascending: false })
+  if (proyectoId) q = q.eq('proyecto_id', proyectoId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createProyectoMovimientoManual(form: ProyectoMovimientoManualInsert): Promise<ProyectoMovimientoManual> {
+  const { data, error } = await sb().from('proyecto_movimientos_manuales').insert(form).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateProyectoMovimientoManual(id: string, updates: Partial<ProyectoMovimientoManualInsert>): Promise<ProyectoMovimientoManual> {
+  const { data, error } = await sb().from('proyecto_movimientos_manuales').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteProyectoMovimientoManual(id: string) {
+  const { error } = await sb().from('proyecto_movimientos_manuales').delete().eq('id', id)
   if (error) throw error
 }
 

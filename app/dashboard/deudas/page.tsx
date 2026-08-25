@@ -374,11 +374,12 @@ export default function DeudasPage() {
         const nuevoPendiente = parseFloat(deudaForm.pendiente) || 0
         await updateDeuda(modalEditDeudaId, {
           nombre: deudaForm.nombre, banco: deudaForm.banco,
+          total_original: parseFloat(deudaForm.total_original) || 0,
           pendiente: nuevoPendiente, activa: nuevoPendiente > 0,
           cuota_mensual: parseFloat(deudaForm.cuota_mensual) || 0,
           moneda: deudaForm.moneda,
           fecha_inicio: deudaForm.fecha_inicio, fecha_vencimiento: fechaVenc,
-          cuota_actual: parseInt(deudaForm.cuota_actual), cuota_total: parseInt(deudaForm.cuota_total),
+          cuota_actual: parseInt(deudaForm.cuota_actual) || 1, cuota_total: parseInt(deudaForm.cuota_total) || 1,
           color: deudaForm.color, etiqueta: deudaForm.etiqueta || null,
         })
       } else {
@@ -1051,9 +1052,9 @@ export default function DeudasPage() {
               placeholder="Ej: Crédito auto" className="input-field" autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Monto total{modalEditDeudaId ? ' (no editable)' : ''}</FieldLabel>
-              <MontoInput value={deudaForm.total_original} disabled={!!modalEditDeudaId}
-                onChange={raw => setDeudaForm(p => ({ ...p, total_original: raw }))} placeholder="0" className="disabled:opacity-50 disabled:cursor-not-allowed" />
+            <div><FieldLabel>Monto total</FieldLabel>
+              <MontoInput value={deudaForm.total_original}
+                onChange={raw => setDeudaForm(p => ({ ...p, total_original: raw }))} placeholder="0" />
             </div>
             <div><FieldLabel>Moneda</FieldLabel>
               <select value={deudaForm.moneda} onChange={e => setDeudaForm(p => ({ ...p, moneda: e.target.value as Moneda }))} className="input-field">

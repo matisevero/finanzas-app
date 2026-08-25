@@ -237,6 +237,27 @@ export interface Proyecto {
 }
 export type ProyectoInsert = Omit<Proyecto, 'id' | 'user_id' | 'created_at'>
 
+export interface ProyectoPresupuesto {
+  proyecto_id: string
+  moneda: Moneda
+  monto: number
+}
+
+export type EstadoMovimientoManual = 'estimado' | 'pendiente'
+export interface ProyectoMovimientoManual {
+  id: string
+  proyecto_id: string
+  descripcion: string
+  categoria: string
+  fecha: string
+  monto: number
+  moneda: Moneda
+  estado: EstadoMovimientoManual
+  egreso_id?: string | null
+  created_at: string
+}
+export type ProyectoMovimientoManualInsert = Omit<ProyectoMovimientoManual, 'id' | 'created_at'>
+
 export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro' | 'deuda'
 export type EstadoEtiqueta = 'activa' | 'archivada'
 export interface Etiqueta {
