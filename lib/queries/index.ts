@@ -3,6 +3,7 @@ import type {
   Ingreso, IngresoInsert, Egreso, EgresoInsert,
   Deuda, DeudaInsert, PagoDeuda,
   Tarjeta, TarjetaInsert, TarjetaTransaccion, PagoTarjeta,
+  TarjetaResumen, TarjetaResumenInsert, Moneda,
   EventoCalendario, EventoInsert,
   Meta, MetaInsert,
   Ahorro, AhorroInsert,
@@ -376,6 +377,124 @@ export async function upsertPagoTarjeta(pago: Omit<PagoTarjeta, 'id' | 'created_
   const { data, error } = await sb().from('pagos_tarjeta').upsert(pago, { onConflict: 'tarjeta_id,año,mes' }).select().single()
   if (error) throw error
   return data
+}
+
+// ─── TARJETA RESUMENES + CONCILIACIÓN ────────────────────────────────────────
+export async function getTarjetaResumenes(tarjetaId?: string): Promise<TarjetaResumen[]> {
+  let q = sb().from('tarjeta_resumenes').select('*').order('año', { ascending: false }).order('mes', { ascending: false })
+  if (tarjetaId) q = q.eq('tarjeta_id', tarjetaId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createTarjetaResumen(form: TarjetaResumenInsert): Promise<TarjetaResumen> {
+  const { data, error } = await sb().from('tarjeta_resumenes')
+    .upsert(form, { onConflict: 'tarjeta_id,año,mes' }).select().single()
+  if (error) throw error
+  return data
+}
+
+// Match automático de un ítem del PDF contra transacciones 'cargado' de la misma tarjeta
+// sin resumen todavía: mismo monto (±1 peso por redondeo) y fecha dentro de ±4 días.
+// Devuelve el id de la transacción cargada que matchea, o null si no hay ninguna.
+function buscarMatchManual(
+  item: { monto: number; fecha: string },
+  candidatos: TarjetaTransaccion[]
+): TarjetaTransaccion | null {
+  const fechaItem = new Date(item.fecha).getTime()
+  const DIA_MS = 86400000
+  const match = candidatos.find(c =>
+    Math.abs(c.monto - item.monto) <= 1 &&
+    Math.abs(new Date(c.fecha).getTime() - fechaItem) <= 4 * DIA_MS
+  )
+  return match ?? null
+}
+
+// Conciliar un resumen recién importado contra lo que ya estaba cargado a mano:
+// - ítems del PDF que matchean un 'cargado' → ese 'cargado' pasa a 'validado' (no se
+//   duplica, se referencia el resumen)
+// - ítems del PDF sin match → se insertan como nuevos, origen 'pdf', 'validado'
+// - 'cargado' de esa tarjeta sin resumen que quedaron sin matchear → pasan a 'revisar'
+export async function conciliarResumen(
+  tarjetaId: string,
+  resumenId: string,
+  itemsPdf: { descripcion: string; categoria: string; fecha: string; monto: number; moneda: Moneda; cuota_actual?: number; cuota_total?: number }[]
+): Promise<{ matcheados: number; nuevos: number; aRevisar: number }> {
+  const cargados = (await getTarjetaTransacciones(tarjetaId)).filter(t => t.estado_conciliacion === 'cargado' && !t.resumen_id)
+  const yaUsados = new Set<string>()
+  let matcheados = 0, nuevos = 0
+
+  for (const item of itemsPdf) {
+    const disponibles = cargados.filter(c => !yaUsados.has(c.id))
+    const match = buscarMatchManual(item, disponibles)
+    if (match) {
+      yaUsados.add(match.id)
+      await updateTarjetaTransaccion(match.id, { estado_conciliacion: 'validado', resumen_id: resumenId })
+      matcheados++
+    } else {
+      await createTarjetaTransaccion({
+        tarjeta_id: tarjetaId, descripcion: item.descripcion, categoria: item.categoria,
+        fecha: item.fecha, monto: item.monto, moneda: item.moneda,
+        cuota_actual: item.cuota_actual, cuota_total: item.cuota_total,
+        tipo: 'credito', origen: 'pdf', estado_conciliacion: 'validado', resumen_id: resumenId,
+      })
+      nuevos++
+    }
+  }
+
+  const sinMatch = cargados.filter(c => !yaUsados.has(c.id))
+  for (const c of sinMatch) {
+    await updateTarjetaTransaccion(c.id, { estado_conciliacion: 'revisar' })
+  }
+
+  return { matcheados, nuevos, aRevisar: sinMatch.length }
+}
+
+// Genera (o actualiza) el ítem de Deuda del período — usado tanto al cerrar un resumen
+// como manualmente desde el botón "Cerrar mes". Upsertea por (tarjeta_id, período), así
+// que si el total cambia después (llegó un resumen, o se corrigió algo) actualiza el
+// mismo ítem en vez de duplicarlo, y guarda el monto anterior para mostrar el indicador
+// de "monto revisado".
+export async function generarDeudaDesdeTarjeta(
+  tarjeta: Tarjeta, año: number, mes: number, total: number, moneda: Moneda, fechaVencimiento: string
+): Promise<Deuda> {
+  const { data: existente } = await sb().from('deudas')
+    .select('*').eq('tarjeta_id', tarjeta.id).eq('periodo_año', año).eq('periodo_mes', mes).maybeSingle()
+
+  if (existente) {
+    const cambioMonto = Math.abs(existente.total_original - total) > 1
+    const { data, error } = await sb().from('deudas').update({
+      total_original: total, pendiente: total,
+      monto_antes_ajuste: cambioMonto ? existente.total_original : existente.monto_antes_ajuste,
+      fecha_vencimiento: fechaVencimiento,
+    }).eq('id', existente.id).select().single()
+    if (error) throw error
+    return data
+  }
+
+  return createDeuda({
+    nombre: `${tarjeta.nombre} — ${String(mes).padStart(2, '0')}/${año}`,
+    banco: tarjeta.banco, total_original: total, pendiente: total, cuota_mensual: total,
+    tasa_interes: 0, moneda, fecha_inicio: fechaVencimiento, fecha_vencimiento: fechaVencimiento,
+    cuota_actual: 1, cuota_total: 1, color: tarjeta.color, activa: true,
+    tarjeta_id: tarjeta.id, periodo_año: año, periodo_mes: mes,
+  } as DeudaInsert)
+}
+
+// ─── ETIQUETAS DE TRANSACCIONES DE TARJETA ───────────────────────────────────
+export async function getTarjetaTransaccionEtiquetas(): Promise<{ transaccion_id: string; etiqueta_id: string }[]> {
+  const { data, error } = await sb().from('tarjeta_transaccion_etiquetas').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function setEtiquetasDeTarjetaTransaccion(transaccionId: string, etiquetaIds: string[]) {
+  const { error: delErr } = await sb().from('tarjeta_transaccion_etiquetas').delete().eq('transaccion_id', transaccionId)
+  if (delErr) throw delErr
+  if (etiquetaIds.length === 0) return
+  const { error } = await sb().from('tarjeta_transaccion_etiquetas').insert(etiquetaIds.map(etiqueta_id => ({ transaccion_id: transaccionId, etiqueta_id })))
+  if (error) throw error
 }
 
 // ─── EVENTOS CALENDARIO ──────────────────────────────────────────────────────

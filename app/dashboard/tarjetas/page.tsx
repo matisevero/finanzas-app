@@ -2,16 +2,17 @@
 import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento } from '@/lib/queries'
+import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros } from '@/hooks'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
+import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
-import type { Moneda, Quien, TarjetaTransaccion } from '@/types'
+import type { Moneda, Quien, TarjetaTransaccion, TarjetaResumen } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10', ultimos_4:'' }
@@ -34,6 +35,35 @@ export default function TarjetasPage() {
   const { data: pagosRaw, loading: lp } = usePagosTarjeta()
   const { data: txnsRaw,  loading: lx, refetch: refTxns } = useTarjetaTransacciones()
   const { data: ingresosRaw } = useIngresos()
+  const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
+  const { data: proyectos, refetch: refetchProyectos } = useProyectos()
+  const { data: ahorros, refetch: refetchAhorros }     = useAhorros()
+  const handleCrearProyecto = async (nombre: string) => {
+    const p = await createProyecto({ nombre, presupuesto: 0, moneda: m, icono: '📁', color: '#1A5E9E', activo: true, fecha_inicio: null, fecha_fin: null })
+    const fresh = await getEtiquetas()
+    refetchProyectos(); refetchEtiquetas()
+    return fresh.find(e => e.proyecto_id === p.id)?.id ?? null
+  }
+  const handleCrearAhorro = async (nombre: string) => {
+    const a = await createAhorro({ nombre, categoria: nombre, moneda: m, icono: '💰', color: '#1A5E9E', ajuste_manual: 0 })
+    const fresh = await getEtiquetas()
+    refetchAhorros(); refetchEtiquetas()
+    return fresh.find(e => e.ahorro_id === a.id)?.id ?? null
+  }
+  const [txnEtiquetas, setTxnEtiquetas] = useState<{ transaccion_id: string; etiqueta_id: string }[]>([])
+  useEffect(() => { getTarjetaTransaccionEtiquetas().then(setTxnEtiquetas).catch(()=>{}) }, [])
+  const etiquetasDeTxn = (txnId: string) => txnEtiquetas.filter(x=>x.transaccion_id===txnId).map(x=>x.etiqueta_id)
+  const [pickerTipo, setPickerTipo] = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerTxn, setPickerTxn]   = useState<string|null>(null)
+  const handleConfirmEtiquetasTxn = async (ids: string[]) => {
+    if (!pickerTxn) return
+    await setEtiquetasDeTarjetaTransaccion(pickerTxn, ids)
+    setTxnEtiquetas(prev => [...prev.filter(x=>x.transaccion_id!==pickerTxn), ...ids.map(etiqueta_id=>({transaccion_id:pickerTxn, etiqueta_id}))])
+    setPickerTipo(null); setPickerTxn(null)
+  }
+  const [resumenes, setResumenes] = useState<TarjetaResumen[]>([])
+  useEffect(() => { getTarjetaResumenes().then(setResumenes).catch(()=>{}) }, [])
+  const [cerrandoMes, setCerrandoMes] = useState(false)
   const [selTC, setSelTC]         = useState<string|null>(null)
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
@@ -51,6 +81,7 @@ export default function TarjetasPage() {
   const [pdfLoading, setPdfLoading]   = useState(false)
   const [pdfError, setPdfError]       = useState('')
   const [pdfTxns, setPdfTxns]         = useState<any[]>([])
+  const [pdfResumenInfo, setPdfResumenInfo] = useState<{ fecha_cierre:string; fecha_vencimiento:string; fecha_cierre_proximo?:string; fecha_vencimiento_proximo?:string; total_resumen:number; moneda:Moneda } | null>(null)
   const [pdfStep, setPdfStep]         = useState<'upload'|'review'|'done'>('upload')
   const [savingPdf, setSavingPdf]     = useState(false)
   const [comercios, setComercios]     = useState<any[]>([])
@@ -304,6 +335,27 @@ export default function TarjetasPage() {
     setExportadoIds(prev => new Set(prev).add(`${t.id}|${moneda}`))
   }
 
+  // "Cerrar mes" a mano — para meses sin resumen del banco. Suma lo cargado (validado o
+  // todavía cargado) del período activo y genera/actualiza el ítem de Deuda, sin pasar
+  // por conciliación (no hay nada del banco contra qué matchear todavía).
+  const handleCerrarMes = async (t: NonNullable<typeof tarjetas>[number], moneda: string) => {
+    const txnsDelMes = (txnsRaw??[]).filter(x =>
+      x.tarjeta_id===t.id && x.moneda===moneda &&
+      Number(x.fecha.slice(0,4))===añoActivo && Number(x.fecha.slice(5,7))===mesActivo &&
+      x.estado_conciliacion !== 'revisar'
+    )
+    const total = txnsDelMes.reduce((s,x)=>s+x.monto, 0)
+    if (total <= 0) { alert('No hay gastos cargados para este período todavía.'); return }
+    const diaClamp = Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate())
+    const fechaVenc = `${añoActivo}-${String(mesActivo).padStart(2,'0')}-${String(diaClamp).padStart(2,'0')}`
+    setCerrandoMes(true)
+    try {
+      await generarDeudaDesdeTarjeta(t, añoActivo, mesActivo, total, moneda as Moneda, fechaVenc)
+      alert(`Deuda del período generada: ${fmtFull(total, moneda)}. Cuando llegue el resumen, se va a actualizar sola si el total cambia.`)
+    } catch (e:any) { alert('Error generando la deuda: '+(e.message||'')) }
+    finally { setCerrandoMes(false) }
+  }
+
   if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
@@ -347,7 +399,7 @@ export default function TarjetasPage() {
       <PageHeader title="Tarjetas de crédito" subtitle="Seguimiento de pagos y transacciones"
         action={<div className="flex gap-2 flex-wrap justify-end">
           <button className="btn-ghost text-sm" onClick={abrirCargaModal}>+ Cargar movimientos</button>
-          <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfError('') }}>Importar PDF</button>
+          <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfResumenInfo(null); setPdfError('') }}>Importar PDF</button>
           <button className="btn-primary" onClick={()=>{setForm(FORM_INIT);setTarjetaEditId(null);setShowModal(true)}}>+ Nueva tarjeta</button>
         </div>} />
 
@@ -394,6 +446,70 @@ export default function TarjetasPage() {
           )
         })}
       </div>
+
+      {/* ── Estado de conciliación de la tarjeta seleccionada ── */}
+      {tcActiva && (() => {
+        const t = tcActiva
+        const txnsTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id && (!monedaActiva || x.moneda===monedaActiva))
+        const confirmado = txnsTarjeta.filter(x=>x.estado_conciliacion==='validado').reduce((s,x)=>s+x.monto,0)
+        const cargado    = txnsTarjeta.filter(x=>x.estado_conciliacion==='cargado').reduce((s,x)=>s+x.monto,0)
+        const revisarTxns = txnsTarjeta.filter(x=>x.estado_conciliacion==='revisar')
+        const revisar    = revisarTxns.reduce((s,x)=>s+x.monto,0)
+        const monedaMostrar = monedaActiva ?? t.moneda
+        const cierre = t.fecha_cierre_actual ?? null
+        const vencimiento = t.fecha_vencimiento_actual ?? null
+        const ultimoResumen = resumenes.filter(r=>r.tarjeta_id===t.id).sort((a,b)=>b.año-a.año||b.mes-a.mes)[0]
+        return (
+          <Card className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-slate-900 font-semibold text-[15px]">Estado de conciliación — {t.nombre}</div>
+                <div className="text-slate-400 text-xs mt-0.5">
+                  {cierre ? `Cierre ${fmtDate(cierre)}` : `Cierre estimado día ${t.dia_cierre} (sin resumen todavía)`}
+                  {vencimiento ? ` · Vence ${fmtDate(vencimiento)}` : ` · Vence estimado día ${t.dia_vencimiento}`}
+                </div>
+              </div>
+              <button onClick={()=>handleCerrarMes(t, monedaMostrar)} disabled={cerrandoMes} className="btn-ghost text-sm disabled:opacity-50">
+                {cerrandoMes ? 'Generando...' : 'Cerrar mes'}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-xs text-slate-400 mb-1">Confirmado</div>
+                <div className="text-[15px] font-bold font-mono text-emerald-600">{fmtFull(confirmado, monedaMostrar)}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-xs text-slate-400 mb-1">Cargado, sin resumen</div>
+                <div className="text-[15px] font-bold font-mono text-slate-700">{fmtFull(cargado, monedaMostrar)}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-xs text-slate-400 mb-1">A revisar</div>
+                <div className="text-[15px] font-bold font-mono text-amber-600">{fmtFull(revisar, monedaMostrar)}</div>
+              </div>
+            </div>
+            {revisarTxns.length > 0 && (
+              <div className="border border-amber-200 rounded-xl overflow-hidden">
+                {revisarTxns.map(x => (
+                  <div key={x.id} className="flex items-center justify-between px-3 py-2 border-b border-amber-100 last:border-0 bg-amber-50">
+                    <div className="min-w-0">
+                      <div className="text-sm text-slate-700 truncate">{x.descripcion}</div>
+                      <div className="text-xs text-slate-400">
+                        {x.origen==='pdf' ? 'Llegó en el resumen, no lo tenías cargado' : 'Cargado a mano, no apareció en el resumen'} · {fmtFull(x.monto, x.moneda)}
+                      </div>
+                    </div>
+                    <button onClick={()=>openEditTxnModal(x)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer flex-shrink-0">Revisar</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {ultimoResumen && (
+              <div className="text-xs text-slate-400 mt-2">
+                Último resumen: {fmtFull(ultimoResumen.total_resumen, ultimoResumen.moneda)} ({MESES_CORTOS[ultimoResumen.mes-1]} {ultimoResumen.año})
+              </div>
+            )}
+          </Card>
+        )
+      })()}
 
       {/* ── Vencimientos del mes ── */}
       {vencimientosDelMes.length > 0 && (
@@ -471,8 +587,13 @@ export default function TarjetasPage() {
                         <Td>
                           <div onClick={() => openEditTxnModal(t)} className="text-slate-700 font-medium cursor-pointer hover:underline hover:font-bold">{t.descripcion}</div>
                           {tc && <div className="text-slate-400 text-xs">{tc.nombre} · {tc.banco}</div>}
+                          <EtiquetaChips etiquetaIds={etiquetasDeTxn(t.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} />
                         </Td>
-                        <Td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.bg,color:cc.c}}>{t.categoria}</span></Td>
+                        <Td>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.bg,color:cc.c}}>{t.categoria}</span>
+                          {t.estado_conciliacion==='revisar' && <div className="text-[10px] text-amber-600 font-medium mt-1">A revisar</div>}
+                          {t.estado_conciliacion==='cargado' && <div className="text-[10px] text-slate-400 mt-1">Sin resumen</div>}
+                        </Td>
                         <Td className="text-slate-400 text-xs font-mono text-center">{t.cuota_actual&&t.cuota_total?`${t.cuota_actual}/${t.cuota_total}`:'—'}</Td>
                         <Td right>
                           <div className={`font-mono font-bold text-sm ${isUSD?'text-blue-700':'text-red-600'}`}>
@@ -484,6 +605,8 @@ export default function TarjetasPage() {
                           <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                             <RowMenu items={[
                               { label: 'Editar', onClick: () => openEditTxnModal(t) },
+                              { label: 'Asociar a proyecto', onClick: () => { setPickerTxn(t.id); setPickerTipo('proyecto') } },
+                              { label: 'Asociar a ahorro', onClick: () => { setPickerTxn(t.id); setPickerTipo('ahorro') } },
                               { label: 'Duplicar', onClick: () => handleDuplicarTxn(t) },
                               { label: 'Eliminar', onClick: () => handleDeleteTxn(t.id), danger: true },
                             ]} />
@@ -574,10 +697,6 @@ export default function TarjetasPage() {
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: VISA Galicia" className="input-field" /></div>
           <div><FieldLabel>Banco / titular</FieldLabel><input value={form.banco} onChange={e=>setForm(p=>({...p,banco:e.target.value}))} placeholder="Ej: Galicia · Mati" className="input-field" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Monto</FieldLabel><MontoInput value={form.limite} onChange={raw=>setForm(p=>({...p,limite:raw}))} placeholder="0" /></div>
-            <div><FieldLabel>Moneda</FieldLabel><select value={form.moneda} onChange={e=>setForm(p=>({...p,moneda:e.target.value as Moneda}))} className="input-field">{monedasPalette.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Titular</FieldLabel><select value={form.quien} onChange={e=>setForm(p=>({...p,quien:e.target.value as Quien}))} className="input-field">{quienOpts.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</select></div>
             <div><FieldLabel>Ícono</FieldLabel><input value={form.icono} onChange={e=>setForm(p=>({...p,icono:e.target.value}))} placeholder="V" maxLength={3} className="input-field" /></div>
           </div>
@@ -662,24 +781,35 @@ export default function TarjetasPage() {
                       headers:{'Content-Type':'application/json'},
                       body: JSON.stringify({
                         base64, mediaType: 'application/pdf', esPdf: true, maxTokens: 4000,
-                        prompt: `Extraé todas las transacciones de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
+                        prompt: `Extraé la información de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
 
-Respondé SOLO con un JSON array, sin texto extra, sin backticks, sin markdown.
-Cada transacción debe tener estos campos exactos:
+Respondé SOLO con un JSON object, sin texto extra, sin backticks, sin markdown, con esta forma exacta:
 {
-  "descripcion": "nombre legible del comercio (no el código interno del extracto)",
-  "descripcion_raw": "nombre exacto como aparece en el extracto",
-  "categoria": "una de: Alimentación|Tecnología|Ropa|Hogar|Viajes|Entretenimiento|Salud|Otros",
-  "fecha": "YYYY-MM-DD",
-  "monto": número positivo,
-  "moneda": "ARS" o "USD",
-  "cuota_actual": número o null,
-  "cuota_total": número o null,
-  "tipo": "debito",
-  "ultimos_4": "últimos 4 dígitos de la tarjeta si aparecen en el PDF, sino null",
-  "red": "VISA|Mastercard|Amex|otra, detectado del PDF"
+  "resumen": {
+    "fecha_cierre": "YYYY-MM-DD (fecha de cierre de ESTE resumen)",
+    "fecha_vencimiento": "YYYY-MM-DD (fecha de vencimiento de ESTE resumen)",
+    "fecha_cierre_proximo": "YYYY-MM-DD o null (próximo cierre, si el PDF lo indica)",
+    "fecha_vencimiento_proximo": "YYYY-MM-DD o null (próximo vencimiento, si el PDF lo indica)",
+    "total_resumen": número positivo (total a pagar de este resumen),
+    "moneda": "ARS" o "USD"
+  },
+  "transacciones": [
+    {
+      "descripcion": "nombre legible del comercio (no el código interno del extracto)",
+      "descripcion_raw": "nombre exacto como aparece en el extracto",
+      "categoria": "una de: Alimentación|Tecnología|Ropa|Hogar|Viajes|Entretenimiento|Salud|Otros",
+      "fecha": "YYYY-MM-DD",
+      "monto": número positivo,
+      "moneda": "ARS" o "USD",
+      "cuota_actual": número o null,
+      "cuota_total": número o null,
+      "tipo": "debito",
+      "ultimos_4": "últimos 4 dígitos de la tarjeta si aparecen en el PDF, sino null",
+      "red": "VISA|Mastercard|Amex|otra, detectado del PDF"
+    }
+  ]
 }
-Solo incluí gastos/compras, no pagos ni resúmenes de cuenta.
+En "transacciones" solo incluí gastos/compras, no pagos ni resúmenes de cuenta.
 Para el campo descripcion, usá el nombre real del negocio, no el código técnico del extracto.`
                       })
                     })
@@ -687,7 +817,8 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
                     if (!resp.ok) throw new Error(data?.error || 'Error analizando el PDF')
                     const clean = (data.text||'').replace(/\`\`\`json|\`\`\`/g,'').trim()
                     const parsed = JSON.parse(clean)
-                    setPdfTxns(parsed.map((t:any,i:number)=>({...t,id:i,selected:true,tarjeta_id:pdfTarjetaId})))
+                    setPdfResumenInfo(parsed.resumen ?? null)
+                    setPdfTxns((parsed.transacciones ?? []).map((t:any,i:number)=>({...t,id:i,selected:true,tarjeta_id:pdfTarjetaId})))
                     setPdfStep('review')
                   } catch(err:any){
                     setPdfError('No se pudo procesar el PDF: '+(err.message||'Error'))
@@ -732,16 +863,50 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
               <button onClick={async()=>{
                 setSavingPdf(true)
                 try {
-                  const {createClient}=await import('@/lib/supabase/client')
-                  const sb=createClient()
                   const tarjetaActual = (tarjetas??[]).find(t=>t.id===pdfTarjetaId)
-                  const toInsert = pdfTxns.filter(t=>t.selected).map(({id:_,selected:__,descripcion_raw:___,ultimos_4:____,red:_____,...t})=>t)
-                  const {error}=await sb.from('tarjeta_transacciones').insert(toInsert)
-                  if(error) throw error
+                  const seleccionadas = pdfTxns.filter(t=>t.selected)
+                  const itemsParaConciliar = seleccionadas.map(t => ({
+                    descripcion: t.descripcion, categoria: t.categoria, fecha: t.fecha,
+                    monto: t.monto, moneda: t.moneda as Moneda,
+                    cuota_actual: t.cuota_actual ?? undefined, cuota_total: t.cuota_total ?? undefined,
+                  }))
+
+                  if (pdfResumenInfo && pdfTarjetaId && tarjetaActual) {
+                    const año = Number(pdfResumenInfo.fecha_cierre.slice(0,4))
+                    const mes = Number(pdfResumenInfo.fecha_cierre.slice(5,7))
+                    const resumen = await createTarjetaResumen({
+                      tarjeta_id: pdfTarjetaId, año, mes,
+                      fecha_cierre: pdfResumenInfo.fecha_cierre, fecha_vencimiento: pdfResumenInfo.fecha_vencimiento,
+                      fecha_cierre_proximo: pdfResumenInfo.fecha_cierre_proximo ?? null,
+                      fecha_vencimiento_proximo: pdfResumenInfo.fecha_vencimiento_proximo ?? null,
+                      total_resumen: pdfResumenInfo.total_resumen, moneda: pdfResumenInfo.moneda,
+                    })
+                    await conciliarResumen(pdfTarjetaId, resumen.id, itemsParaConciliar)
+                    await generarDeudaDesdeTarjeta(tarjetaActual, año, mes, pdfResumenInfo.total_resumen, pdfResumenInfo.moneda, pdfResumenInfo.fecha_vencimiento)
+                    await updateTarjeta(pdfTarjetaId, {
+                      fecha_cierre_actual: pdfResumenInfo.fecha_cierre, fecha_vencimiento_actual: pdfResumenInfo.fecha_vencimiento,
+                      fecha_cierre_proximo: pdfResumenInfo.fecha_cierre_proximo ?? null,
+                      fecha_vencimiento_proximo: pdfResumenInfo.fecha_vencimiento_proximo ?? null,
+                    })
+                    setResumenes(await getTarjetaResumenes())
+                    refTarjetas()
+                  } else {
+                    // El PDF no devolvió fechas de resumen (formato inesperado) — se insertan
+                    // las transacciones igual, sin conciliar, para no perder la carga.
+                    for (const it of itemsParaConciliar) {
+                      await createTarjetaTransaccion({
+                        tarjeta_id: pdfTarjetaId!, descripcion: it.descripcion, categoria: it.categoria,
+                        fecha: it.fecha, monto: it.monto, moneda: it.moneda,
+                        cuota_actual: it.cuota_actual, cuota_total: it.cuota_total,
+                        tipo: 'credito', origen: 'pdf', estado_conciliacion: 'validado',
+                      })
+                    }
+                  }
+                  refTxns()
 
                   // Guardar aprendizaje: cada transacción corregida
                   const { upsertTarjetaComercios } = await import('@/lib/queries')
-                  const aprendizaje = pdfTxns.filter(t=>t.selected && t.descripcion_raw).map(t=>({
+                  const aprendizaje = seleccionadas.filter(t=>t.descripcion_raw).map(t=>({
                     descripcion_raw: t.descripcion_raw || t.descripcion,
                     descripcion_limpia: t.descripcion,
                     categoria: t.categoria,
@@ -942,6 +1107,23 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
           </div>
         </div>
       </Modal>
+
+      {pickerTipo && pickerTxn && (
+        <EtiquetaPickerModal
+          open={!!pickerTipo}
+          onClose={() => { setPickerTipo(null); setPickerTxn(null) }}
+          tipo={pickerTipo}
+          etiquetas={etiquetas ?? []}
+          proyectos={proyectos ?? []}
+          ahorros={ahorros ?? []}
+          seleccionadas={etiquetasDeTxn(pickerTxn).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
+          onConfirm={async (ids) => {
+            const otras = etiquetasDeTxn(pickerTxn).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
+            await handleConfirmEtiquetasTxn([...otras, ...ids])
+          }}
+          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+        />
+      )}
 
     </div>
   )

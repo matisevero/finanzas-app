@@ -110,6 +110,10 @@ export interface Deuda {
   color: string
   activa: boolean
   etiqueta?: string | null
+  tarjeta_id?: string | null
+  periodo_año?: number | null
+  periodo_mes?: number | null
+  monto_antes_ajuste?: number | null
   created_at: string
 }
 export type DeudaInsert = Omit<Deuda, 'id' | 'user_id' | 'created_at'>
@@ -139,9 +143,18 @@ export interface Tarjeta {
   dia_vencimiento: number
   ultimos_4?: string | null
   activa: boolean
+  fecha_cierre_actual?: string | null
+  fecha_vencimiento_actual?: string | null
+  fecha_cierre_proximo?: string | null
+  fecha_vencimiento_proximo?: string | null
   created_at: string
 }
 export type TarjetaInsert = Omit<Tarjeta, 'id' | 'user_id' | 'created_at'>
+
+// 'cargado'  = cargado a mano, todavía no llegó el resumen que lo confirme
+// 'validado' = matcheado contra un resumen (automático o a mano), o vino directo del PDF
+// 'revisar'  = no encontró correspondencia — decisión manual
+export type EstadoConciliacion = 'cargado' | 'validado' | 'revisar'
 
 export interface TarjetaTransaccion {
   id: string
@@ -156,8 +169,28 @@ export interface TarjetaTransaccion {
   cuota_total?: number
   tipo: 'debito' | 'credito'
   etiqueta?: string | null
+  origen?: 'manual' | 'pdf'
+  estado_conciliacion?: EstadoConciliacion
+  resumen_id?: string | null
+  quien?: string | null
   created_at: string
 }
+
+export interface TarjetaResumen {
+  id: string
+  tarjeta_id: string
+  año: number
+  mes: number
+  fecha_cierre: string
+  fecha_vencimiento: string
+  fecha_cierre_proximo?: string | null
+  fecha_vencimiento_proximo?: string | null
+  total_resumen: number
+  moneda: Moneda
+  deuda_id?: string | null
+  created_at: string
+}
+export type TarjetaResumenInsert = Omit<TarjetaResumen, 'id' | 'created_at'>
 
 export interface PagoTarjeta {
   id: string
