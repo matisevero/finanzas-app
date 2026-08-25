@@ -267,6 +267,15 @@ export async function getDeudas(): Promise<Deuda[]> {
   return data ?? []
 }
 
+// Para saber si un período de tarjeta ya está "cerrado" (ya se generó su Deuda) —
+// sin importar si esa deuda ya se pagó (activa=false) o no.
+export async function getDeudaDeTarjetaPeriodo(tarjetaId: string, año: number, mes: number): Promise<Deuda | null> {
+  const { data, error } = await sb().from('deudas').select('*')
+    .eq('tarjeta_id', tarjetaId).eq('periodo_año', año).eq('periodo_mes', mes).maybeSingle()
+  if (error) throw error
+  return data
+}
+
 export async function createDeuda(form: DeudaInsert): Promise<Deuda> {
   const userId = await uid()
   const { data, error } = await sb().from('deudas').insert({ ...form, user_id: userId }).select().single()

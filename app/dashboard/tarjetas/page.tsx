@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas } from '@/lib/queries'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
@@ -12,7 +12,7 @@ import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, Empt
 import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
-import type { Moneda, Quien, TarjetaTransaccion, TarjetaResumen } from '@/types'
+import type { Moneda, Quien, TarjetaTransaccion, TarjetaResumen, Deuda } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10', ultimos_4:'' }
@@ -64,7 +64,12 @@ export default function TarjetasPage() {
   const [resumenes, setResumenes] = useState<TarjetaResumen[]>([])
   useEffect(() => { getTarjetaResumenes().then(setResumenes).catch(()=>{}) }, [])
   const [cerrandoMes, setCerrandoMes] = useState(false)
+  const [deudaDelPeriodo, setDeudaDelPeriodo] = useState<Deuda | null>(null)
   const [selTC, setSelTC]         = useState<string|null>(null)
+  useEffect(() => {
+    if (!selTC) { setDeudaDelPeriodo(null); return }
+    getDeudaDeTarjetaPeriodo(selTC, añoActivo, mesActivo).then(setDeudaDelPeriodo).catch(()=>setDeudaDelPeriodo(null))
+  }, [selTC, añoActivo, mesActivo])
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
   const [showModal, setShowModal]   = useState(false)
@@ -364,7 +369,11 @@ export default function TarjetasPage() {
     setCerrandoMes(true)
     try {
       await generarDeudaDesdeTarjeta(t, añoActivo, mesActivo, total, moneda as Moneda, fechaVenc)
-      alert(`Deuda del período generada: ${fmtFull(total, moneda)}. Cuando llegue el resumen, se va a actualizar sola si el total cambia.`)
+      const deudaActualizada = await getDeudaDeTarjetaPeriodo(t.id, añoActivo, mesActivo)
+      setDeudaDelPeriodo(deudaActualizada)
+      alert(deudaDelPeriodo
+        ? `Recalculado: ${fmtFull(total, moneda)}. Ya lo vas a ver actualizado en Deudas.`
+        : `Deuda del período generada: ${fmtFull(total, moneda)}. Si falta algo, cargalo acá y volvé a apretar este botón para recalcular.`)
     } catch (e:any) { alert('Error generando la deuda: '+(e.message||'')) }
     finally { setCerrandoMes(false) }
   }
@@ -552,9 +561,12 @@ export default function TarjetasPage() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-slate-900 font-semibold text-[13px]">Conciliación — {t.nombre}</div>
                   <button onClick={()=>handleCerrarMes(t, monedaMostrar)} disabled={cerrandoMes} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer disabled:opacity-50 flex-shrink-0">
-                    {cerrandoMes ? '...' : 'Cerrar mes'}
+                    {cerrandoMes ? '...' : deudaDelPeriodo ? 'Recalcular' : 'Cerrar mes'}
                   </button>
                 </div>
+                {deudaDelPeriodo && (
+                  <div className="text-[11px] text-emerald-600 mb-2">Mes cerrado — deuda generada por {fmtFull(deudaDelPeriodo.total_original, deudaDelPeriodo.moneda)}. Si falta un gasto, cargalo y volvé a apretar "Recalcular".</div>
+                )}
                 <div className="text-slate-400 text-xs mb-3">
                   {cierre ? `Cierre ${fmtDate(cierre)}` : `Cierre est. día ${t.dia_cierre}`}
                   {vencimiento ? ` · Vence ${fmtDate(vencimiento)}` : ` · Vence est. día ${t.dia_vencimiento}`}
