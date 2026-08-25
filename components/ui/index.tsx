@@ -148,7 +148,7 @@ export function EmptyState({ icon = '📭', title, description, action }: { icon
 // ─── RowMenu ──────────────────────────────────────────────────────────────────
 // Menú de "más opciones" (⋮) para filas de tabla — reemplaza los íconos editar/eliminar
 // sueltos dentro de la fila. Se abre en hover+click, se cierra con click afuera o ESC.
-export interface RowMenuItem { label: string; onClick: () => void; danger?: boolean }
+export interface RowMenuItem { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }
 export function RowMenu({ items }: { items: RowMenuItem[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -175,8 +175,9 @@ export function RowMenu({ items }: { items: RowMenuItem[] }) {
           {items.map((it, i) => (
             <button
               key={i}
-              onClick={() => { it.onClick(); setOpen(false) }}
-              className={`w-full text-left px-3 py-1.5 text-xs border-none bg-transparent cursor-pointer hover:bg-slate-50 ${it.danger ? 'text-red-500 hover:text-red-600' : 'text-slate-600'}`}>
+              disabled={it.disabled}
+              onClick={() => { if (it.disabled) return; it.onClick(); setOpen(false) }}
+              className={`w-full text-left px-3 py-1.5 text-xs border-none bg-transparent cursor-pointer hover:bg-slate-50 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent ${it.danger ? 'text-red-500 hover:text-red-600' : 'text-slate-600'}`}>
               {it.label}
             </button>
           ))}
