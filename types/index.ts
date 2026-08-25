@@ -329,3 +329,21 @@ export interface DiaFlow {
   saldoAcumulado: number
   eventos: EventoCalendario[]
 }
+
+// ─── Salud de los datos ───────────────────────────────────────────────────────
+export type TipoHallazgo = 'duplicado_exacto' | 'duplicado_probable' | 'sin_etiqueta'
+export type EntidadHallazgo = 'ingreso' | 'egreso' | 'tarjeta_transaccion'
+export type EstadoHallazgo = 'pendiente' | 'descartado' | 'resuelto'
+
+export interface CalidadHallazgo {
+  id: string
+  user_id: string
+  tipo: TipoHallazgo
+  entidad: EntidadHallazgo
+  entidad_id: string
+  entidad_id_2?: string | null
+  detectado_en: string
+  estado: EstadoHallazgo
+  created_at: string
+}
+

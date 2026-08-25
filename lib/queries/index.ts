@@ -13,6 +13,7 @@ import type {
   CategoriaCustom, CategoriaCustomInsert,
   Persona, PersonaInsert,
   Moneda,
+  CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
 } from '@/types'
 
 const sb = () => createClient()
@@ -819,4 +820,67 @@ export async function upsertTarjetaComercios(rows: Omit<TarjetaComercio, 'id' | 
     .from('tarjeta_comercios')
     .upsert(toUpsert, { onConflict: 'user_id,descripcion_raw' })
   if (error) throw error
+}
+
+// ─── SALUD DE LOS DATOS ───────────────────────────────────────────────────────
+export async function getCalidadHallazgosPendientes(todos = false): Promise<CalidadHallazgo[]> {
+  let q = sb().from('calidad_hallazgos').select('*').order('detectado_en', { ascending: true })
+  if (!todos) q = q.eq('estado', 'pendiente')
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function crearHallazgoSiNoExiste(h: { tipo: TipoHallazgo; entidad: EntidadHallazgo; entidad_id: string; entidad_id_2: string | null }) {
+  const userId = await uid()
+  const { error } = await sb().from('calidad_hallazgos').insert({ ...h, user_id: userId })
+  if (error) throw error
+}
+
+export async function descartarHallazgo(id: string) {
+  const { error } = await sb().from('calidad_hallazgos').update({ estado: 'descartado' }).eq('id', id)
+  if (error) throw error
+}
+
+export async function resolverHallazgo(id: string) {
+  const { error } = await sb().from('calidad_hallazgos').update({ estado: 'resuelto' }).eq('id', id)
+  if (error) throw error
+}
+
+// Borra un hallazgo que ya no reproduce el criterio actual de detección (cambió la
+// lógica, o el movimiento ya tiene etiqueta puesta desde otro lado) — no es una
+// acción del usuario, es limpieza automática del propio motor de análisis.
+export async function eliminarHallazgo(id: string) {
+  const { error } = await sb().from('calidad_hallazgos').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getUltimoAnalisisCalidad(): Promise<string | null> {
+  const userId = await uid()
+  const { data } = await sb().from('calidad_meta').select('ultimo_analisis_at').eq('user_id', userId).maybeSingle()
+  return data?.ultimo_analisis_at ?? null
+}
+
+export async function marcarAnalisisCalidadEjecutado() {
+  const userId = await uid()
+  const { error } = await sb().from('calidad_meta').upsert({ user_id: userId, ultimo_analisis_at: new Date().toISOString() })
+  if (error) throw error
+}
+
+// Nota: esta función también existe en la rama prueba-tarjetas-conciliacion —
+// al mergear ambas ramas va a quedar duplicada, hay que sacar una copia.
+export async function setEtiquetasDeTarjetaTransaccion(transaccionId: string, etiquetaIds: string[]) {
+  const { error: delErr } = await sb().from('tarjeta_transaccion_etiquetas').delete().eq('transaccion_id', transaccionId)
+  if (delErr) throw delErr
+  if (etiquetaIds.length === 0) return
+  const { error } = await sb().from('tarjeta_transaccion_etiquetas').insert(etiquetaIds.map(etiqueta_id => ({ transaccion_id: transaccionId, etiqueta_id })))
+  if (error) throw error
+}
+
+// Nota: esta función también existe en la rama prueba-tarjetas-conciliacion —
+// al mergear ambas ramas va a quedar duplicada, hay que sacar una copia.
+export async function getTarjetaTransaccionEtiquetas(): Promise<{ transaccion_id: string; etiqueta_id: string }[]> {
+  const { data, error } = await sb().from('tarjeta_transaccion_etiquetas').select('*')
+  if (error) throw error
+  return data ?? []
 }

@@ -1,11 +1,12 @@
 'use client'
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro } from '@/lib/queries'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro, getAllIngresos } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -556,6 +557,19 @@ export default function IngresosPage() {
     setModalEditId(ingreso.id)
     setShowModal(true)
   }
+
+  // Venir desde "Revisión" (Salud de los datos) con ?editar=<id> abre directo el modal
+  // de ese movimiento, sin importar si está fuera del período que tenés seleccionado.
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const editarId = searchParams.get('editar')
+    if (!editarId) return
+    getAllIngresos().then(todos => {
+      const item = todos.find(i => i.id === editarId)
+      if (item) openEditModal(item)
+    }).catch(()=>{})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Fila Sheet — guardar nuevo ingreso rápido
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {

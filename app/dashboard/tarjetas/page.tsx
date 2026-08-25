@@ -1,9 +1,10 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento } from '@/lib/queries'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, getTarjetaTransacciones } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
@@ -75,6 +76,19 @@ export default function TarjetasPage() {
     setTxnEditId(t.id)
     setShowTxnModal(true)
   }
+
+  // Venir desde "Revisión" (Salud de los datos) con ?editar=<id> abre directo el modal
+  // de esa transacción, sin importar si está fuera del período que tenés seleccionado.
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const editarId = searchParams.get('editar')
+    if (!editarId) return
+    getTarjetaTransacciones().then(todas => {
+      const item = todas.find(t => t.id === editarId)
+      if (item) openEditTxnModal(item)
+    }).catch(()=>{})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const handleSaveTxn = async () => {
     if (!txnEditId || !txnForm.descripcion || !txnForm.monto || !txnForm.fecha) return

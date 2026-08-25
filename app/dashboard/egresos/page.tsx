@@ -1,11 +1,12 @@
 'use client'
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro } from '@/lib/queries'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro, getAllEgresos } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -550,6 +551,19 @@ export default function EgresosPage() {
     setModalEditId(egreso.id)
     setShowModal(true)
   }
+
+  // Venir desde "Revisión" (Salud de los datos) con ?editar=<id> abre directo el modal
+  // de ese movimiento, sin importar si está fuera del período que tenés seleccionado.
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const editarId = searchParams.get('editar')
+    if (!editarId) return
+    getAllEgresos().then(todos => {
+      const item = todos.find(e => e.id === editarId)
+      if (item) openEditModal(item)
+    }).catch(()=>{})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const handleSheetSave = useCallback(async (data: typeof FORM_INIT) => {
     await createEgreso({ categoria: data.categoria, descripcion: data.descripcion, monto: parseFloat(data.monto), moneda: data.moneda, fecha: data.fecha, quien: data.quien, recurrente: data.recurrente, etiqueta: data.etiqueta || null })
