@@ -284,7 +284,10 @@ export default function TarjetasPage() {
     return map
   }, [pagos])
 
-  const totalGlobal = Object.values(totalPorTC).reduce((s,v)=>s+v,0)
+  // Antes usaba totalPorTC (tabla pagos_tarjeta, que puede estar vacía si solo hay
+  // transacciones cargadas/importadas) — ahora suma lo mismo que ya muestra cada card
+  // individual (transacciones reales), para que "Todas" no quede en $0 por las dudas.
+  // (totalGlobal se calcula más abajo, una vez que existe tarjetasConMoneda)
 
   const compData = useMemo(() => (tarjetas??[]).map((t,i)=>({
     name: t.nombre+' '+t.banco.split(' · ').slice(-1)[0],
@@ -307,6 +310,16 @@ export default function TarjetasPage() {
     })
     return result
   }, [tarjetas, txns])
+
+  // Antes usaba totalPorTC (tabla pagos_tarjeta, que puede estar vacía si solo hay
+  // transacciones cargadas/importadas) — ahora suma lo mismo que ya muestra cada card
+  // individual (transacciones reales), para que "Todas" no quede en $0 por las dudas.
+  const totalGlobal = tarjetasConMoneda.filter(x=>x.moneda===m).reduce((s,{tarjeta:t, moneda:mon})=>{
+    const txnsMon = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
+    const totalMon = txnsMon.reduce((ss,x)=>ss+x.monto,0)
+    const ultMes = txnsMon.filter(x=>new Date(x.fecha).getMonth()===new Date().getMonth()).reduce((ss,x)=>ss+x.monto,0)
+    return s + (ultMes||totalMon)
+  }, 0)
 
   // Vencimientos del mes activo — independiente de si estás en vista mensual o anual, porque un
   // vencimiento siempre es un concepto mensual. Un ítem por (tarjeta, moneda) igual que las cards.
@@ -447,108 +460,6 @@ export default function TarjetasPage() {
         })}
       </div>
 
-      {/* ── Estado de conciliación de la tarjeta seleccionada ── */}
-      {tcActiva && (() => {
-        const t = tcActiva
-        const txnsTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id && (!monedaActiva || x.moneda===monedaActiva))
-        const confirmado = txnsTarjeta.filter(x=>x.estado_conciliacion==='validado').reduce((s,x)=>s+x.monto,0)
-        const cargado    = txnsTarjeta.filter(x=>x.estado_conciliacion==='cargado').reduce((s,x)=>s+x.monto,0)
-        const revisarTxns = txnsTarjeta.filter(x=>x.estado_conciliacion==='revisar')
-        const revisar    = revisarTxns.reduce((s,x)=>s+x.monto,0)
-        const monedaMostrar = monedaActiva ?? t.moneda
-        const cierre = t.fecha_cierre_actual ?? null
-        const vencimiento = t.fecha_vencimiento_actual ?? null
-        const ultimoResumen = resumenes.filter(r=>r.tarjeta_id===t.id).sort((a,b)=>b.año-a.año||b.mes-a.mes)[0]
-        return (
-          <Card className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="text-slate-900 font-semibold text-[15px]">Estado de conciliación — {t.nombre}</div>
-                <div className="text-slate-400 text-xs mt-0.5">
-                  {cierre ? `Cierre ${fmtDate(cierre)}` : `Cierre estimado día ${t.dia_cierre} (sin resumen todavía)`}
-                  {vencimiento ? ` · Vence ${fmtDate(vencimiento)}` : ` · Vence estimado día ${t.dia_vencimiento}`}
-                </div>
-              </div>
-              <button onClick={()=>handleCerrarMes(t, monedaMostrar)} disabled={cerrandoMes} className="btn-ghost text-sm disabled:opacity-50">
-                {cerrandoMes ? 'Generando...' : 'Cerrar mes'}
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs text-slate-400 mb-1">Confirmado</div>
-                <div className="text-[15px] font-bold font-mono text-emerald-600">{fmtFull(confirmado, monedaMostrar)}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs text-slate-400 mb-1">Cargado, sin resumen</div>
-                <div className="text-[15px] font-bold font-mono text-slate-700">{fmtFull(cargado, monedaMostrar)}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs text-slate-400 mb-1">A revisar</div>
-                <div className="text-[15px] font-bold font-mono text-amber-600">{fmtFull(revisar, monedaMostrar)}</div>
-              </div>
-            </div>
-            {revisarTxns.length > 0 && (
-              <div className="border border-amber-200 rounded-xl overflow-hidden">
-                {revisarTxns.map(x => (
-                  <div key={x.id} className="flex items-center justify-between px-3 py-2 border-b border-amber-100 last:border-0 bg-amber-50">
-                    <div className="min-w-0">
-                      <div className="text-sm text-slate-700 truncate">{x.descripcion}</div>
-                      <div className="text-xs text-slate-400">
-                        {x.origen==='pdf' ? 'Llegó en el resumen, no lo tenías cargado' : 'Cargado a mano, no apareció en el resumen'} · {fmtFull(x.monto, x.moneda)}
-                      </div>
-                    </div>
-                    <button onClick={()=>openEditTxnModal(x)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer flex-shrink-0">Revisar</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {ultimoResumen && (
-              <div className="text-xs text-slate-400 mt-2">
-                Último resumen: {fmtFull(ultimoResumen.total_resumen, ultimoResumen.moneda)} ({MESES_CORTOS[ultimoResumen.mes-1]} {ultimoResumen.año})
-              </div>
-            )}
-          </Card>
-        )
-      })()}
-
-      {/* ── Vencimientos del mes ── */}
-      {vencimientosDelMes.length > 0 && (
-        <Card className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="text-slate-900 font-semibold text-[15px]">Vencimientos — {MESES_CORTOS[mesActivo-1]} {añoActivo}</div>
-              <div className="text-slate-400 text-xs mt-0.5">Cuándo y cuánto hay que pagar de cada tarjeta este mes</div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            {vencimientosDelMes.map(({tarjeta: t, moneda: mon, total}) => {
-              const key = `${t.id}|${mon}`
-              const yaExportado = exportadoIds.has(key)
-              return (
-                <div key={key} className="flex items-center justify-between py-2.5 border-b border-slate-50 last:border-0">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
-                      <span className="text-sm font-bold font-mono leading-none" style={{color:t.color}}>{t.dia_vencimiento}</span>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-slate-700 truncate">{t.nombre}</div>
-                      <div className="text-xs text-slate-400">{t.banco} · vence el {t.dia_vencimiento}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="font-mono font-bold text-sm text-red-600">{fmtFull(total, mon as Moneda)}</span>
-                    <button onClick={() => handleExportarADeuda(t, mon, total)} disabled={yaExportado}
-                      className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${yaExportado ? 'border-emerald-200 text-emerald-600 bg-emerald-50 cursor-default' : 'border-slate-200 text-slate-500 hover:border-slate-400 bg-white'}`}>
-                      {yaExportado ? '✓ Exportado' : 'Exportar a Deuda'}
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      )}
-
       {/* ── Layout principal: Transacciones 2/3 | Widgets 1/3 ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
 
@@ -623,6 +534,87 @@ export default function TarjetasPage() {
 
         {/* ── Columna derecha: Widgets ── */}
         <div className="col-span-1 flex flex-col gap-5">
+
+          {/* Estado de conciliación — solo con una tarjeta puntual seleccionada */}
+          {tcActiva && (() => {
+            const t = tcActiva
+            const txnsTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id && (!monedaActiva || x.moneda===monedaActiva))
+            const confirmado = txnsTarjeta.filter(x=>x.estado_conciliacion==='validado').reduce((s,x)=>s+x.monto,0)
+            const cargado    = txnsTarjeta.filter(x=>x.estado_conciliacion==='cargado').reduce((s,x)=>s+x.monto,0)
+            const revisarTxns = txnsTarjeta.filter(x=>x.estado_conciliacion==='revisar')
+            const revisar    = revisarTxns.reduce((s,x)=>s+x.monto,0)
+            const monedaMostrar = monedaActiva ?? t.moneda
+            const cierre = t.fecha_cierre_actual ?? null
+            const vencimiento = t.fecha_vencimiento_actual ?? null
+            const ultimoResumen = resumenes.filter(r=>r.tarjeta_id===t.id).sort((a,b)=>b.año-a.año||b.mes-a.mes)[0]
+            return (
+              <Card>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-slate-900 font-semibold text-[13px]">Conciliación — {t.nombre}</div>
+                  <button onClick={()=>handleCerrarMes(t, monedaMostrar)} disabled={cerrandoMes} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer disabled:opacity-50 flex-shrink-0">
+                    {cerrandoMes ? '...' : 'Cerrar mes'}
+                  </button>
+                </div>
+                <div className="text-slate-400 text-xs mb-3">
+                  {cierre ? `Cierre ${fmtDate(cierre)}` : `Cierre est. día ${t.dia_cierre}`}
+                  {vencimiento ? ` · Vence ${fmtDate(vencimiento)}` : ` · Vence est. día ${t.dia_vencimiento}`}
+                </div>
+                <div className="flex flex-col gap-1.5 mb-2">
+                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">Confirmado</span><span className="font-mono font-bold text-emerald-600">{fmtFull(confirmado, monedaMostrar)}</span></div>
+                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">Cargado, sin resumen</span><span className="font-mono font-bold text-slate-700">{fmtFull(cargado, monedaMostrar)}</span></div>
+                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">A revisar</span><span className="font-mono font-bold text-amber-600">{fmtFull(revisar, monedaMostrar)}</span></div>
+                </div>
+                {revisarTxns.length > 0 && (
+                  <div className="border border-amber-200 rounded-lg overflow-hidden mt-2">
+                    {revisarTxns.map(x => (
+                      <div key={x.id} onClick={()=>openEditTxnModal(x)} className="flex items-center justify-between px-2.5 py-1.5 border-b border-amber-100 last:border-0 bg-amber-50 cursor-pointer hover:bg-amber-100">
+                        <div className="min-w-0 text-xs text-slate-700 truncate">{x.descripcion}</div>
+                        <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmtFull(x.monto, x.moneda)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ultimoResumen && (
+                  <div className="text-[11px] text-slate-400 mt-2">
+                    Último resumen: {fmtFull(ultimoResumen.total_resumen, ultimoResumen.moneda)} ({MESES_CORTOS[ultimoResumen.mes-1]} {ultimoResumen.año})
+                  </div>
+                )}
+              </Card>
+            )
+          })()}
+
+          {/* Vencimientos del mes */}
+          {vencimientosDelMes.length > 0 && (
+            <Card>
+              <div className="text-slate-900 font-semibold text-[13px] mb-0.5">Vencimientos — {MESES_CORTOS[mesActivo-1]} {añoActivo}</div>
+              <div className="text-slate-400 text-xs mb-3">Cuándo y cuánto hay que pagar</div>
+              <div className="flex flex-col">
+                {vencimientosDelMes.map(({tarjeta: t, moneda: mon, total}) => {
+                  const key = `${t.id}|${mon}`
+                  const yaExportado = exportadoIds.has(key)
+                  return (
+                    <div key={key} className="group flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
+                          <span className="text-xs font-bold font-mono leading-none" style={{color:t.color}}>{t.dia_vencimiento}</span>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-slate-700 truncate">{t.nombre}</div>
+                          <div className="text-[11px] text-slate-400">vence el {t.dia_vencimiento}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className={`font-mono font-bold text-xs ${yaExportado?'text-emerald-600':'text-red-600'}`}>{fmtFull(total, mon as Moneda)}</span>
+                        <RowMenu items={[
+                          { label: yaExportado ? 'Ya exportado a Deuda' : 'Exportar a Deuda', onClick: () => !yaExportado && handleExportarADeuda(t, mon, total), disabled: yaExportado },
+                        ]} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
 
           {/* Evolución de pagos */}
           <Card>
