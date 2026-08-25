@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/layout/Sidebar'
 import TopBar  from '@/components/layout/TopBar'
+import CalidadDatosWatcher from '@/components/layout/CalidadDatosWatcher'
 import { PageHeaderProvider } from '@/context/PageHeaderContext'
 import { MobileMenuProvider } from '@/context/MobileMenuContext'
 
@@ -18,6 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Sidebar />
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             <TopBar />
+            <CalidadDatosWatcher />
             <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
               {children}
             </main>

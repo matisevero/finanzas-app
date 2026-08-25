@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCategoriasCustom, usePersonas, useAllIngresos, useAllEgresos } from '@/hooks'
 import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
+import SaludDeDatosSection from '@/components/dashboard/SaludDeDatosSection'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Moneda, CategoriaCustom, Persona } from '@/types'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -725,6 +726,9 @@ export default function ConfiguracionPage() {
             <button onClick={agregarPersona} disabled={savingPersona || !nuevaPersonaNombre.trim()} className="btn-primary py-2 px-4 text-sm disabled:opacity-50">+ Agregar</button>
           </div>
         </Card>
+
+        {/* SALUD DE LOS DATOS */}
+        <SaludDeDatosSection />
 
         {/* ETIQUETAS */}
         <Card>

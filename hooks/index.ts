@@ -47,6 +47,7 @@ export function usePersonas() { return useAsync(() => Q.getPersonas(), []) }
 export function useFrecuenciaCategorias(modulo: 'ingresos' | 'egresos') { return useAsync(() => Q.getFrecuenciaCategorias(modulo), [modulo]) }
 export function useDescripcionesDistintas(modulo: 'ingresos' | 'egresos' | 'eventos_calendario') { return useAsync(() => Q.getDescripcionesDistintas(modulo), [modulo]) }
 export function useEtiquetasDistintas() { return useAsync(() => Q.getEtiquetasDistintas(), []) }
+export function useCalidadHallazgosPendientes() { return useAsync(() => Q.getCalidadHallazgosPendientes(), []) }
 
 export function useEventosMes(año: number, mes: number) {
   return useAsync(() => Q.getEventosByMes(año, mes), [año, mes])
