@@ -57,6 +57,14 @@ export default function PreciosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // El modal "Agregar valor" necesita el historial del ítem elegido para saber qué
+  // Egresos ya están vinculados (y marcarlos en azul) — puede no estar cargado si el
+  // ítem no está en la comparación activa.
+  useEffect(() => {
+    if (showValModal && valForm.item_id && !historial[valForm.item_id]) loadHistorial([valForm.item_id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showValModal, valForm.item_id])
+
   const toggleSelect = async (id: string) => {
     if (!selected.has(id) && !historial[id]) await loadHistorial([id])
     togglePrecioSeleccionado(id)
@@ -106,7 +114,7 @@ export default function PreciosPage() {
     if (!valForm.valor||!valForm.item_id) return
     setSaving(true)
     try {
-      await sb.from('precio_historial').upsert({ item_id:valForm.item_id, mes:valForm.mes, valor:parseFloat(valForm.valor), moneda:'ARS' }, { onConflict:'item_id,mes' })
+      await sb.from('precio_historial').upsert({ item_id:valForm.item_id, mes:valForm.mes, valor:parseFloat(valForm.valor), moneda:'ARS', egreso_id:null }, { onConflict:'item_id,mes' })
       await loadHistorial([valForm.item_id])
       setShowValModal(false)
     } finally { setSaving(false) }
@@ -124,9 +132,24 @@ export default function PreciosPage() {
       .slice(0, 6)
   }, [egresos, buscarEgreso, valForm.item_id, items])
 
-  const aplicarEgreso = (e: Egreso) => {
-    setValForm(p => ({ ...p, mes: e.fecha.slice(0,7), valor: String(e.monto) }))
-    setBuscarEgreso('')
+  // Egresos que ya están cargados como valor de este ítem (se ven en azul en la lista) —
+  // tocar uno ya vinculado lo saca de la comparación, tocar uno suelto lo agrega.
+  const [linkingId, setLinkingId] = useState<string | null>(null)
+  const egresoIdsVinculados = new Set((historial[valForm.item_id] ?? []).map(h => h.egreso_id).filter(Boolean))
+
+  const toggleEgresoVinculado = async (e: Egreso) => {
+    setLinkingId(e.id)
+    try {
+      if (egresoIdsVinculados.has(e.id)) {
+        await sb.from('precio_historial').delete().eq('item_id', valForm.item_id).eq('egreso_id', e.id)
+      } else {
+        await sb.from('precio_historial').upsert(
+          { item_id: valForm.item_id, mes: e.fecha.slice(0,7), valor: e.monto, moneda: 'ARS', egreso_id: e.id },
+          { onConflict: 'item_id,mes' }
+        )
+      }
+      await loadHistorial([valForm.item_id])
+    } finally { setLinkingId(null) }
   }
 
   if (loading && !items) return <LoadingSpinner />
@@ -340,22 +363,33 @@ export default function PreciosPage() {
 
           {valForm.item_id && (
             <div>
-              <FieldLabel>Vincular a un gasto ya cargado (opcional)</FieldLabel>
+              <FieldLabel>Gastos ya cargados — tocá para sumarlos o sacarlos de la comparación</FieldLabel>
               <input value={buscarEgreso} onChange={e=>setBuscarEgreso(e.target.value)} placeholder="Buscar en Egresos..." className="input-field text-sm mb-1.5" />
               {egresosSugeridos.length > 0 && (
-                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-1">
-                  {egresosSugeridos.map(e => (
-                    <button key={e.id} onClick={()=>aplicarEgreso(e)} type="button"
-                      className="flex items-center justify-between px-2 py-1.5 rounded-lg border-none bg-transparent hover:bg-slate-50 cursor-pointer text-left">
-                      <span className="text-xs text-slate-600 truncate">{e.descripcion} · {fmtDate(e.fecha)}</span>
-                      <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmt(e.monto, e.moneda as any)}</span>
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-1 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-1">
+                  {egresosSugeridos.map(e => {
+                    const vinculado = egresoIdsVinculados.has(e.id)
+                    return (
+                      <button key={e.id} onClick={()=>toggleEgresoVinculado(e)} type="button" disabled={linkingId===e.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer text-left transition-all disabled:opacity-50"
+                        style={vinculado ? { background:'#EFF4FE', border:'1.5px solid #1A5E9E' } : { background:'transparent', border:'1.5px solid transparent' }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2"
+                            style={vinculado ? { background:'#1A5E9E', borderColor:'#1A5E9E' } : { borderColor:'#cbd5e1' }}>
+                            {vinculado && <span className="text-white text-[9px] font-bold">✓</span>}
+                          </div>
+                          <span className="text-xs text-slate-600 truncate">{e.descripcion} · {fmtDate(e.fecha)}</span>
+                        </div>
+                        <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmt(e.monto, e.moneda as any)}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
           )}
 
+          <div className="text-[11px] text-slate-400 -mt-1">O cargá un valor a mano, sin vincular a ningún gasto:</div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Mes</FieldLabel><input type="month" value={valForm.mes} onChange={e=>setValForm(p=>({...p,mes:e.target.value}))} className="input-field" /></div>
             <div><FieldLabel>Valor ($)</FieldLabel><MontoInput value={valForm.valor} onChange={raw=>setValForm(p=>({...p,valor:raw}))} placeholder="0" /></div>

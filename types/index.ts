@@ -346,6 +346,7 @@ export interface PrecioHistorial {
   mes: string
   valor: number
   moneda: Moneda
+  egreso_id?: string | null
   created_at: string
 }
 
