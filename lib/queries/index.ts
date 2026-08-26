@@ -980,6 +980,24 @@ export async function getPrecioItems(): Promise<PrecioItem[]> {
   return data ?? []
 }
 
+export async function updatePrecioItem(id: string, updates: { nombre?: string; categoria?: string; icono?: string }): Promise<PrecioItem> {
+  const { data, error } = await sb().from('precio_items').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function archivarPrecioItem(id: string, archivar: boolean) {
+  const { error } = await sb().from('precio_items').update({ archivado: archivar }).eq('id', id)
+  if (error) throw error
+}
+
+// Borra el ítem y, en cascada, todo su historial de precios (no toca los Egresos
+// que puedan haber quedado vinculados — esos siguen intactos, solo se corta el link).
+export async function deletePrecioItem(id: string) {
+  const { error } = await sb().from('precio_items').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function getPrecioHistorial(itemId?: string): Promise<PrecioHistorial[]> {
   let q = sb().from('precio_historial').select('*').order('mes')
   if (itemId) q = q.eq('item_id', itemId)

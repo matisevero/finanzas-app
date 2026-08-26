@@ -337,6 +337,7 @@ export interface PrecioItem {
   nombre: string
   categoria: string
   icono: string
+  archivado: boolean
   created_at: string
 }
 

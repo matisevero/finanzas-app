@@ -4,9 +4,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useAppStore } from '@/store/appStore'
 import { usePrecioItems, useAllEgresos } from '@/hooks'
 import { createClient } from '@/lib/supabase/client'
+import { updatePrecioItem, deletePrecioItem, archivarPrecioItem } from '@/lib/queries'
 import { fmt, fmtDate } from '@/lib/utils/formatters'
 import { CATS_PRECIO, COLORES_PRECIO } from '@/lib/utils/constants'
-import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
+import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
 import MontoInput from '@/components/ui/MontoInput'
 import type { PrecioItem, PrecioHistorial, Egreso } from '@/types'
 
@@ -29,6 +30,8 @@ export default function PreciosPage() {
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editId, setEditId] = useState<string|null>(null)
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const [showValModal, setShowValModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [selIcon, setSelIcon] = useState('📦')
@@ -71,9 +74,10 @@ export default function PreciosPage() {
   }
 
   const filtered = useMemo(()=>(items??[])
+    .filter(i=>mostrarArchivados ? i.archivado : !i.archivado)
     .filter(i=>filterCat==='Todos'||i.categoria===filterCat)
     .filter(i=>!search||i.nombre.toLowerCase().includes(search.toLowerCase()))
-  , [items, filterCat, search])
+  , [items, filterCat, search, mostrarArchivados])
 
   // Último valor y variación de cada item
   const itemStats = useMemo(()=>{
@@ -99,15 +103,37 @@ export default function PreciosPage() {
     }))
   }, [selected, historial, items])
 
+  const openNewItem = () => { setEditId(null); setForm({nombre:'',categoria:'Servicios',icono:'📦'}); setSelIcon('📦'); setShowModal(true) }
+  const openEditItem = (item: PrecioItem) => {
+    setEditId(item.id); setForm({ nombre:item.nombre, categoria:item.categoria, icono:item.icono }); setSelIcon(item.icono); setShowModal(true)
+  }
+
   const saveItem = async () => {
     if (!form.nombre) return
     setSaving(true)
     try {
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) return
-      await sb.from('precio_items').insert({ nombre:form.nombre, categoria:form.categoria, icono:selIcon, user_id:user.id })
-      setShowModal(false); setForm({nombre:'',categoria:'Servicios',icono:'📦'}); refetch()
+      if (editId) {
+        await updatePrecioItem(editId, { nombre:form.nombre, categoria:form.categoria, icono:selIcon })
+      } else {
+        const { data: { user } } = await sb.auth.getUser()
+        if (!user) return
+        await sb.from('precio_items').insert({ nombre:form.nombre, categoria:form.categoria, icono:selIcon, user_id:user.id })
+      }
+      setShowModal(false); setEditId(null); setForm({nombre:'',categoria:'Servicios',icono:'📦'}); refetch()
     } finally { setSaving(false) }
+  }
+
+  const handleArchivar = async (item: PrecioItem, archivar: boolean) => {
+    await archivarPrecioItem(item.id, archivar)
+    if (selected.has(item.id)) togglePrecioSeleccionado(item.id)
+    refetch()
+  }
+
+  const handleEliminar = async (item: PrecioItem) => {
+    if (!confirm(`¿Eliminar "${item.nombre}" y todo su historial de precios? No se puede deshacer.`)) return
+    await deletePrecioItem(item.id)
+    if (selected.has(item.id)) togglePrecioSeleccionado(item.id)
+    refetch()
   }
 
   const saveValor = async () => {
@@ -159,7 +185,7 @@ export default function PreciosPage() {
   return (
     <div>
       <PageHeader title="Precios recurrentes" subtitle="Seguimiento de variación mensual en ítems fijos"
-        action={<button className="btn-primary" onClick={()=>setShowModal(true)}>+ Nuevo ítem</button>} />
+        action={<button className="btn-primary" onClick={openNewItem}>+ Nuevo ítem</button>} />
 
       {/* Filtros */}
       <div className="flex gap-2 flex-wrap mb-5 items-center">
@@ -172,6 +198,9 @@ export default function PreciosPage() {
             <button key={c} onClick={()=>setFilterCat(c)} className={`chip text-xs py-1 px-3 ${filterCat===c?'chip-on':''}`}>{c}</button>
           ))}
         </div>
+        <button onClick={()=>setMostrarArchivados(a=>!a)} className={`chip text-xs py-1 px-3 ml-auto ${mostrarArchivados?'chip-on':''}`}>
+          {mostrarArchivados ? '✓ ' : ''}Archivados
+        </button>
       </div>
 
       {/* Grid de items */}
@@ -204,9 +233,18 @@ export default function PreciosPage() {
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{background:color+'18',color}}>{item.categoria}</span>
                     </div>
                   </div>
-                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all`}
-                    style={on?{background:'#40B046',borderColor:'#40B046'}:{borderColor:'#cbd5e1'}}>
-                    {on&&<span className="text-white text-[9px] font-bold">✓</span>}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all`}
+                      style={on?{background:'#40B046',borderColor:'#40B046'}:{borderColor:'#cbd5e1'}}>
+                      {on&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    </div>
+                    <div onClick={e=>e.stopPropagation()}>
+                      <RowMenu items={[
+                        { label: 'Editar', onClick: () => openEditItem(item) },
+                        { label: item.archivado ? 'Reactivar' : 'Archivar', onClick: () => handleArchivar(item, !item.archivado) },
+                        { label: 'Eliminar', onClick: () => handleEliminar(item), danger: true },
+                      ]} />
+                    </div>
                   </div>
                 </div>
 
@@ -325,8 +363,8 @@ export default function PreciosPage() {
         </Card>
       )}
 
-      {/* Modal nuevo ítem */}
-      <Modal open={showModal} onClose={()=>setShowModal(false)} title="Nuevo ítem">
+      {/* Modal nuevo/editar ítem */}
+      <Modal open={showModal} onClose={()=>{setShowModal(false); setEditId(null)}} title={editId ? 'Editar ítem' : 'Nuevo ítem'}>
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Luz departamento" className="input-field" /></div>
           <div><FieldLabel>Categoría</FieldLabel>
@@ -345,7 +383,7 @@ export default function PreciosPage() {
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={()=>setShowModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={()=>{setShowModal(false); setEditId(null)}} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={saveItem} disabled={saving||!form.nombre} className="btn-primary flex-1 disabled:opacity-50">{saving?'Guardando...':'Guardar'}</button>
           </div>
         </div>
