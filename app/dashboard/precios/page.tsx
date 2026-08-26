@@ -1,14 +1,14 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { usePrecioItems } from '@/hooks'
+import { usePrecioItems, useAllEgresos } from '@/hooks'
 import { createClient } from '@/lib/supabase/client'
-import { fmt } from '@/lib/utils/formatters'
+import { fmt, fmtDate } from '@/lib/utils/formatters'
 import { CATS_PRECIO, COLORES_PRECIO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel } from '@/components/ui'
 import MontoInput from '@/components/ui/MontoInput'
-import type { PrecioItem, PrecioHistorial } from '@/types'
+import type { PrecioItem, PrecioHistorial, Egreso } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75','#888780']
@@ -17,9 +17,15 @@ const ICONOS = ['💧','🏠','⚡','🔥','🌐','🚗','🛒','💊','📺','�
 export default function PreciosPage() {
   const { monedaPrincipal: m } = useAppStore()
   const { data: items, loading, refetch } = usePrecioItems()
+  const { data: egresos } = useAllEgresos()
   const [historial, setHistorial] = useState<Record<string, PrecioHistorial[]>>({})
   const [loadingHist, setLoadingHist] = useState(false)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // La selección vive en el store global (persistida) así no se pierde al navegar a otra
+  // página ni entre sesiones — antes era useState local y se perdía apenas cambiabas de vista.
+  const seleccionadosIds = useAppStore(s => s.preciosSeleccionados)
+  const setPreciosSeleccionados = useAppStore(s => s.setPreciosSeleccionados)
+  const togglePrecioSeleccionado = useAppStore(s => s.togglePrecioSeleccionado)
+  const selected = useMemo(() => new Set(seleccionadosIds), [seleccionadosIds])
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -28,6 +34,7 @@ export default function PreciosPage() {
   const [selIcon, setSelIcon] = useState('📦')
   const [form, setForm] = useState({ nombre:'', categoria:'Servicios', icono:'📦' })
   const [valForm, setValForm] = useState({ item_id:'', mes:new Date().toISOString().slice(0,7), valor:'' })
+  const [buscarEgreso, setBuscarEgreso] = useState('')
 
   const sb = createClient()
 
@@ -43,13 +50,16 @@ export default function PreciosPage() {
     } finally { setLoadingHist(false) }
   }
 
+  // Al entrar (o volver de otra página), recargar el historial de lo que ya estaba
+  // seleccionado — la selección persiste, el historial en memoria no hace falta.
+  useEffect(() => {
+    if (seleccionadosIds.length > 0) loadHistorial(seleccionadosIds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const toggleSelect = async (id: string) => {
-    const next = new Set(selected)
-    if (next.has(id)) { next.delete(id) } else {
-      next.add(id)
-      if (!historial[id]) await loadHistorial([id])
-    }
-    setSelected(next)
+    if (!selected.has(id) && !historial[id]) await loadHistorial([id])
+    togglePrecioSeleccionado(id)
   }
 
   const filtered = useMemo(()=>(items??[])
@@ -100,6 +110,23 @@ export default function PreciosPage() {
       await loadHistorial([valForm.item_id])
       setShowValModal(false)
     } finally { setSaving(false) }
+  }
+
+  // Egresos que podrían corresponder al ítem seleccionado — para no tipear el monto a mano
+  // cuando ya existe el gasto real cargado en Egresos.
+  const egresosSugeridos = useMemo(() => {
+    const itemNombre = (items??[]).find(i=>i.id===valForm.item_id)?.nombre?.toLowerCase() ?? ''
+    const q = (buscarEgreso || itemNombre).toLowerCase()
+    if (!q) return []
+    return (egresos??[])
+      .filter(e => e.descripcion.toLowerCase().includes(q))
+      .sort((a,b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, 6)
+  }, [egresos, buscarEgreso, valForm.item_id, items])
+
+  const aplicarEgreso = (e: Egreso) => {
+    setValForm(p => ({ ...p, mes: e.fecha.slice(0,7), valor: String(e.monto) }))
+    setBuscarEgreso('')
   }
 
   if (loading && !items) return <LoadingSpinner />
@@ -186,7 +213,7 @@ export default function PreciosPage() {
                   <div className="text-slate-300 text-xs py-2">Click para cargar historial</div>
                 )}
 
-                <button onClick={e=>{e.stopPropagation();setValForm(p=>({...p,item_id:item.id}));setShowValModal(true)}}
+                <button onClick={e=>{e.stopPropagation();setValForm(p=>({...p,item_id:item.id}));setBuscarEgreso('');setShowValModal(true)}}
                   className="mt-3 w-full text-xs text-slate-400 hover:text-slate-700 border border-slate-200 hover:border-slate-300 rounded-lg py-1.5 bg-transparent cursor-pointer transition-all">
                   + Agregar valor
                 </button>
@@ -302,7 +329,7 @@ export default function PreciosPage() {
       </Modal>
 
       {/* Modal agregar valor */}
-      <Modal open={showValModal} onClose={()=>setShowValModal(false)} title="Agregar valor">
+      <Modal open={showValModal} onClose={()=>{setShowValModal(false); setBuscarEgreso('')}} title="Agregar valor">
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Ítem</FieldLabel>
             <select value={valForm.item_id} onChange={e=>setValForm(p=>({...p,item_id:e.target.value}))} className="input-field">
@@ -310,12 +337,31 @@ export default function PreciosPage() {
               {(items??[]).map(i=><option key={i.id} value={i.id}>{i.icono} {i.nombre}</option>)}
             </select>
           </div>
+
+          {valForm.item_id && (
+            <div>
+              <FieldLabel>Vincular a un gasto ya cargado (opcional)</FieldLabel>
+              <input value={buscarEgreso} onChange={e=>setBuscarEgreso(e.target.value)} placeholder="Buscar en Egresos..." className="input-field text-sm mb-1.5" />
+              {egresosSugeridos.length > 0 && (
+                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-1">
+                  {egresosSugeridos.map(e => (
+                    <button key={e.id} onClick={()=>aplicarEgreso(e)} type="button"
+                      className="flex items-center justify-between px-2 py-1.5 rounded-lg border-none bg-transparent hover:bg-slate-50 cursor-pointer text-left">
+                      <span className="text-xs text-slate-600 truncate">{e.descripcion} · {fmtDate(e.fecha)}</span>
+                      <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmt(e.monto, e.moneda as any)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Mes</FieldLabel><input type="month" value={valForm.mes} onChange={e=>setValForm(p=>({...p,mes:e.target.value}))} className="input-field" /></div>
             <div><FieldLabel>Valor ($)</FieldLabel><MontoInput value={valForm.valor} onChange={raw=>setValForm(p=>({...p,valor:raw}))} placeholder="0" /></div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={()=>setShowValModal(false)} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={()=>{setShowValModal(false); setBuscarEgreso('')}} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={saveValor} disabled={saving||!valForm.valor||!valForm.item_id} className="btn-primary flex-1 disabled:opacity-50">{saving?'Guardando...':'Guardar'}</button>
           </div>
         </div>

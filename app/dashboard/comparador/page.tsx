@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, usePagosTarjeta, useTarjetas } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, usePagosTarjeta, useTarjetas, useEtiquetas, useIngresoEtiquetas, useEgresoEtiquetas } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { PageHeader, Card, LoadingSpinner } from '@/components/ui'
@@ -13,6 +13,7 @@ const ING_COLORS = ['#40B046','#52A852','#85C985','#B8E0B8','#D4EDD4','#1A6B1A',
 const EGR_COLORS = ['#F54927','#E05A22','#F28B30','#F5B042','#F7C96A','#D9776C','#C94E42','#A83228','#E8A598','#F0C4BE']
 const DEU_COLORS = ['#5B3FA6','#8462CC','#A988D8','#CBAFE6','#7B5FC4','#9B7FD4','#DDD0F4']
 const TAR_COLORS = ['#1A5E9E','#2E7EC2','#4D9AD4','#72B3E0','#97CCE8','#BCDFF2','#0D4A82','#3A90D0']
+const ETI_COLORS = ['#D4537E','#B03C63','#E37A9A','#8F2E52','#EDA2B9','#C24870','#9E3560','#DA6489']
 
 export default function ComparadorPage() {
   const { añoActivo, monedaPrincipal: m } = useAppStore()
@@ -22,6 +23,9 @@ export default function ComparadorPage() {
   const { data: deudas,   loading: ld } = useDeudas()
   const { data: pagos,    loading: lp } = usePagosTarjeta()
   const { data: tarjetas, loading: lt } = useTarjetas()
+  const { data: etiquetas,       loading: let_ } = useEtiquetas()
+  const { data: ingresoEtiquetas, loading: lie } = useIngresoEtiquetas()
+  const { data: egresoEtiquetas,  loading: lee } = useEgresoEtiquetas()
 
   const [active, setActive]           = useState<Set<string>>(new Set())
   const [chartType, setChartType]     = useState<'bar'|'line'>('bar')
@@ -55,13 +59,20 @@ export default function ComparadorPage() {
       color: TAR_COLORS[idx % TAR_COLORS.length], grupoId: 'tarjetas',
     }))
 
+    // Etiquetas: cada una (libre/proyecto/ahorro), no las archivadas
+    const etiItems = (etiquetas??[]).filter(e => e.estado !== 'archivada').map((e, idx) => ({
+      id: `et_${e.id}`, label: e.nombre,
+      color: ETI_COLORS[idx % ETI_COLORS.length], grupoId: 'etiquetas',
+    }))
+
     return [
       { id:'ingresos', label:'Ingresos', icon:'↑', items: ingItems },
       { id:'egresos',  label:'Egresos',  icon:'↓', items: egrItems },
       { id:'deudas',   label:'Deudas',   icon:'⬡', items: deuItems },
       { id:'tarjetas', label:'Tarjetas', icon:'▣', items: tarItems },
+      { id:'etiquetas',label:'Etiquetas',icon:'◆', items: etiItems },
     ]
-  }, [ingresos, egresos, deudas, tarjetas])
+  }, [ingresos, egresos, deudas, tarjetas, etiquetas])
 
   const allItems = useMemo(() => grupos.flatMap(g => g.items), [grupos])
 
@@ -100,8 +111,21 @@ export default function ComparadorPage() {
       )
     })
 
+    // Etiquetas: gasto real = egresos etiquetados − ingresos etiquetados (reembolsos),
+    // mismo criterio que ya usa la vista de Proyectos.
+    grupos.find(g => g.id === 'etiquetas')?.items.forEach(item => {
+      const etiquetaId = item.id.replace('et_', '')
+      const egresoIds  = new Set((egresoEtiquetas??[]).filter(x => x.etiqueta_id === etiquetaId).map(x => x.egreso_id))
+      const ingresoIds = new Set((ingresoEtiquetas??[]).filter(x => x.etiqueta_id === etiquetaId).map(x => x.ingreso_id))
+      map[item.id] = MESES_CORTOS.map((_, i) => {
+        const gastos     = (egresos??[]).filter(x => x.mes === i+1 && egresoIds.has(x.id)).reduce((s, x) => s + x.monto, 0)
+        const reembolsos = (ingresos??[]).filter(x => x.mes === i+1 && ingresoIds.has(x.id)).reduce((s, x) => s + x.monto, 0)
+        return gastos - reembolsos
+      })
+    })
+
     return map
-  }, [grupos, ingresos, egresos, deudas, pagos])
+  }, [grupos, ingresos, egresos, deudas, pagos, egresoEtiquetas, ingresoEtiquetas])
 
   const mesesDisp    = MESES_CORTOS.map((l,i) => ({label:l,idx:i})).filter(item => activeMeses.has(item.idx))
   const activeItems  = allItems.filter(i => active.has(i.id))
@@ -116,7 +140,7 @@ export default function ComparadorPage() {
   const clearAll    = () => setActive(new Set())
   const getGrupoId  = (id: string) => allItems.find(i => i.id === id)?.grupoId
 
-  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lp&&!pagos)||(lt&&!tarjetas)) return <LoadingSpinner />
+  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lp&&!pagos)||(lt&&!tarjetas)||(let_&&!etiquetas)||(lie&&!ingresoEtiquetas)||(lee&&!egresoEtiquetas)) return <LoadingSpinner />
 
   return (
     <div>

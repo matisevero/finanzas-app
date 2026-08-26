@@ -91,7 +91,11 @@ export default function CargaRapidaPage() {
     if (!modulo) return []
     const base = tipo === 'ingreso' ? TIPOS_INGRESO : TIPOS_EGRESO
     const baseOpts: CatOpt[] = Object.entries(base).map(([key, cfg]) => ({ id: key, label: cfg.label }))
-    const customOpts: CatOpt[] = (categoriasCustom ?? []).map((c: any) => ({ id: c.id, label: c.nombre }))
+    // El "id" acá es lo que se termina guardando en egreso.categoria / ingreso.tipo — para
+    // categorías propias no hay una key legible aparte del nombre (a diferencia de las
+    // predefinidas como 'auto'/'salud'), así que usamos el nombre mismo, igual que en
+    // Ingresos/Egresos. Usar c.id (el uuid de la fila) guardaba el uuid crudo como categoría.
+    const customOpts: CatOpt[] = (categoriasCustom ?? []).map((c: any) => ({ id: c.nombre, label: c.nombre }))
     const all = [...baseOpts, ...customOpts]
     const frec = frecuenciaQ.data
     return frec ? [...all].sort((a, b) => (frec[b.id] ?? 0) - (frec[a.id] ?? 0)) : all

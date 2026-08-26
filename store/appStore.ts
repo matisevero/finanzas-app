@@ -36,6 +36,12 @@ interface AppState {
   // Ocultar montos en toda la app (ojito). Persistente entre sesiones.
   saldosOcultos: boolean
   toggleSaldosOcultos: () => void
+
+  // Comparación activa en Precios recurrentes — persiste al navegar a otra página
+  // y entre sesiones, para no perder la selección cada vez.
+  preciosSeleccionados: string[]
+  setPreciosSeleccionados: (ids: string[]) => void
+  togglePrecioSeleccionado: (id: string) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -73,6 +79,14 @@ export const useAppStore = create<AppState>()(
 
       saldosOcultos: false,
       toggleSaldosOcultos: () => set((s) => ({ saldosOcultos: !s.saldosOcultos })),
+
+      preciosSeleccionados: [],
+      setPreciosSeleccionados: (preciosSeleccionados) => set({ preciosSeleccionados }),
+      togglePrecioSeleccionado: (id) => set((s) => ({
+        preciosSeleccionados: s.preciosSeleccionados.includes(id)
+          ? s.preciosSeleccionados.filter(x => x !== id)
+          : [...s.preciosSeleccionados, id],
+      })),
     }),
     {
       name: 'finanzas-store',
@@ -85,6 +99,7 @@ export const useAppStore = create<AppState>()(
         monedasPalette: s.monedasPalette,
         vistaTablaTarjetas: s.vistaTablaTarjetas,
         saldosOcultos: s.saldosOcultos,
+        preciosSeleccionados: s.preciosSeleccionados,
       }),
     }
   )
