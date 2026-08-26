@@ -172,7 +172,7 @@ export default function PreciosPage() {
             return (
               <div key={item.id} onClick={()=>toggleSelect(item.id)}
                 className={`bg-white border-2 rounded-2xl p-5 cursor-pointer transition-all shadow-card hover:shadow-card-hover`}
-                style={{borderColor:on?color:'#f1f5f9'}}>
+                style={on?{borderColor:'#40B046', background:'#F3FBF3'}:{borderColor:'#f1f5f9'}}>
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{item.icono}</span>
@@ -182,7 +182,7 @@ export default function PreciosPage() {
                     </div>
                   </div>
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all`}
-                    style={on?{background:color,borderColor:color}:{borderColor:'#cbd5e1'}}>
+                    style={on?{background:'#40B046',borderColor:'#40B046'}:{borderColor:'#cbd5e1'}}>
                     {on&&<span className="text-white text-[9px] font-bold">✓</span>}
                   </div>
                 </div>

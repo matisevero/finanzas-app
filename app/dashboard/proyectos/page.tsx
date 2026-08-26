@@ -6,6 +6,7 @@ import { createProyecto, updateProyecto, deleteProyecto, archivarProyecto, setPr
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_EGRESO, ICONOS_GENERALES, META_COLORS } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
+import { AsociarMovimientoModal } from '@/components/ui/AsociarMovimientoModal'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda, Proyecto, Egreso, Ingreso, EstadoMovimientoManual } from '@/types'
@@ -20,10 +21,11 @@ export default function ProyectosPage() {
   const { data: allEgresos, loading: loadingEgresos } = useAllEgresos()
   const { data: allIngresos, loading: loadingIngresos } = useAllIngresos()
   const { data: etiquetas, loading: loadingEtiquetas, refetch: refetchEtiquetas } = useEtiquetas()
-  const { data: egresoEtiquetas, loading: loadingEE } = useEgresoEtiquetas()
-  const { data: ingresoEtiquetas, loading: loadingIE } = useIngresoEtiquetas()
+  const { data: egresoEtiquetas, loading: loadingEE, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
+  const { data: ingresoEtiquetas, loading: loadingIE, refetch: refetchIngresoEtiquetas } = useIngresoEtiquetas()
   const { data: presupuestos, refetch: refetchPresupuestos } = useProyectoPresupuestos()
   const { data: movManuales, refetch: refetchManuales } = useProyectoMovimientosManuales()
+  const [showAsociarModal, setShowAsociarModal] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showModal, setShowModal]   = useState(false)
@@ -236,7 +238,10 @@ export default function ProyectosPage() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div className="text-slate-900 font-semibold text-[15px]">Movimientos ({movimientosDelSeleccionado.length})</div>
-            <button className="btn-ghost text-sm" onClick={() => setShowManualModal(true)}>+ Movimiento estimado</button>
+            <div className="flex gap-2">
+              <button className="btn-ghost text-sm" onClick={() => setShowAsociarModal(true)}>+ Asociar movimiento</button>
+              <button className="btn-ghost text-sm" onClick={() => setShowManualModal(true)}>+ Movimiento estimado</button>
+            </div>
           </div>
           {movimientosDelSeleccionado.length === 0 ? (
             <div className="text-center text-slate-400 text-sm py-6">Todavía no asociaste movimientos a este proyecto — hacelo desde el menú de un ingreso o egreso, o cargá uno estimado.</div>
@@ -293,6 +298,12 @@ export default function ProyectosPage() {
             </div>
           </div>
         </Modal>
+
+        <AsociarMovimientoModal open={showAsociarModal} onClose={() => setShowAsociarModal(false)}
+          tipo="proyecto" etiquetaId={et?.id ?? ''} etiquetas={etiquetas ?? []}
+          ingresos={allIngresos ?? []} egresos={allEgresos ?? []} tarjetaTxns={[]}
+          ingresoEtiquetas={ingresoEtiquetas ?? []} egresoEtiquetas={egresoEtiquetas ?? []} txnEtiquetas={[]}
+          onDone={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas() }} />
       </div>
     )
   }

@@ -1,22 +1,24 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui'
-import type { Etiqueta, Proyecto, Ahorro } from '@/types'
+import type { Etiqueta, Proyecto, Ahorro, Meta } from '@/types'
 
-// Las etiquetas de tipo proyecto/ahorro no tienen color propio — heredan el color
-// de la entidad a la que pertenecen (vía proyecto_id/ahorro_id), así que si cambiás
-// el color del proyecto el chip se actualiza solo. Las libres sí tienen el suyo.
-export function colorDeEtiqueta(et: Etiqueta, proyectos: Proyecto[], ahorros: Ahorro[]): string {
+// Las etiquetas de tipo proyecto/ahorro/meta no tienen color propio — heredan el color
+// de la entidad a la que pertenecen, así que si cambiás el color de esa entidad el chip
+// se actualiza solo. Las libres sí tienen el suyo.
+export function colorDeEtiqueta(et: Etiqueta, proyectos: Proyecto[], ahorros: Ahorro[], metas: Meta[] = []): string {
   if (et.tipo === 'proyecto') return proyectos.find(p => p.id === et.proyecto_id)?.color ?? '#888780'
   if (et.tipo === 'ahorro')   return ahorros.find(a => a.id === et.ahorro_id)?.color ?? '#888780'
+  if (et.tipo === 'meta')     return metas.find(m => m.id === et.meta_id)?.color ?? '#888780'
   return et.color ?? '#888780'
 }
 
-export function EtiquetaChips({ etiquetaIds, etiquetas, proyectos, ahorros, max = 3 }: {
+export function EtiquetaChips({ etiquetaIds, etiquetas, proyectos, ahorros, metas = [], max = 3 }: {
   etiquetaIds: string[]
   etiquetas: Etiqueta[]
   proyectos: Proyecto[]
   ahorros: Ahorro[]
+  metas?: Meta[]
   max?: number
 }) {
   if (etiquetaIds.length === 0) return null
@@ -27,7 +29,7 @@ export function EtiquetaChips({ etiquetaIds, etiquetas, proyectos, ahorros, max 
   return (
     <div className="flex flex-wrap gap-1 mt-1" onClick={e => e.stopPropagation()}>
       {visibles.map(et => {
-        const color = colorDeEtiqueta(et, proyectos, ahorros)
+        const color = colorDeEtiqueta(et, proyectos, ahorros, metas)
         return (
           <span key={et.id} className="text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ background: color + '18', color }}>
             {et.nombre}
@@ -39,16 +41,20 @@ export function EtiquetaChips({ etiquetaIds, etiquetas, proyectos, ahorros, max 
   )
 }
 
-export function EtiquetaPickerModal({ open, onClose, tipo, etiquetas, proyectos, ahorros, seleccionadas, onConfirm, onCrear, modo, origenMoneda, origenMonto, onConfirmConversion }: {
+export function EtiquetaPickerModal({ open, onClose, tipo, etiquetas, proyectos, ahorros, metas = [], seleccionadas, onConfirm, onCrear, modo, origenMoneda, origenMonto, onConfirmConversion }: {
   open: boolean
   onClose: () => void
-  tipo: 'proyecto' | 'ahorro'
+  tipo: 'proyecto' | 'ahorro' | 'meta'
   etiquetas: Etiqueta[]
   proyectos: Proyecto[]
   ahorros: Ahorro[]
+  metas?: Meta[]
   seleccionadas: string[]
   onConfirm: (ids: string[]) => void | Promise<void>
-  onCrear: (nombre: string) => Promise<string | null>
+  /** Para 'meta' no se ofrece "crear rápido" desde acá — una Meta necesita monto
+   *  objetivo y fecha límite, que no tiene sentido inventar en este modal chico.
+   *  Se crean desde la página de Ahorros y después aparecen acá para elegir. */
+  onCrear?: (nombre: string) => Promise<string | null>
   /** 'compra' (desde Egresos: suma al Ahorro) o 'venta' (desde Ingresos: resta del Ahorro).
    *  Para 'venta' de un Ahorro en cripto (BTC/ETH), la moneda de origen esperada es USD, no ARS —
    *  vender cripto liquida en USD, no directo a pesos. Para todo lo demás (fiat: USD/EUR/USDT en
@@ -76,7 +82,7 @@ export function EtiquetaPickerModal({ open, onClose, tipo, etiquetas, proyectos,
   })
 
   const handleCrear = async () => {
-    if (!nuevoNombre.trim()) return
+    if (!nuevoNombre.trim() || !onCrear) return
     setCreando(true)
     try {
       const newId = await onCrear(nuevoNombre.trim())
@@ -113,14 +119,14 @@ export function EtiquetaPickerModal({ open, onClose, tipo, etiquetas, proyectos,
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={tipo === 'proyecto' ? 'Asociar a proyecto' : 'Asociar a ahorro'}>
+    <Modal open={open} onClose={onClose} title={tipo === 'proyecto' ? 'Asociar a proyecto' : tipo === 'ahorro' ? 'Asociar a ahorro' : 'Asociar a meta'}>
       <div className="flex flex-col gap-3">
         {disponibles.length === 0 ? (
-          <div className="text-slate-400 text-sm text-center py-4">Todavía no tenés {tipo === 'proyecto' ? 'proyectos' : 'ahorros'} activos.</div>
+          <div className="text-slate-400 text-sm text-center py-4">Todavía no tenés {tipo === 'proyecto' ? 'proyectos' : tipo === 'ahorro' ? 'ahorros' : 'metas'} activas.</div>
         ) : (
           <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
             {disponibles.map(et => {
-              const color = colorDeEtiqueta(et, proyectos, ahorros)
+              const color = colorDeEtiqueta(et, proyectos, ahorros, metas)
               return (
                 <label key={et.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer">
                   <input type="checkbox" checked={checked.has(et.id)} onChange={() => toggle(et.id)} className="w-4 h-4 accent-blue-700" />
@@ -158,10 +164,12 @@ export function EtiquetaPickerModal({ open, onClose, tipo, etiquetas, proyectos,
           </div>
         )}
 
-        <div className="flex gap-2 pt-2 border-t border-slate-100">
-          <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} placeholder={`Nuevo ${tipo}...`} className="input-field flex-1 text-sm" />
-          <button onClick={handleCrear} disabled={creando || !nuevoNombre.trim()} className="btn-ghost text-sm disabled:opacity-50 flex-shrink-0">{creando ? '...' : '+ Crear'}</button>
-        </div>
+        {onCrear && tipo !== 'meta' && (
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} placeholder={`Nuevo ${tipo}...`} className="input-field flex-1 text-sm" />
+            <button onClick={handleCrear} disabled={creando || !nuevoNombre.trim()} className="btn-ghost text-sm disabled:opacity-50 flex-shrink-0">{creando ? '...' : '+ Crear'}</button>
+          </div>
+        )}
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
           <button onClick={handleConfirm} disabled={saving} className="btn-primary flex-1 disabled:opacity-50">{saving ? 'Guardando...' : 'Guardar'}</button>

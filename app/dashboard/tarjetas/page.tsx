@@ -3,8 +3,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo, getTarjetaTransacciones } from '@/lib/queries'
+import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas } from '@/hooks'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo, getTarjetaTransacciones, aplicarContribucionPorEtiquetas } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
@@ -39,6 +39,7 @@ export default function TarjetasPage() {
   const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
   const { data: proyectos, refetch: refetchProyectos } = useProyectos()
   const { data: ahorros, refetch: refetchAhorros }     = useAhorros()
+  const { data: metas, refetch: refetchMetas }         = useMetas()
   const handleCrearProyecto = async (nombre: string) => {
     const p = await createProyecto({ nombre, presupuesto: 0, moneda: m, icono: '📁', color: '#1A5E9E', activo: true, fecha_inicio: null, fecha_fin: null })
     const fresh = await getEtiquetas()
@@ -54,12 +55,23 @@ export default function TarjetasPage() {
   const [txnEtiquetas, setTxnEtiquetas] = useState<{ transaccion_id: string; etiqueta_id: string }[]>([])
   useEffect(() => { getTarjetaTransaccionEtiquetas().then(setTxnEtiquetas).catch(()=>{}) }, [])
   const etiquetasDeTxn = (txnId: string) => txnEtiquetas.filter(x=>x.transaccion_id===txnId).map(x=>x.etiqueta_id)
-  const [pickerTipo, setPickerTipo] = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerTipo, setPickerTipo] = useState<'proyecto'|'ahorro'|'meta'|null>(null)
   const [pickerTxn, setPickerTxn]   = useState<string|null>(null)
   const handleConfirmEtiquetasTxn = async (ids: string[]) => {
     if (!pickerTxn) return
+    const txn = (txnsRaw ?? []).find(t => t.id === pickerTxn)
+    const idsAntes = etiquetasDeTxn(pickerTxn)
     await setEtiquetasDeTarjetaTransaccion(pickerTxn, ids)
     setTxnEtiquetas(prev => [...prev.filter(x=>x.transaccion_id!==pickerTxn), ...ids.map(etiqueta_id=>({transaccion_id:pickerTxn, etiqueta_id}))])
+    // Una transacción de tarjeta etiquetada suma automático (es un gasto, como un egreso).
+    if (txn) {
+      await aplicarContribucionPorEtiquetas({
+        idsAntes, idsDespues: ids, etiquetas: etiquetas ?? [], ahorros: ahorros ?? [], metas: metas ?? [],
+        monto: txn.monto, moneda: txn.moneda as Moneda, fecha: txn.fecha, signo: 1,
+        nota: `Tarjeta: ${txn.descripcion}`,
+      })
+      refetchAhorros(); refetchMetas()
+    }
     setPickerTipo(null); setPickerTxn(null)
   }
   const [resumenes, setResumenes] = useState<TarjetaResumen[]>([])
@@ -541,6 +553,7 @@ export default function TarjetasPage() {
                               { label: 'Editar', onClick: () => openEditTxnModal(t) },
                               { label: 'Asociar a proyecto', onClick: () => { setPickerTxn(t.id); setPickerTipo('proyecto') } },
                               { label: 'Asociar a ahorro', onClick: () => { setPickerTxn(t.id); setPickerTipo('ahorro') } },
+                              { label: 'Asociar a meta', onClick: () => { setPickerTxn(t.id); setPickerTipo('meta') } },
                               { label: 'Duplicar', onClick: () => handleDuplicarTxn(t) },
                               { label: 'Eliminar', onClick: () => handleDeleteTxn(t.id), danger: true },
                             ]} />
@@ -1134,12 +1147,13 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
           etiquetas={etiquetas ?? []}
           proyectos={proyectos ?? []}
           ahorros={ahorros ?? []}
+          metas={metas ?? []}
           seleccionadas={etiquetasDeTxn(pickerTxn).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
           onConfirm={async (ids) => {
             const otras = etiquetasDeTxn(pickerTxn).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
             await handleConfirmEtiquetasTxn([...otras, ...ids])
           }}
-          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : pickerTipo === 'ahorro' ? handleCrearAhorro : undefined}
         />
       )}
 

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useCalidadHallazgosPendientes } from '@/hooks'
 import { getUltimoAnalisisCalidad, marcarAnalisisCalidadEjecutado } from '@/lib/queries'
@@ -7,8 +8,13 @@ import { ejecutarAnalisisCalidadDatos } from '@/lib/analisisCalidad'
 
 const VEINTICUATRO_HS = 24 * 60 * 60 * 1000
 const DIAS_PARA_ALERTA = 5
+// Mati: solo tiene sentido interrumpir en las páginas donde realmente vas a
+// cargar/editar movimientos — en el resto es ruido.
+const PAGINAS_CON_AVISO = ['/dashboard/ingresos', '/dashboard/egresos']
 
 export default function CalidadDatosWatcher() {
+  const pathname = usePathname()
+  const mostrarEnEstaPagina = PAGINAS_CON_AVISO.some(p => pathname?.startsWith(p))
   const { data: hallazgos, refetch } = useCalidadHallazgosPendientes()
   const [mostrarModal, setMostrarModal] = useState(false)
 
@@ -42,7 +48,7 @@ export default function CalidadDatosWatcher() {
     if (typeof window !== 'undefined') localStorage.setItem('calidad_modal_shown', new Date().toISOString().split('T')[0])
   }
 
-  if (!hallazgos || hallazgos.length === 0) return null
+  if (!mostrarEnEstaPagina || !hallazgos || hallazgos.length === 0) return null
 
   const exactos   = hallazgos.filter(h => h.tipo === 'duplicado_exacto').length
   const probables = hallazgos.filter(h => h.tipo === 'duplicado_probable').length

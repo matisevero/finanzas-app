@@ -5,8 +5,8 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro, getAllEgresos } from '@/lib/queries'
+import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useMetas, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro, getAllEgresos, aplicarContribucionPorEtiquetas } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -334,21 +334,34 @@ export default function EgresosPage() {
   const etiquetasQ = useEtiquetasDistintas()
   const { data: proyectos, refetch: refetchProyectos } = useProyectos()
   const { data: ahorros, refetch: refetchAhorros } = useAhorros()
+  const { data: metas, refetch: refetchMetas } = useMetas()
   const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
   const { data: egresoEtiquetas, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
   const { data: personas } = usePersonas()
   const quienOpts = useMemo(() => quienOpciones(personas), [personas])
-  const [pickerTipo, setPickerTipo]   = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerTipo, setPickerTipo]   = useState<'proyecto'|'ahorro'|'meta'|null>(null)
   const [pickerEgreso, setPickerEgreso] = useState<string|null>(null)
   const [filterEtiquetas, setFilterEtiquetas] = useState<string[]>([])
 
   const etiquetasDeEgreso = (id: string) => (egresoEtiquetas ?? []).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
 
-  const abrirPicker = (tipo: 'proyecto'|'ahorro', egresoId: string) => { setPickerTipo(tipo); setPickerEgreso(egresoId) }
+  const abrirPicker = (tipo: 'proyecto'|'ahorro'|'meta', egresoId: string) => { setPickerTipo(tipo); setPickerEgreso(egresoId) }
 
   const handleConfirmEtiquetas = async (ids: string[]) => {
     if (!pickerEgreso) return
+    const egreso = (egresos ?? []).find(e => e.id === pickerEgreso)
+    const idsAntes = etiquetasDeEgreso(pickerEgreso)
     await setEtiquetasDeEgreso(pickerEgreso, ids)
+    // Un egreso etiquetado a Ahorro/Meta de su misma moneda suma automático al total
+    // (como ya pasaba antes solo para conversión de moneda) — queda registrado en su historial.
+    if (egreso) {
+      await aplicarContribucionPorEtiquetas({
+        idsAntes, idsDespues: ids, etiquetas: etiquetas ?? [], ahorros: ahorros ?? [], metas: metas ?? [],
+        monto: egreso.monto, moneda: egreso.moneda as Moneda, fecha: egreso.fecha, signo: 1,
+        nota: `Egreso: ${egreso.descripcion}`,
+      })
+      refetchAhorros(); refetchMetas()
+    }
     refetchEgresoEtiquetas()
   }
 
@@ -751,6 +764,7 @@ export default function EgresosPage() {
                                   { label: 'Editar', onClick: () => setEditingId(egreso.id) },
                                   { label: 'Asociar a proyecto', onClick: () => abrirPicker('proyecto', egreso.id) },
                                   { label: 'Asociar a ahorro', onClick: () => abrirPicker('ahorro', egreso.id) },
+                                  { label: 'Asociar a meta', onClick: () => abrirPicker('meta', egreso.id) },
                                   { label: 'Duplicar', onClick: () => handleDuplicar(egreso) },
                                   { label: 'Eliminar', onClick: () => handleDelete(egreso.id), danger: true },
                                 ]} />
@@ -1055,12 +1069,13 @@ export default function EgresosPage() {
           etiquetas={etiquetas ?? []}
           proyectos={proyectos ?? []}
           ahorros={ahorros ?? []}
+          metas={metas ?? []}
           seleccionadas={etiquetasDeEgreso(pickerEgreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
           onConfirm={async (ids) => {
             const otras = etiquetasDeEgreso(pickerEgreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
             await handleConfirmEtiquetas([...otras, ...ids])
           }}
-          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : handleCrearAhorro}
+          onCrear={pickerTipo === 'proyecto' ? handleCrearProyecto : pickerTipo === 'ahorro' ? handleCrearAhorro : undefined}
           modo="compra"
           origenMoneda={egresoPicker?.moneda}
           origenMonto={egresoPicker?.monto}

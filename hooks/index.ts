@@ -30,7 +30,9 @@ export function useEgresos()     { const y = useAppStore(s => s.añoActivo); ret
 export function useDeudas()      { return useAsync(() => Q.getDeudas(), []) }
 export function useTarjetas()    { return useAsync(() => Q.getTarjetas(), []) }
 export function useMetas()       { return useAsync(() => Q.getMetas(), []) }
+export function useMetaAportes(metaId?: string) { return useAsync(() => Q.getMetaAportes(metaId), [metaId]) }
 export function useAhorros()     { return useAsync(() => Q.getAhorros(), []) }
+export function useAhorroAjustes(ahorroId?: string) { return useAsync(() => Q.getAhorroAjustes(ahorroId), [ahorroId]) }
 export function useAllIngresos() { return useAsync(() => Q.getAllIngresos(), []) }
 export function useAllEgresos()  { return useAsync(() => Q.getAllEgresos(), []) }
 export function useProyectos()   { return useAsync(() => Q.getProyectos(), []) }
@@ -60,6 +62,9 @@ export function useSaldoInicial(año: number, mes: number) {
 }
 export function useTarjetaTransacciones(tarjetaId?: string) {
   return useAsync(() => Q.getTarjetaTransacciones(tarjetaId), [tarjetaId])
+}
+export function useTarjetaTransaccionEtiquetas() {
+  return useAsync(() => Q.getTarjetaTransaccionEtiquetas(), [])
 }
 export function usePagosTarjeta(tarjetaId?: string) {
   return useAsync(() => Q.getPagosTarjeta(tarjetaId), [tarjetaId])

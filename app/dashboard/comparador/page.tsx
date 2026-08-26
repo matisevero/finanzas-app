@@ -146,49 +146,52 @@ export default function ComparadorPage() {
     <div>
       <PageHeader title="Comparador" subtitle={`Compará métricas financieras mes a mes — ${añoActivo}`} />
 
-      {/* ── Cajas de selección ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-        {grupos.map(g => (
-          <div key={g.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
-            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-100">
-              <span className="text-base">{g.icon}</span>
-              <span className="text-sm font-bold text-slate-700">{g.label}</span>
-              <span className="text-xs text-slate-400 ml-auto">{g.items.length}</span>
-            </div>
-            {g.items.length > 5 && (
-              <div className="relative mb-2">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
-                <input
-                  value={searchGrupo[g.id] ?? ''}
-                  onChange={e => setSearchGrupo(prev => ({ ...prev, [g.id]: e.target.value }))}
-                  placeholder="Buscar..."
-                  className="input-field pl-7 py-1 text-xs w-full" />
+      {/* ── Selección por grupo — misma lista con checkbox de antes, pero ahora las
+           columnas se recorren en horizontal (carrusel) en vez de bajar a una 2da fila ── */}
+      <div className="flex gap-4 overflow-x-auto pb-2 mb-5">
+        {grupos.map(g => {
+          const filtrados = g.items.filter(item => item.label.toLowerCase().includes((searchGrupo[g.id] ?? '').toLowerCase()))
+          return (
+            <div key={g.id} className="flex-shrink-0 w-[260px] bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-100">
+                <span className="text-base">{g.icon}</span>
+                <span className="text-sm font-bold text-slate-700">{g.label}</span>
+                <span className="text-xs text-slate-400 ml-auto">{g.items.length}</span>
               </div>
-            )}
-            {/* Lista con scroll — muestra 5 items y hace scroll si hay más */}
-            <div className="flex flex-col gap-1" style={{ maxHeight: 200, overflowY: 'auto' }}>
-              {g.items.filter(item => item.label.toLowerCase().includes((searchGrupo[g.id] ?? '').toLowerCase())).length === 0 ? (
-                <div className="text-xs text-slate-400 text-center py-4">{g.items.length === 0 ? 'Sin datos' : 'Sin resultados'}</div>
-              ) : g.items.filter(item => item.label.toLowerCase().includes((searchGrupo[g.id] ?? '').toLowerCase())).map(item => {
-                const on = active.has(item.id)
-                return (
-                  <div key={item.id} onClick={() => toggleItem(item.id)}
-                    className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all select-none"
-                    style={on ? { background: item.color+'12', border:`1px solid ${item.color}33` } : { border:'1px solid transparent' }}>
-                    <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
-                      style={on ? { background:item.color, borderColor:item.color } : { borderColor:'#cbd5e1' }}>
-                      {on && <span className="text-white text-[9px] font-bold">✓</span>}
+              {g.items.length > 5 && (
+                <div className="relative mb-2">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
+                  <input
+                    value={searchGrupo[g.id] ?? ''}
+                    onChange={e => setSearchGrupo(prev => ({ ...prev, [g.id]: e.target.value }))}
+                    placeholder="Buscar..."
+                    className="input-field pl-7 py-1 text-xs w-full" />
+                </div>
+              )}
+              <div className="flex flex-col gap-1" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                {filtrados.length === 0 ? (
+                  <div className="text-xs text-slate-400 text-center py-4">{g.items.length === 0 ? 'Sin datos' : 'Sin resultados'}</div>
+                ) : filtrados.map(item => {
+                  const on = active.has(item.id)
+                  return (
+                    <div key={item.id} onClick={() => toggleItem(item.id)}
+                      className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all select-none"
+                      style={on ? { background: item.color+'12', border:`1px solid ${item.color}33` } : { border:'1px solid transparent' }}>
+                      <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
+                        style={on ? { background:item.color, borderColor:item.color } : { borderColor:'#cbd5e1' }}>
+                        {on && <span className="text-white text-[9px] font-bold">✓</span>}
+                      </div>
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: on ? item.color : '#cbd5e1' }} />
+                      <span className="text-xs truncate" style={{ color: on ? '#0f172a' : '#64748b', fontWeight: on ? 500 : 400 }}>
+                        {item.label}
+                      </span>
                     </div>
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: on ? item.color : '#cbd5e1' }} />
-                    <span className="text-xs truncate" style={{ color: on ? '#0f172a' : '#64748b', fontWeight: on ? 500 : 400 }}>
-                      {item.label}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* ── Chips activos + filtros ── */}

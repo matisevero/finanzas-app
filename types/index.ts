@@ -225,6 +225,7 @@ export interface EventoCalendario {
 export type EventoInsert = Omit<EventoCalendario, 'id' | 'user_id' | 'created_at'>
 
 // ─── Metas ───────────────────────────────────────────────────────────────────
+export type TipoPeriodoMeta = 'objetivo' | 'mensual' | 'anual' | 'lapso'
 export interface Meta {
   id: string
   user_id: string
@@ -234,12 +235,23 @@ export interface Meta {
   monto_actual: number
   moneda: Moneda
   fecha_limite: string
+  tipo_periodo: TipoPeriodoMeta
   icono: string
   color: string
   completada: boolean
   created_at: string
 }
 export type MetaInsert = Omit<Meta, 'id' | 'user_id' | 'created_at'>
+
+export interface MetaAporte {
+  id: string
+  meta_id: string
+  monto: number
+  fecha: string
+  nota?: string | null
+  created_at: string
+}
+export type MetaAporteInsert = Omit<MetaAporte, 'id' | 'created_at'>
 
 export interface Ahorro {
   id: string
@@ -254,6 +266,16 @@ export interface Ahorro {
   created_at: string
 }
 export type AhorroInsert = Omit<Ahorro, 'id' | 'user_id' | 'created_at'>
+
+export interface AhorroAjuste {
+  id: string
+  ahorro_id: string
+  monto: number // puede ser negativo
+  fecha: string
+  nota?: string | null
+  created_at: string
+}
+export type AhorroAjusteInsert = Omit<AhorroAjuste, 'id' | 'created_at'>
 
 export interface Proyecto {
   id: string
@@ -291,7 +313,7 @@ export interface ProyectoMovimientoManual {
 }
 export type ProyectoMovimientoManualInsert = Omit<ProyectoMovimientoManual, 'id' | 'created_at'>
 
-export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro' | 'deuda'
+export type TipoEtiqueta = 'libre' | 'proyecto' | 'ahorro' | 'deuda' | 'meta'
 export type EstadoEtiqueta = 'activa' | 'archivada'
 export interface Etiqueta {
   id: string
@@ -301,6 +323,7 @@ export interface Etiqueta {
   proyecto_id?: string | null
   ahorro_id?: string | null
   deuda_id?: string | null
+  meta_id?: string | null
   color?: string | null
   estado: EstadoEtiqueta
   created_at: string

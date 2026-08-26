@@ -5,8 +5,8 @@ import type {
   Tarjeta, TarjetaInsert, TarjetaTransaccion, PagoTarjeta,
   TarjetaResumen, TarjetaResumenInsert, Moneda,
   EventoCalendario, EventoInsert,
-  Meta, MetaInsert,
-  Ahorro, AhorroInsert,
+  Meta, MetaInsert, MetaAporte, MetaAporteInsert,
+  Ahorro, AhorroInsert, AhorroAjuste, AhorroAjusteInsert,
   Proyecto, ProyectoInsert, ProyectoPresupuesto, ProyectoMovimientoManual, ProyectoMovimientoManualInsert,
   Etiqueta, EtiquetaInsert,
   PrecioItem, PrecioHistorial,
@@ -646,21 +646,51 @@ export async function getMetas(): Promise<Meta[]> {
   return data ?? []
 }
 
+// Igual que Ahorro: crea la Meta y, junto con ella, su etiqueta 1 a 1 (tipo 'meta') —
+// disponible de entrada para asociar movimientos desde el kebab.
 export async function createMeta(form: MetaInsert): Promise<Meta> {
   const userId = await uid()
   const { data, error } = await sb().from('metas').insert({ ...form, user_id: userId }).select().single()
   if (error) throw error
+  const { error: eErr } = await sb().from('etiquetas').insert({ user_id: userId, nombre: data.nombre, tipo: 'meta', meta_id: data.id })
+  if (eErr) throw eErr
   return data
 }
 
 export async function updateMeta(id: string, updates: Partial<MetaInsert>): Promise<Meta> {
   const { data, error } = await sb().from('metas').update(updates).eq('id', id).select().single()
   if (error) throw error
+  if (updates.nombre) {
+    const { error: eErr } = await sb().from('etiquetas').update({ nombre: updates.nombre }).eq('meta_id', id)
+    if (eErr) throw eErr
+  }
   return data
 }
 
+// La etiqueta (y sus asociaciones a movimientos) se borra sola por ON DELETE CASCADE,
+// igual que con Ahorro — no hace falta limpiarla a mano. Los aportes también cascadean.
 export async function deleteMeta(id: string) {
   const { error } = await sb().from('metas').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Historial de aportes a una Meta ─────────────────────────────────────────
+export async function getMetaAportes(metaId?: string): Promise<MetaAporte[]> {
+  let q = sb().from('meta_aportes').select('*').order('fecha', { ascending: false })
+  if (metaId) q = q.eq('meta_id', metaId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createMetaAporte(form: MetaAporteInsert): Promise<MetaAporte> {
+  const { data, error } = await sb().from('meta_aportes').insert(form).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteMetaAporte(id: string) {
+  const { error } = await sb().from('meta_aportes').delete().eq('id', id)
   if (error) throw error
 }
 
@@ -704,6 +734,68 @@ export async function deleteAhorro(id: string) {
 export async function archivarAhorro(id: string, archivar: boolean) {
   const { error } = await sb().from('etiquetas').update({ estado: archivar ? 'archivada' : 'activa' }).eq('ahorro_id', id)
   if (error) throw error
+}
+
+// ─── Historial de ajustes manuales a un Ahorro ───────────────────────────────
+export async function getAhorroAjustes(ahorroId?: string): Promise<AhorroAjuste[]> {
+  let q = sb().from('ahorro_ajustes').select('*').order('fecha', { ascending: false })
+  if (ahorroId) q = q.eq('ahorro_id', ahorroId)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createAhorroAjuste(form: AhorroAjusteInsert): Promise<AhorroAjuste> {
+  const { data, error } = await sb().from('ahorro_ajustes').insert(form).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteAhorroAjuste(id: string) {
+  const { error } = await sb().from('ahorro_ajustes').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Aporte automático al asociar/desasociar un movimiento a Ahorro o Meta ───
+// Se llama después de guardar el nuevo set de etiquetas de un movimiento. Compara
+// idsAntes vs idsDespues: lo que se agregó suma (o resta, según `signo`), lo que se
+// sacó revierte. Solo actúa si la moneda del movimiento coincide con la del
+// Ahorro/Meta — si no coincide, no hace nada (para eso existe el flujo de
+// conversión que ya tenía Ahorro, sin tocar). Deja registro en el historial
+// correspondiente (ahorro_ajustes / meta_aportes), nunca "silencioso".
+export async function aplicarContribucionPorEtiquetas(params: {
+  idsAntes: string[]; idsDespues: string[]; etiquetas: Etiqueta[]
+  ahorros: Ahorro[]; metas: Meta[]
+  monto: number; moneda: Moneda; fecha: string
+  signo: 1 | -1 // +1 egreso/tarjeta (contribuye), -1 ingreso (retiro/reembolso)
+  nota?: string
+}) {
+  const { idsAntes, idsDespues, etiquetas, ahorros, metas, monto, moneda, fecha, signo, nota } = params
+  const agregados = idsDespues.filter(id => !idsAntes.includes(id))
+  const quitados  = idsAntes.filter(id => !idsDespues.includes(id))
+
+  const aplicar = async (id: string, factor: 1 | -1, notaExtra: string) => {
+    const et = etiquetas.find(e => e.id === id)
+    if (!et) return
+    if (et.tipo === 'ahorro' && et.ahorro_id) {
+      const ahorro = ahorros.find(a => a.id === et.ahorro_id)
+      if (!ahorro || ahorro.moneda !== moneda) return
+      const delta = factor * signo * monto
+      await createAhorroAjuste({ ahorro_id: ahorro.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
+      await updateAhorro(ahorro.id, { ajuste_manual: ahorro.ajuste_manual + delta })
+    }
+    if (et.tipo === 'meta' && et.meta_id) {
+      const meta = metas.find(x => x.id === et.meta_id)
+      if (!meta || meta.moneda !== moneda) return
+      const delta = factor * signo * monto
+      await createMetaAporte({ meta_id: meta.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
+      const nuevo = Math.max(0, meta.monto_actual + delta)
+      await updateMeta(meta.id, { monto_actual: nuevo, completada: nuevo >= meta.monto_objetivo })
+    }
+  }
+
+  for (const id of agregados) await aplicar(id, 1, '')
+  for (const id of quitados)  await aplicar(id, -1, ' (desasociado)')
 }
 
 // ─── PROYECTOS ───────────────────────────────────────────────────────────────

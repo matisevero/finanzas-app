@@ -5,8 +5,8 @@ import type { TooltipProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro, getAllIngresos } from '@/lib/queries'
+import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useMetas, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro, getAllIngresos, aplicarContribucionPorEtiquetas } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -335,21 +335,34 @@ export default function IngresosPage() {
   const categoriasCustom = (rawCategorias ?? []) as CategoriaCustom[]
   const { data: proyectos, refetch: refetchProyectos } = useProyectos()
   const { data: ahorros, refetch: refetchAhorros } = useAhorros()
+  const { data: metas, refetch: refetchMetas } = useMetas()
   const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
   const { data: ingresoEtiquetas, refetch: refetchIngresoEtiquetas } = useIngresoEtiquetas()
   const { data: personas } = usePersonas()
   const quienOpts = useMemo(() => quienOpciones(personas), [personas])
-  const [pickerTipo, setPickerTipo]     = useState<'proyecto'|'ahorro'|null>(null)
+  const [pickerTipo, setPickerTipo]     = useState<'proyecto'|'ahorro'|'meta'|null>(null)
   const [pickerIngreso, setPickerIngreso] = useState<string|null>(null)
   const [filterEtiquetas, setFilterEtiquetas] = useState<string[]>([])
 
   const etiquetasDeIngreso = (id: string) => (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
 
-  const abrirPicker = (tipo: 'proyecto'|'ahorro', ingresoId: string) => { setPickerTipo(tipo); setPickerIngreso(ingresoId) }
+  const abrirPicker = (tipo: 'proyecto'|'ahorro'|'meta', ingresoId: string) => { setPickerTipo(tipo); setPickerIngreso(ingresoId) }
 
   const handleConfirmEtiquetas = async (ids: string[]) => {
     if (!pickerIngreso) return
+    const ingreso = (ingresos ?? []).find(i => i.id === pickerIngreso)
+    const idsAntes = etiquetasDeIngreso(pickerIngreso)
     await setEtiquetasDeIngreso(pickerIngreso, ids)
+    // Un ingreso etiquetado a Ahorro/Meta resta del total (retiro/reembolso) — signo -1,
+    // al revés que un egreso. Misma regla: solo si coincide la moneda.
+    if (ingreso) {
+      await aplicarContribucionPorEtiquetas({
+        idsAntes, idsDespues: ids, etiquetas: etiquetas ?? [], ahorros: ahorros ?? [], metas: metas ?? [],
+        monto: ingreso.monto, moneda: ingreso.moneda as Moneda, fecha: ingreso.fecha, signo: -1,
+        nota: `Ingreso: ${ingreso.descripcion}`,
+      })
+      refetchAhorros(); refetchMetas()
+    }
     refetchIngresoEtiquetas()
   }
 
@@ -760,6 +773,7 @@ export default function IngresosPage() {
                                   { label: 'Editar', onClick: () => setEditingId(ingreso.id) },
                                   { label: 'Asociar a proyecto', onClick: () => abrirPicker('proyecto', ingreso.id) },
                                   { label: 'Asociar a ahorro', onClick: () => abrirPicker('ahorro', ingreso.id) },
+                                  { label: 'Asociar a meta', onClick: () => abrirPicker('meta', ingreso.id) },
                                   { label: 'Duplicar', onClick: () => handleDuplicar(ingreso) },
                                   { label: 'Eliminar', onClick: () => handleDelete(ingreso.id), danger: true },
                                 ]} />
@@ -1064,6 +1078,7 @@ export default function IngresosPage() {
           etiquetas={etiquetas ?? []}
           proyectos={proyectos ?? []}
           ahorros={ahorros ?? []}
+          metas={metas ?? []}
           seleccionadas={etiquetasDeIngreso(pickerIngreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo === pickerTipo)}
           onConfirm={async (ids) => {
             const otras = etiquetasDeIngreso(pickerIngreso).filter(id => (etiquetas ?? []).find(e => e.id === id)?.tipo !== pickerTipo)
