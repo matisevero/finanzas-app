@@ -14,6 +14,7 @@ import type {
   CategoriaCustom, CategoriaCustomInsert,
   Persona, PersonaInsert,
   CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
+  MovimientoUnificado, TarjetaTransaccionVista,
 } from '@/types'
 
 const sb = () => createClient()
@@ -1102,4 +1103,96 @@ export async function marcarAnalisisCalidadEjecutado() {
   const userId = await uid()
   const { error } = await sb().from('calidad_meta').upsert({ user_id: userId, ultimo_analisis_at: new Date().toISOString() })
   if (error) throw error
+}
+
+// ─── Consola de "Todos los movimientos" — paginación real contra la base ────
+type OrdenCampo = 'fecha' | 'monto'
+type FiltrosMovs = { tipo?: 'ingreso' | 'egreso' | 'todos'; categoria?: string; etiquetaId?: string; search?: string }
+
+function aplicarFiltrosMovs(q: any, f: FiltrosMovs) {
+  if (f.tipo && f.tipo !== 'todos') q = q.eq('tipo_movimiento', f.tipo)
+  if (f.categoria) q = q.eq('categoria', f.categoria)
+  if (f.etiquetaId) q = q.contains('etiqueta_ids', [f.etiquetaId])
+  if (f.search) q = q.ilike('descripcion', `%${f.search}%`)
+  return q
+}
+function aplicarFiltrosTarjeta(q: any, f: Omit<FiltrosMovs, 'tipo'>) {
+  if (f.categoria) q = q.eq('categoria', f.categoria)
+  if (f.etiquetaId) q = q.contains('etiqueta_ids', [f.etiquetaId])
+  if (f.search) q = q.ilike('descripcion', `%${f.search}%`)
+  return q
+}
+
+export async function getMovimientosUnificados(params: FiltrosMovs & {
+  page: number; pageSize: number; ordenCampo?: OrdenCampo; ordenAsc?: boolean
+}): Promise<{ rows: MovimientoUnificado[]; total: number }> {
+  const { page, pageSize, ordenCampo = 'fecha', ordenAsc = false, ...filtros } = params
+  let q = aplicarFiltrosMovs(sb().from('movimientos_unificados').select('*', { count: 'exact' }), filtros)
+  const from = page * pageSize, to = from + pageSize - 1
+  const { data, error, count } = await q.order(ordenCampo, { ascending: ordenAsc }).range(from, to)
+  if (error) throw error
+  return { rows: data ?? [], total: count ?? 0 }
+}
+
+export async function getTarjetaTransaccionesVista(params: Omit<FiltrosMovs, 'tipo'> & {
+  page: number; pageSize: number; ordenCampo?: OrdenCampo; ordenAsc?: boolean
+}): Promise<{ rows: TarjetaTransaccionVista[]; total: number }> {
+  const { page, pageSize, ordenCampo = 'fecha', ordenAsc = false, ...filtros } = params
+  let q = aplicarFiltrosTarjeta(sb().from('tarjeta_transacciones_vista').select('*', { count: 'exact' }), filtros)
+  const from = page * pageSize, to = from + pageSize - 1
+  const { data, error, count } = await q.order(ordenCampo, { ascending: ordenAsc }).range(from, to)
+  if (error) throw error
+  return { rows: data ?? [], total: count ?? 0 }
+}
+
+// Nombres de categoría distintos que existen hoy en Ingresos+Egresos, para el filtro.
+export async function getCategoriasUnificadasDistintas(): Promise<string[]> {
+  const { data, error } = await sb().from('movimientos_unificados').select('categoria')
+  if (error) throw error
+  return Array.from(new Set((data ?? []).map((r: any) => r.categoria))).sort()
+}
+
+// Todos los ids (+ tipo) que matchean el filtro actual — para "seleccionar todos los N
+// resultados", no solo la página visible. Trae solo lo mínimo, no las filas completas.
+export async function getIdsMovimientosUnificados(filtros: FiltrosMovs): Promise<{ id: string; tipo_movimiento: 'ingreso'|'egreso' }[]> {
+  const q = aplicarFiltrosMovs(sb().from('movimientos_unificados').select('id,tipo_movimiento'), filtros)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+export async function getIdsTarjetaTransaccionesVista(filtros: Omit<FiltrosMovs,'tipo'>): Promise<{ id: string }[]> {
+  const q = aplicarFiltrosTarjeta(sb().from('tarjeta_transacciones_vista').select('id'), filtros)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+// Todas las filas que matchean el filtro (sin paginar) — para exportar a CSV.
+// Ojo: no usar para render en pantalla, es solo para el export.
+export async function getTodosMovimientosUnificados(filtros: FiltrosMovs): Promise<MovimientoUnificado[]> {
+  const q = aplicarFiltrosMovs(sb().from('movimientos_unificados').select('*'), filtros)
+  const { data, error } = await q.order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+export async function getTodasTarjetaTransaccionesVista(filtros: Omit<FiltrosMovs,'tipo'>): Promise<TarjetaTransaccionVista[]> {
+  const q = aplicarFiltrosTarjeta(sb().from('tarjeta_transacciones_vista').select('*'), filtros)
+  const { data, error } = await q.order('fecha', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+// Filas completas por id — usado antes de una acción en lote (como etiquetar) que
+// necesita datos que no vienen en la selección liviana de "seleccionar todos los N".
+export async function getMovimientosUnificadosPorIds(ids: string[]): Promise<MovimientoUnificado[]> {
+  if (ids.length === 0) return []
+  const { data, error } = await sb().from('movimientos_unificados').select('*').in('id', ids)
+  if (error) throw error
+  return data ?? []
+}
+export async function getTarjetaTransaccionesVistaPorIds(ids: string[]): Promise<TarjetaTransaccionVista[]> {
+  if (ids.length === 0) return []
+  const { data, error } = await sb().from('tarjeta_transacciones_vista').select('*').in('id', ids)
+  if (error) throw error
+  return data ?? []
 }

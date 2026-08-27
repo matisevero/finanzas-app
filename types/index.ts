@@ -405,3 +405,31 @@ export interface CalidadHallazgo {
   created_at: string
 }
 
+// ─── Consola de movimientos (Configuración → Todos los movimientos) ─────────
+export interface MovimientoUnificado {
+  id: string
+  user_id: string
+  tipo_movimiento: 'ingreso' | 'egreso'
+  descripcion: string
+  categoria: string
+  monto: number
+  moneda: Moneda
+  fecha: string
+  quien: string
+  etiqueta_ids: string[]
+  created_at: string
+}
+
+export interface TarjetaTransaccionVista {
+  id: string
+  tarjeta_id: string
+  descripcion: string
+  categoria: string
+  monto: number
+  moneda: Moneda
+  fecha: string
+  tipo: string
+  estado_conciliacion?: string
+  etiqueta_ids: string[]
+  created_at: string
+}
