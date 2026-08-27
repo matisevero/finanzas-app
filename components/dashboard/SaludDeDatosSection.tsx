@@ -1,5 +1,6 @@
 'use client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useCalidadHallazgosPendientes } from '@/hooks'
 import { Card } from '@/components/ui'
 
@@ -23,7 +24,13 @@ export default function SaludDeDatosSection() {
 
   return (
     <Card>
-      <div className="text-slate-900 font-semibold text-[17px] mb-1.5">Salud de los datos</div>
+      <div className="flex items-start justify-between mb-1.5">
+        <div className="text-slate-900 font-semibold text-[17px]">Salud de los datos</div>
+        <Link href="/dashboard/movimientos"
+          className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-2.5 py-1 hover:border-slate-300 hover:text-slate-700 transition-colors flex-shrink-0 whitespace-nowrap no-underline">
+          Todos los movimientos
+        </Link>
+      </div>
       <div className="text-slate-500 text-[13px] mb-5 leading-relaxed">
         Duplicados y movimientos sin etiqueta o categoría, detectados automáticamente. Se revisa todo desde una pantalla aparte.
       </div>

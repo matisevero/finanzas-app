@@ -6,7 +6,6 @@ import { useCategoriasCustom, usePersonas, useAllIngresos, useAllEgresos } from 
 import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
 import SaludDeDatosSection from '@/components/dashboard/SaludDeDatosSection'
-import TodosMovimientosSection from '@/components/dashboard/TodosMovimientosSection'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Moneda, CategoriaCustom, Persona } from '@/types'
 import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -730,7 +729,6 @@ export default function ConfiguracionPage() {
 
         {/* SALUD DE LOS DATOS */}
         <SaludDeDatosSection />
-        <TodosMovimientosSection />
 
         {/* ETIQUETAS */}
         <Card>
