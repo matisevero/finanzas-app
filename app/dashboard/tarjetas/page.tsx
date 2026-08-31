@@ -91,7 +91,7 @@ export default function TarjetasPage() {
   const [cargaTarjetaId, setCargaTarjetaId] = useState<string|null>(null)
   const [cargaModo, setCargaModo] = useState<'total'|'item'|'bloque'>('total')
   const [cargaForm, setCargaForm] = useState({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS' as Moneda, fecha: new Date().toISOString().split('T')[0] })
-  const [cargaItems, setCargaItems] = useState<{ descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string }[]>([])
+  const [cargaItems, setCargaItems] = useState<{ descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string; cuota_actual?:number; cuota_total?:number }[]>([])
   const [cargaBloqueTexto, setCargaBloqueTexto] = useState('')
   const [cargaBloqueMoneda, setCargaBloqueMoneda] = useState<Moneda>('ARS')
   const [guardandoCarga, setGuardandoCarga] = useState(false)
@@ -163,18 +163,81 @@ export default function TarjetasPage() {
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
   }
 
-  // Parsea texto pegado línea por línea: "Descripción .... monto" al final de cada línea.
-  // Acepta formato es-AR (puntos de miles, coma decimal) y un "$" opcional antes del número.
-  const parsearBloque = (texto: string, moneda: Moneda) => {
-    return texto.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
-      const match = line.match(/^(.*?)[\s:]*\$?\s*(-?[\d.,]+)\s*$/)
-      if (!match) return null
+  // Parsea texto pegado línea por línea. Soporta dos formatos:
+  // 1) Tabulado (export real del resumen: FECHA / DESCRIPCION / CUOTA / COMPROBANTE / MONTO / MONEDA,
+  //    con "." como separador decimal y moneda explícita por fila) — se detecta por tener tabs.
+  // 2) Texto libre "Descripción .... monto" al final, formato es-AR (puntos de miles, coma decimal),
+  //    una sola moneda para todo el bloque — lo que había antes.
+  // En ambos casos se ignoran silenciosamente las líneas que no matchean (encabezados, separadores
+  // "===...===", fila de títulos de columna, etc.) — así se puede pegar el resumen completo tal cual,
+  // sin tener que recortarlo a mano. Los pagos/abonos (monto negativo, ej. "SU PAGO EN PESOS") se
+  // excluyen: ya se reflejan en Deudas vía el pago registrado, no son un gasto para categorizar acá.
+  const MESES_ABR3: Record<string, number> = { ene:1, feb:2, mar:3, abr:4, may:5, jun:6, jul:7, ago:8, sep:9, set:9, oct:10, nov:11, dic:12 }
+
+  const parsearFechaResumen = (s: string): string | null => {
+    const m = s.trim().match(/^(\d{1,2})[-\/](\d{1,2}|[a-zA-Zñ]{3,})[-\/](\d{2,4})$/)
+    if (!m) return null
+    const dia = parseInt(m[1], 10)
+    let mes: number
+    if (/^\d+$/.test(m[2])) mes = parseInt(m[2], 10)
+    else { mes = MESES_ABR3[m[2].toLowerCase().slice(0, 3)]; if (!mes) return null }
+    let año = parseInt(m[3], 10)
+    if (m[3].length === 2) año = 2000 + año
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
+    return `${año}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+  }
+
+  // Detecta formato del número: si tiene coma, es es-AR (punto de miles, coma decimal); si no,
+  // se parsea directo (el export tabulado usa "." como separador decimal, sin miles).
+  const parsearMontoFlexible = (s: string): number | null => {
+    const clean = s.trim().replace(/^\$?\s*/, '').replace(/^USD\s*/i, '')
+    if (!clean) return null
+    if (clean.includes(',')) {
+      const n = parseFloat(clean.replace(/\./g, '').replace(',', '.'))
+      return isNaN(n) ? null : n
+    }
+    const n = parseFloat(clean)
+    return isNaN(n) ? null : n
+  }
+
+  const parsearBloque = (texto: string, monedaDefault: Moneda) => {
+    const items: { descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string; cuota_actual?:number; cuota_total?:number }[] = []
+    let pagosOmitidos = 0
+    const lineas = texto.split('\n').map(l => l.trim()).filter(Boolean)
+    // Si CUALQUIER línea tiene tab, tratamos todo el pegado como el export tabulado y NO usamos
+    // el fallback de texto libre para las demás líneas — si no, encabezados como "Total a Pagar
+    // Pesos: $ 353.540,24" (sin tab, pero con un número al final) se cuelan como si fueran un ítem.
+    const esFormatoTabulado = lineas.some(l => l.includes('\t'))
+
+    for (const linea of lineas) {
+      if (esFormatoTabulado) {
+        if (!linea.includes('\t')) continue // encabezado/título/separador del resumen — se ignora
+        const cols = linea.split('\t').map(c => c.trim())
+        if (cols.length < 5) continue
+        const fecha = parsearFechaResumen(cols[0])
+        const monto = parsearMontoFlexible(cols[4])
+        if (!fecha || monto === null) continue // fila de título de columna u otra que no es un ítem real
+        if (monto < 0) { pagosOmitidos++; continue }
+        const descripcion = cols[1] || 'Movimiento'
+        const monedaCol = cols[5]?.toUpperCase()
+        const moneda = (monedaCol === 'USD' || monedaCol === 'ARS' || monedaCol === 'EUR') ? monedaCol as Moneda : monedaDefault
+        const cuotaMatch = cols[2]?.match(/^(\d+)\/(\d+)$/)
+        items.push({
+          descripcion, categoria: 'Otros', monto, moneda, fecha,
+          ...(cuotaMatch ? { cuota_actual: parseInt(cuotaMatch[1], 10), cuota_total: parseInt(cuotaMatch[2], 10) } : {}),
+        })
+        continue
+      }
+
+      const match = linea.match(/^(.*?)[\s:]*\$?\s*(-?[\d.,]+)\s*$/)
+      if (!match) continue
       const descripcion = match[1].trim()
       const montoStr = match[2].replace(/\./g, '').replace(',', '.')
       const monto = parseFloat(montoStr)
-      if (!descripcion || isNaN(monto)) return null
-      return { descripcion, categoria: 'Otros', monto: Math.abs(monto), moneda, fecha: new Date().toISOString().split('T')[0] }
-    }).filter((x): x is { descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string } => x !== null)
+      if (!descripcion || isNaN(monto)) continue
+      items.push({ descripcion, categoria: 'Otros', monto: Math.abs(monto), moneda: monedaDefault, fecha: new Date().toISOString().split('T')[0] })
+    }
+    return { items, pagosOmitidos }
   }
 
   const abrirCargaModal = () => {
@@ -198,10 +261,10 @@ export default function TarjetasPage() {
     try {
       await createTarjetaTransaccion({
         tarjeta_id: cargaTarjetaId, descripcion: cargaForm.descripcion || 'Saldo inicial', categoria: cargaForm.categoria,
-        fecha: cargaForm.fecha, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, tipo: 'credito', etiqueta: null,
+        fecha: cargaForm.fecha, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, tipo: 'debito', etiqueta: null,
       })
       setShowCargaModal(false); refTxns()
-    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+    } catch (e:any) { console.error(e); alert('No se pudo guardar el movimiento: '+(e.message||e)) } finally { setGuardandoCarga(false) }
   }
 
   const handleGuardarCargaItems = async (items: typeof cargaItems) => {
@@ -211,11 +274,12 @@ export default function TarjetasPage() {
       for (const it of items) {
         await createTarjetaTransaccion({
           tarjeta_id: cargaTarjetaId, descripcion: it.descripcion, categoria: it.categoria,
-          fecha: it.fecha, monto: it.monto, moneda: it.moneda, tipo: 'credito', etiqueta: null,
+          fecha: it.fecha, monto: it.monto, moneda: it.moneda, tipo: 'debito', etiqueta: null,
+          cuota_actual: it.cuota_actual, cuota_total: it.cuota_total,
         })
       }
       setShowCargaModal(false); setCargaItems([]); refTxns()
-    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+    } catch (e:any) { console.error(e); alert('No se pudieron guardar los movimientos: '+(e.message||e)) } finally { setGuardandoCarga(false) }
   }
 
   const handleDuplicarTxn = async (t: TarjetaTransaccion) => {
@@ -774,7 +838,7 @@ export default function TarjetasPage() {
               <FieldLabel>Tarjeta</FieldLabel>
               <select value={pdfTarjetaId||''} onChange={e=>setPdfTarjetaId(e.target.value)} className="input-field">
                 <option value="">Seleccioná una tarjeta</option>
-                {(tarjetas??[]).map(t=><option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
+                {(tarjetas??[]).map(t=><option key={t.id} value={t.id}>{t.nombre} · {t.banco}{t.quien!=='ambos' ? ` · ${t.quien}` : ''}</option>)}
               </select>
             </div>
             <div>
@@ -981,7 +1045,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
           <div><FieldLabel>Tarjeta</FieldLabel>
             <select value={cargaTarjetaId ?? ''} onChange={e => setCargaTarjetaId(e.target.value)} className="input-field">
               <option value="">Seleccioná una tarjeta</option>
-              {(tarjetas??[]).map(t => <option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
+              {(tarjetas??[]).map(t => <option key={t.id} value={t.id}>{t.nombre} · {t.banco}{t.quien!=='ambos' ? ` · ${t.quien}` : ''}</option>)}
             </select>
           </div>
 
@@ -1063,8 +1127,8 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
 
           {cargaModo === 'bloque' && (
             <>
-              <p className="text-slate-400 text-xs -mt-2">Pegá una línea por movimiento, con el monto al final (ej: "Supermercado Coto 15.230"). Se arma la lista abajo para revisar antes de guardar.</p>
-              <div><FieldLabel>Moneda de todo el bloque</FieldLabel>
+              <p className="text-slate-400 text-xs -mt-2">Pegá el detalle del resumen tal cual (funciona con filas tabuladas fecha/descripción/cuota/comprobante/monto/moneda, o con líneas sueltas tipo "Supermercado Coto 15.230"). Los encabezados del resumen y las líneas de pago se descartan solos. Se arma la lista abajo para revisar antes de guardar.</p>
+              <div><FieldLabel>Moneda por defecto <span className="text-slate-400 font-normal normal-case">(si una fila no trae moneda propia)</span></FieldLabel>
                 <select value={cargaBloqueMoneda} onChange={e => setCargaBloqueMoneda(e.target.value as Moneda)} className="input-field">
                   {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -1072,15 +1136,18 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
               <textarea value={cargaBloqueTexto} onChange={e => setCargaBloqueTexto(e.target.value)} rows={6}
                 placeholder={'Supermercado Coto 15.230\nNetflix 3.500\nUber 890'} className="input-field font-mono text-xs" />
               {(() => {
-                const parseados = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
+                const { items: parseados, pagosOmitidos } = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
                 return (
                   <>
-                    {parseados.length > 0 && (
+                    {(parseados.length > 0 || pagosOmitidos > 0) && (
                       <div className="max-h-48 overflow-auto flex flex-col gap-1 border-t border-slate-100 pt-2">
-                        <div className="text-xs text-slate-400">{parseados.length} movimiento{parseados.length===1?'':'s'} detectado{parseados.length===1?'':'s'}</div>
+                        <div className="text-xs text-slate-400">
+                          {parseados.length} movimiento{parseados.length===1?'':'s'} detectado{parseados.length===1?'':'s'}
+                          {pagosOmitidos > 0 && ` · ${pagosOmitidos} pago${pagosOmitidos===1?'':'s'} omitido${pagosOmitidos===1?'':'s'} (ya se refleja en Deudas)`}
+                        </div>
                         {parseados.map((it, i) => (
                           <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50">
-                            <span className="text-xs text-slate-600 truncate">{it.descripcion}</span>
+                            <span className="text-xs text-slate-600 truncate">{it.descripcion}{it.cuota_actual && it.cuota_total ? ` (${it.cuota_actual}/${it.cuota_total})` : ''}</span>
                             <span className="font-mono text-xs font-bold text-slate-900 flex-shrink-0">{fmtFull(it.monto, it.moneda)}</span>
                           </div>
                         ))}

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { añoMesDeFecha } from '@/lib/utils/formatters'
 import type {
   Ingreso, IngresoInsert, Egreso, EgresoInsert,
   Deuda, DeudaInsert, PagoDeuda,
@@ -189,9 +190,9 @@ export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
 
 export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('ingresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -200,9 +201,9 @@ export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
 export async function updateIngreso(id: string, form: Partial<IngresoInsert>): Promise<Ingreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('ingresos').update(updates).eq('id', id).select().single()
   if (error) throw error
@@ -223,9 +224,9 @@ export async function getEgresosByAño(año: number): Promise<Egreso[]> {
 
 export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('egresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -234,9 +235,9 @@ export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
 export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Promise<Egreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('egresos').update(updates).eq('id', id).select().single()
   if (error) throw error

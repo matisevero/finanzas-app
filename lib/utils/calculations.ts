@@ -1,4 +1,5 @@
 import type { Ingreso, Egreso, Deuda, EventoCalendario } from '@/types'
+import { diaDeFecha } from './formatters'
 
 // ─── Resumen anual ────────────────────────────────────────────────────────────
 export function calcularResumen(ingresos: Ingreso[], egresos: Egreso[], deudas: Deuda[]) {
@@ -93,7 +94,7 @@ export function proyectarCashFlow(
     const dia    = i + 1
     const dayEvs = eventos.filter(e => e.dia === dia)
     const entradasEventos  = dayEvs.filter(e => e.tipo === 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
-    const entradasIngresos = ingresosDelMes.filter(ing => new Date(ing.fecha).getDate() === dia).reduce((s, ing) => s + ing.monto, 0)
+    const entradasIngresos = ingresosDelMes.filter(ing => diaDeFecha(ing.fecha) === dia).reduce((s, ing) => s + ing.monto, 0)
     const entradas = entradasEventos + entradasIngresos
     const salidas  = dayEvs.filter(e => e.tipo !== 'ingreso' && e.monto).reduce((s, e) => s + (e.monto ?? 0), 0)
     acum += entradas - salidas

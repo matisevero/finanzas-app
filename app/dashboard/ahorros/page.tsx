@@ -14,7 +14,8 @@ import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { calcularMeta } from '@/lib/utils/calculations'
 import { META_COLORS, ICONOS_GENERALES, TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
-import { AsociarMovimientoModal } from '@/components/ui/AsociarMovimientoModal'
+import { AsociarMovimientoModal, desasociarMovimiento } from '@/components/ui/AsociarMovimientoModal'
+import { EditarMovimientoRapidoModal, type MovimientoEditable } from '@/components/ui/EditarMovimientoRapidoModal'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
 import type { Moneda, Ahorro, Meta, TipoPeriodoMeta, Etiqueta } from '@/types'
@@ -35,7 +36,10 @@ function sugerirFechaLimite(tipo: TipoPeriodoMeta): string {
   return ''
 }
 
-type MovEtiquetado = { tipo:'egreso'|'ingreso'|'tarjeta'; id:string; fecha:string; descripcion:string; categoria:string; monto:number; moneda:Moneda }
+type MovEtiquetado = { tipo:'egreso'|'ingreso'|'tarjeta'; id:string; fecha:string; descripcion:string; categoria:string; monto:number; moneda:Moneda; cotizacion?: number | null }
+
+const entidadDeMov = (tipo: 'egreso'|'ingreso'|'tarjeta'): 'egreso'|'ingreso'|'tarjeta_transaccion' =>
+  tipo === 'tarjeta' ? 'tarjeta_transaccion' : tipo
 
 export default function AhorrosPage() {
   const [tab, setTab] = useState<'metas'|'general'>('metas')
@@ -74,9 +78,9 @@ export default function AhorrosPage() {
     const egresoIds  = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === etiquetaId).map(r => r.egreso_id))
     const ingresoIds = new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === etiquetaId).map(r => r.ingreso_id))
     const txnIds      = new Set((txnEtiquetas ?? []).filter(r => r.etiqueta_id === etiquetaId).map(r => r.transaccion_id))
-    const egr = (allEgresos ?? []).filter(e => egresoIds.has(e.id)).map(e => ({ tipo:'egreso' as const, id:e.id, fecha:e.fecha, descripcion:e.descripcion, categoria:e.categoria, monto:e.monto, moneda:e.moneda as Moneda }))
-    const ing = (allIngresos ?? []).filter(i => ingresoIds.has(i.id)).map(i => ({ tipo:'ingreso' as const, id:i.id, fecha:i.fecha, descripcion:i.descripcion, categoria:i.tipo, monto:i.monto, moneda:i.moneda as Moneda }))
-    const tar = (allTxnsTarjeta ?? []).filter(t => txnIds.has(t.id)).map(t => ({ tipo:'tarjeta' as const, id:t.id, fecha:t.fecha, descripcion:t.descripcion, categoria:t.categoria, monto:t.monto, moneda:t.moneda as Moneda }))
+    const egr = (allEgresos ?? []).filter(e => egresoIds.has(e.id)).map(e => ({ tipo:'egreso' as const, id:e.id, fecha:e.fecha, descripcion:e.descripcion, categoria:e.categoria, monto:e.monto, moneda:e.moneda as Moneda, cotizacion:e.cotizacion }))
+    const ing = (allIngresos ?? []).filter(i => ingresoIds.has(i.id)).map(i => ({ tipo:'ingreso' as const, id:i.id, fecha:i.fecha, descripcion:i.descripcion, categoria:i.tipo, monto:i.monto, moneda:i.moneda as Moneda, cotizacion:i.cotizacion }))
+    const tar = (allTxnsTarjeta ?? []).filter(t => txnIds.has(t.id)).map(t => ({ tipo:'tarjeta' as const, id:t.id, fecha:t.fecha, descripcion:t.descripcion, categoria:t.categoria, monto:t.monto, moneda:t.moneda as Moneda, cotizacion:t.cotizacion_ars }))
     return [...egr, ...ing, ...tar].sort((x,y)=>y.fecha.localeCompare(x.fecha))
   }
 
@@ -343,6 +347,9 @@ function MetaDetalle({ meta, onVolver, onEditar, onEliminar, etiqueta, movimient
   const [montoAporte, setMontoAporte] = useState('')
   const [savingAporte, setSavingAporte] = useState(false)
   const [showAsociarModal, setShowAsociarModal] = useState(false)
+  const [editando, setEditando] = useState<MovimientoEditable | null>(null)
+  const [desasociando, setDesasociando] = useState<string | null>(null)
+  const monedasPalette = useMonedasDisponibles()
 
   const handleAgregarAporte = async () => {
     const val = parseFloat(montoAporte||'0')
@@ -357,11 +364,44 @@ function MetaDetalle({ meta, onVolver, onEditar, onEliminar, etiqueta, movimient
   }
 
   // Timeline unificado: aportes manuales + movimientos etiquetados, por fecha desc.
+  // Mismo cuidado de conversión que en Ahorro (ver AhorroDetalle) — si el movimiento linkeado
+  // está en otra moneda que la Meta, convertimos con la cotización guardada si existe; si no,
+  // se muestra en su moneda original en vez de mostrar el número crudo con el símbolo de la Meta.
+  const esCriptoMeta = ['BTC', 'ETH'].includes(mon)
   const timeline = useMemo(() => {
-    const a = (aportes??[]).map(x => ({ origen:'manual' as const, id:x.id, fecha:x.fecha, monto:x.monto, descripcion:x.nota||'Aporte manual' }))
-    const m = movimientos.map(x => ({ origen:x.tipo as 'egreso'|'ingreso'|'tarjeta', id:x.id, fecha:x.fecha, monto: x.tipo==='ingreso'?-x.monto:x.monto, descripcion:x.descripcion }))
+    const a = (aportes??[]).map(x => ({ origen:'manual' as const, id:x.id, fecha:x.fecha, monto:x.monto, moneda:mon, descripcion:x.nota||'Aporte manual' }))
+    const m = movimientos.map(x => {
+      const esCompraCriptoNoConvertible = esCriptoMeta && x.moneda === 'ARS'
+      const convertible = x.moneda !== mon && !!x.cotizacion && x.cotizacion > 0 && !esCompraCriptoNoConvertible
+      const montoEnMonedaPropia = x.tipo==='ingreso' ? -x.monto : x.monto
+      const monto  = convertible ? montoEnMonedaPropia / (x.cotizacion as number) : montoEnMonedaPropia
+      const moneda = convertible ? mon : x.moneda
+      return { origen:x.tipo as 'egreso'|'ingreso'|'tarjeta', id:x.id, fecha:x.fecha, monto, moneda, descripcion:x.descripcion,
+        original: { entidad: entidadDeMov(x.tipo), monto:x.monto, moneda:x.moneda } }
+    })
     return [...a, ...m].sort((x,y)=>y.fecha.localeCompare(x.fecha))
-  }, [aportes, movimientos])
+  }, [aportes, movimientos, mon, esCriptoMeta])
+
+  const etiquetasDelMov = (entidad: 'egreso'|'ingreso'|'tarjeta_transaccion', id: string): string[] => {
+    if (entidad === 'egreso') return (asociarProps.egresoEtiquetas as any[]).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
+    if (entidad === 'ingreso') return (asociarProps.ingresoEtiquetas as any[]).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+    return (asociarProps.txnEtiquetas as any[]).filter(r => r.transaccion_id === id).map(r => r.etiqueta_id)
+  }
+
+  const handleDesasociar = async (t: (typeof timeline)[number]) => {
+    if (!etiqueta || t.origen === 'manual' || !t.original) return
+    if (!confirm('¿Desasociar este movimiento de la meta? El ingreso/egreso en sí no se borra.')) return
+    setDesasociando(t.id)
+    try {
+      await desasociarMovimiento({
+        entidad: t.original.entidad, id: t.id, etiquetaId: etiqueta.id,
+        etiquetasActuales: etiquetasDelMov(t.original.entidad, t.id),
+        etiquetas: asociarProps.etiquetas, ahorros: asociarProps.ahorros, metas: asociarProps.metas,
+        tipo: 'meta', monto: t.original.monto, moneda: t.original.moneda, fecha: t.fecha, descripcion: t.descripcion,
+      })
+      asociarProps.onDone()
+    } catch (e: any) { console.error(e); alert('No se pudo desasociar: ' + (e.message || e)) } finally { setDesasociando(null) }
+  }
 
   return (
     <div>
@@ -418,13 +458,24 @@ function MetaDetalle({ meta, onVolver, onEditar, onEliminar, etiqueta, movimient
         ) : (
           <div className="flex flex-col">
             {timeline.map(t=>(
-              <div key={`${t.origen}-${t.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
+              <div key={`${t.origen}-${t.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0 gap-2">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-slate-400 text-xs font-mono flex-shrink-0">{fmtDate(t.fecha)}</span>
                   <span className="text-slate-700 text-sm truncate">{t.descripcion}</span>
                   {t.origen!=='manual' && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full flex-shrink-0">{t.origen}</span>}
+                  {t.moneda!==mon && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full flex-shrink-0" title="Sin cotización guardada para convertir — se muestra en su moneda original">{t.moneda}</span>}
                 </div>
-                <span className={`font-mono font-bold text-sm flex-shrink-0 ${t.monto<0?'text-red-600':'text-emerald-700'}`}>{t.monto>=0?'+':''}{fmtFull(t.monto, mon)}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`font-mono font-bold text-sm ${t.monto<0?'text-red-600':'text-emerald-700'}`}>{t.monto>=0?'+':''}{fmtFull(t.monto, t.moneda)}</span>
+                  {t.origen!=='manual' && t.original && (
+                    <>
+                      <button onClick={()=>setEditando({ entidad:t.original!.entidad, id:t.id, descripcion:t.descripcion, monto:t.original!.monto, moneda:t.original!.moneda, fecha:t.fecha, contribuyeAAhorroOMeta:true })}
+                        className="text-slate-300 hover:text-blue-600 border-none bg-transparent cursor-pointer text-xs" title="Editar">✎</button>
+                      <button onClick={()=>handleDesasociar(t)} disabled={desasociando===t.id}
+                        className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs disabled:opacity-50" title="Desasociar">✕</button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -432,6 +483,8 @@ function MetaDetalle({ meta, onVolver, onEditar, onEliminar, etiqueta, movimient
       </Card>
       <AsociarMovimientoModal open={showAsociarModal} onClose={()=>setShowAsociarModal(false)}
         tipo="meta" etiquetaId={etiqueta?.id ?? ''} moneda={mon} {...asociarProps} />
+      <EditarMovimientoRapidoModal open={!!editando} onClose={()=>setEditando(null)} movimiento={editando}
+        monedasPalette={monedasPalette} onSaved={asociarProps.onDone} />
       {modalEditar}
     </div>
   )
@@ -451,6 +504,30 @@ function AhorroDetalle({ ahorro, onVolver, onEditar, onEliminar, archivado, onAr
   const [montoAjuste, setMontoAjuste] = useState('')
   const [showAsociarModal, setShowAsociarModal] = useState(false)
   const [savingAjuste, setSavingAjuste] = useState(false)
+  const [editando, setEditando] = useState<MovimientoEditable | null>(null)
+  const [desasociando, setDesasociando] = useState<string | null>(null)
+  const monedasPalette = useMonedasDisponibles()
+
+  const etiquetasDelMov = (entidad: 'egreso'|'ingreso'|'tarjeta_transaccion', id: string): string[] => {
+    if (entidad === 'egreso') return (asociarProps.egresoEtiquetas as any[]).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
+    if (entidad === 'ingreso') return (asociarProps.ingresoEtiquetas as any[]).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+    return (asociarProps.txnEtiquetas as any[]).filter(r => r.transaccion_id === id).map(r => r.etiqueta_id)
+  }
+
+  const handleDesasociar = async (t: (typeof timeline)[number]) => {
+    if (!etiqueta || t.origen === 'manual' || !t.original) return
+    if (!confirm('¿Desasociar este movimiento del ahorro? El ingreso/egreso en sí no se borra.')) return
+    setDesasociando(t.id)
+    try {
+      await desasociarMovimiento({
+        entidad: t.original.entidad, id: t.id, etiquetaId: etiqueta.id,
+        etiquetasActuales: etiquetasDelMov(t.original.entidad, t.id),
+        etiquetas: asociarProps.etiquetas, ahorros: asociarProps.ahorros, metas: asociarProps.metas,
+        tipo: 'ahorro', monto: t.original.monto, moneda: t.original.moneda, fecha: t.fecha, descripcion: t.descripcion,
+      })
+      asociarProps.onDone()
+    } catch (e: any) { console.error(e); alert('No se pudo desasociar: ' + (e.message || e)) } finally { setDesasociando(null) }
+  }
 
   const handleAjustar = async (signo: 1|-1) => {
     const val = parseFloat(montoAjuste||'0')
@@ -464,11 +541,27 @@ function AhorroDetalle({ ahorro, onVolver, onEditar, onEliminar, archivado, onAr
     } finally { setSavingAjuste(false) }
   }
 
+  const esCriptoAhorro = ['BTC', 'ETH'].includes(mon)
+
   const timeline = useMemo(() => {
-    const a = (ajustes??[]).map(x => ({ origen:'manual' as const, id:x.id, fecha:x.fecha, monto:x.monto, descripcion:x.nota||'Ajuste manual' }))
-    const m = movimientos.map(x => ({ origen:x.tipo as 'egreso'|'ingreso'|'tarjeta', id:x.id, fecha:x.fecha, monto: x.tipo==='ingreso'?-x.monto:x.monto, descripcion:x.descripcion }))
+    const a = (ajustes??[]).map(x => ({ origen:'manual' as const, id:x.id, fecha:x.fecha, monto:x.monto, moneda:mon, descripcion:x.nota||'Ajuste manual' }))
+    // Los movimientos linkeados por etiqueta pueden estar en otra moneda que el Ahorro (ej: un
+    // Egreso en ARS para comprar un Ahorro en USD). Si tenemos la cotización guardada en el
+    // movimiento (ARS por unidad de la moneda del Ahorro), la usamos para mostrar el monto ya
+    // convertido — si no, mostramos el monto en SU moneda original en vez de mentir mostrándolo
+    // con el símbolo del Ahorro. Excepción: compra de cripto guarda solo una cotización de
+    // referencia del USD (no ARS por unidad de cripto), así que ahí tampoco se puede convertir.
+    const m = movimientos.map(x => {
+      const esCompraCriptoNoConvertible = esCriptoAhorro && x.moneda === 'ARS'
+      const convertible = x.moneda !== mon && !!x.cotizacion && x.cotizacion > 0 && !esCompraCriptoNoConvertible
+      const montoEnMonedaPropia = x.tipo==='ingreso' ? -x.monto : x.monto
+      const monto  = convertible ? montoEnMonedaPropia / (x.cotizacion as number) : montoEnMonedaPropia
+      const moneda = convertible ? mon : x.moneda
+      return { origen:x.tipo as 'egreso'|'ingreso'|'tarjeta', id:x.id, fecha:x.fecha, monto, moneda, descripcion:x.descripcion,
+        original: { entidad: entidadDeMov(x.tipo), monto:x.monto, moneda:x.moneda } }
+    })
     return [...a, ...m].sort((x,y)=>y.fecha.localeCompare(x.fecha))
-  }, [ajustes, movimientos])
+  }, [ajustes, movimientos, mon, esCriptoAhorro])
 
   return (
     <div>
@@ -523,13 +616,24 @@ function AhorroDetalle({ ahorro, onVolver, onEditar, onEliminar, archivado, onAr
         ) : (
           <div className="flex flex-col">
             {timeline.map(t=>(
-              <div key={`${t.origen}-${t.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
+              <div key={`${t.origen}-${t.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0 gap-2">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-slate-400 text-xs font-mono flex-shrink-0">{fmtDate(t.fecha)}</span>
                   <span className="text-slate-700 text-sm truncate">{t.descripcion}</span>
                   {t.origen!=='manual' && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full flex-shrink-0">{t.origen}</span>}
+                  {t.moneda!==mon && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full flex-shrink-0" title="Sin cotización guardada para convertir — se muestra en su moneda original">{t.moneda}</span>}
                 </div>
-                <span className={`font-mono font-bold text-sm flex-shrink-0 ${t.monto<0?'text-red-600':'text-emerald-700'}`}>{t.monto>=0?'+':''}{fmtFull(t.monto, mon)}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`font-mono font-bold text-sm ${t.monto<0?'text-red-600':'text-emerald-700'}`}>{t.monto>=0?'+':''}{fmtFull(t.monto, t.moneda)}</span>
+                  {t.origen!=='manual' && t.original && (
+                    <>
+                      <button onClick={()=>setEditando({ entidad:t.original!.entidad, id:t.id, descripcion:t.descripcion, monto:t.original!.monto, moneda:t.original!.moneda, fecha:t.fecha, contribuyeAAhorroOMeta:true })}
+                        className="text-slate-300 hover:text-blue-600 border-none bg-transparent cursor-pointer text-xs" title="Editar">✎</button>
+                      <button onClick={()=>handleDesasociar(t)} disabled={desasociando===t.id}
+                        className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs disabled:opacity-50" title="Desasociar">✕</button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -537,6 +641,8 @@ function AhorroDetalle({ ahorro, onVolver, onEditar, onEliminar, archivado, onAr
       </Card>
       <AsociarMovimientoModal open={showAsociarModal} onClose={()=>setShowAsociarModal(false)}
         tipo="ahorro" etiquetaId={etiqueta?.id ?? ''} moneda={mon} {...asociarProps} />
+      <EditarMovimientoRapidoModal open={!!editando} onClose={()=>setEditando(null)} movimiento={editando}
+        monedasPalette={monedasPalette} onSaved={asociarProps.onDone} />
       {modalEditar}
     </div>
   )

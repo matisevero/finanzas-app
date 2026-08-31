@@ -6,7 +6,8 @@ import { createProyecto, updateProyecto, deleteProyecto, archivarProyecto, setPr
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_EGRESO, ICONOS_GENERALES, META_COLORS } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, ProgressBar } from '@/components/ui'
-import { AsociarMovimientoModal } from '@/components/ui/AsociarMovimientoModal'
+import { AsociarMovimientoModal, desasociarMovimiento } from '@/components/ui/AsociarMovimientoModal'
+import { EditarMovimientoRapidoModal, type MovimientoEditable } from '@/components/ui/EditarMovimientoRapidoModal'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
 import type { Moneda, Proyecto, Egreso, Ingreso, EstadoMovimientoManual } from '@/types'
@@ -130,6 +131,30 @@ export default function ProyectosPage() {
   const [showManualModal, setShowManualModal] = useState(false)
   const [manualForm, setManualForm] = useState({ descripcion: '', categoria: 'otro', fecha: new Date().toISOString().split('T')[0], monto: '', moneda: 'ARS' as Moneda, estado: 'estimado' as EstadoMovimientoManual })
   const [savingManual, setSavingManual] = useState(false)
+  const [editando, setEditando] = useState<MovimientoEditable | null>(null)
+  const [desasociando, setDesasociando] = useState<string | null>(null)
+
+  const entidadDe = (tipo: 'egreso'|'ingreso'): 'egreso'|'ingreso' => tipo
+  const etiquetasDelMov = (entidad: 'egreso'|'ingreso', id: string): string[] => {
+    if (entidad === 'egreso') return (egresoEtiquetas ?? []).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
+    return (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+  }
+
+  const handleDesasociar = async (mv: Movimiento) => {
+    const etSel = selected ? etiquetaDe(selected) : undefined
+    if (!etSel || mv.tipo === 'manual') return
+    if (!confirm('¿Desasociar este movimiento del proyecto? El ingreso/egreso en sí no se borra.')) return
+    setDesasociando(mv.id)
+    try {
+      await desasociarMovimiento({
+        entidad: entidadDe(mv.tipo), id: mv.id, etiquetaId: etSel.id,
+        etiquetasActuales: etiquetasDelMov(entidadDe(mv.tipo), mv.id),
+        etiquetas: etiquetas ?? [], ahorros: [], metas: [],
+        tipo: 'proyecto', monto: mv.monto, moneda: mv.moneda, fecha: mv.fecha, descripcion: mv.descripcion,
+      })
+      refetchEgresoEtiquetas(); refetchIngresoEtiquetas()
+    } catch (e: any) { console.error(e); alert('No se pudo desasociar: ' + (e.message || e)) } finally { setDesasociando(null) }
+  }
 
   const handleGuardarManual = async () => {
     if (!selected || !manualForm.descripcion || !manualForm.monto) return
@@ -260,12 +285,23 @@ export default function ProyectosPage() {
                       {mv.tipo === 'ingreso' ? '+' : '-'}{fmtFull(mv.monto, mv.moneda)}
                     </span>
                     {mv.tipo === 'manual' && <button onClick={() => handleEliminarManual(mv.id)} className="text-slate-300 hover:text-red-500 cursor-pointer border-none bg-transparent">✕</button>}
+                    {mv.tipo !== 'manual' && (
+                      <>
+                        <button onClick={()=>{ if (mv.tipo === 'manual') return; setEditando({ entidad: mv.tipo, id: mv.id, descripcion: mv.descripcion, monto: mv.monto, moneda: mv.moneda, fecha: mv.fecha, contribuyeAAhorroOMeta: false }) }}
+                          className="text-slate-300 hover:text-blue-600 border-none bg-transparent cursor-pointer text-xs" title="Editar">✎</button>
+                        <button onClick={() => handleDesasociar(mv)} disabled={desasociando === mv.id}
+                          className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs disabled:opacity-50" title="Desasociar">✕</button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
         </Card>
+
+        <EditarMovimientoRapidoModal open={!!editando} onClose={()=>setEditando(null)} movimiento={editando}
+          monedasPalette={monedasPalette} onSaved={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas() }} />
 
         <ProyectoModal open={showModal} onClose={() => setShowModal(false)} editId={editId} form={form} setForm={setForm}
           saving={saving} onSave={handleSave} monedasPalette={monedasPalette} />

@@ -33,36 +33,41 @@ export default function CalidadDatosWatcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Mati: "sin etiqueta" no es un error de datos — las etiquetas son opcionales y no todo
+  // movimiento tiene por qué llevar una. El aviso recurrente (banner + modal a los N días) es
+  // solo para duplicados; "sin etiqueta" sigue disponible en /dashboard/revision y /dashboard/salud,
+  // simplemente no interrumpe.
+  const hallazgosParaAviso = (hallazgos ?? []).filter(h => h.tipo !== 'sin_etiqueta')
+
   useEffect(() => {
-    if (!hallazgos || hallazgos.length === 0) return
-    const masViejo = hallazgos[0].detectado_en // ya viene ordenado por detectado_en asc
+    if (hallazgosParaAviso.length === 0) return
+    const masViejo = hallazgosParaAviso[0].detectado_en // ya viene ordenado por detectado_en asc
     const dias = (Date.now() - new Date(masViejo).getTime()) / (24 * 60 * 60 * 1000)
     if (dias < DIAS_PARA_ALERTA) return
     const hoy = new Date().toISOString().split('T')[0]
     const yaMostradoHoy = typeof window !== 'undefined' && localStorage.getItem('calidad_modal_shown') === hoy
     if (!yaMostradoHoy) setMostrarModal(true)
-  }, [hallazgos])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hallazgosParaAviso])
 
   const cerrarModal = () => {
     setMostrarModal(false)
     if (typeof window !== 'undefined') localStorage.setItem('calidad_modal_shown', new Date().toISOString().split('T')[0])
   }
 
-  if (!mostrarEnEstaPagina || !hallazgos || hallazgos.length === 0) return null
+  if (!mostrarEnEstaPagina || hallazgosParaAviso.length === 0) return null
 
-  const exactos   = hallazgos.filter(h => h.tipo === 'duplicado_exacto').length
-  const probables = hallazgos.filter(h => h.tipo === 'duplicado_probable').length
-  const sinEtiqueta = hallazgos.filter(h => h.tipo === 'sin_etiqueta').length
+  const exactos   = hallazgosParaAviso.filter(h => h.tipo === 'duplicado_exacto').length
+  const probables = hallazgosParaAviso.filter(h => h.tipo === 'duplicado_probable').length
   const detalle = [
     exactos > 0 && `${exactos} duplicado${exactos > 1 ? 's' : ''} exacto${exactos > 1 ? 's' : ''}`,
     probables > 0 && `${probables} posible${probables > 1 ? 's' : ''} duplicado${probables > 1 ? 's' : ''}`,
-    sinEtiqueta > 0 && `${sinEtiqueta} sin etiqueta`,
   ].filter(Boolean).join(', ')
 
   return (
     <>
       <div className="mx-4 md:mx-8 mt-4 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-        <span className="text-sm text-amber-800">{hallazgos.length} movimiento{hallazgos.length > 1 ? 's' : ''} para revisar ({detalle})</span>
+        <span className="text-sm text-amber-800">{hallazgosParaAviso.length} movimiento{hallazgosParaAviso.length > 1 ? 's' : ''} para revisar ({detalle})</span>
         <Link href="/dashboard/revision" className="text-sm text-amber-800 font-medium underline flex-shrink-0">Revisar</Link>
       </div>
 
