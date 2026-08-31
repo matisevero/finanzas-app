@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { añoMesDeFecha } from '@/lib/utils/formatters'
 import type {
   Ingreso, IngresoInsert, Egreso, EgresoInsert,
   Deuda, DeudaInsert, PagoDeuda,
@@ -189,9 +190,9 @@ export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
 
 export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('ingresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -200,9 +201,9 @@ export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
 export async function updateIngreso(id: string, form: Partial<IngresoInsert>): Promise<Ingreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('ingresos').update(updates).eq('id', id).select().single()
   if (error) throw error
@@ -223,9 +224,9 @@ export async function getEgresosByAño(año: number): Promise<Egreso[]> {
 
 export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('egresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -234,9 +235,9 @@ export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
 export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Promise<Egreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('egresos').update(updates).eq('id', id).select().single()
   if (error) throw error
@@ -695,6 +696,22 @@ export async function deleteMetaAporte(id: string) {
   if (error) throw error
 }
 
+export async function updateMetaAporte(id: string, form: Partial<MetaAporteInsert>): Promise<MetaAporte> {
+  const { data, error } = await sb().from('meta_aportes').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Mismo motivo que `sincronizarAjusteManualAhorro`: recalcula `monto_actual` sumando los
+// meta_aportes reales con una consulta fresca, en vez de "valor actual + delta" desde estado
+// de React que puede estar desactualizado.
+export async function sincronizarMontoActualMeta(metaId: string, montoObjetivo: number): Promise<number> {
+  const aportes = await getMetaAportes(metaId)
+  const suma = Math.max(0, Math.min(montoObjetivo, aportes.reduce((s, a) => s + a.monto, 0)))
+  await updateMeta(metaId, { monto_actual: suma, completada: suma >= montoObjetivo })
+  return suma
+}
+
 // ─── AHORROS ─────────────────────────────────────────────────────────────────
 export async function getAhorros(): Promise<Ahorro[]> {
   const { data, error } = await sb().from('ahorros').select('*').order('created_at')
@@ -757,6 +774,26 @@ export async function deleteAhorroAjuste(id: string) {
   if (error) throw error
 }
 
+export async function updateAhorroAjuste(id: string, form: Partial<AhorroAjusteInsert>): Promise<AhorroAjuste> {
+  const { data, error } = await sb().from('ahorro_ajustes').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// `ajuste_manual` es un total cacheado en Ahorro para no tener que sumar ahorro_ajustes en
+// cada render de una lista. El bug real: varios puntos del código lo actualizaban calculando
+// "valor actual + delta" a partir de un `ahorro` que puede venir desactualizado del estado de
+// React (ediciones/creaciones rápidas sucesivas, o un array de ahorros pasado a una función que
+// no se refrescó entre pasos) — eso desincroniza el cache del historial real, sin ningún error
+// visible. Esta función siempre recalcula sumando los ahorro_ajustes reales con una consulta
+// fresca a la base (no un valor de estado), así el resultado nunca puede arrastrar un desvío.
+export async function sincronizarAjusteManualAhorro(ahorroId: string): Promise<number> {
+  const ajustes = await getAhorroAjustes(ahorroId)
+  const suma = ajustes.reduce((s, a) => s + a.monto, 0)
+  await updateAhorro(ahorroId, { ajuste_manual: suma })
+  return suma
+}
+
 // ─── Aporte automático al asociar/desasociar un movimiento a Ahorro o Meta ───
 // Se llama después de guardar el nuevo set de etiquetas de un movimiento. Compara
 // idsAntes vs idsDespues: lo que se agregó suma (o resta, según `signo`), lo que se
@@ -783,15 +820,14 @@ export async function aplicarContribucionPorEtiquetas(params: {
       if (!ahorro || ahorro.moneda !== moneda) return
       const delta = factor * signo * monto
       await createAhorroAjuste({ ahorro_id: ahorro.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
-      await updateAhorro(ahorro.id, { ajuste_manual: ahorro.ajuste_manual + delta })
+      await sincronizarAjusteManualAhorro(ahorro.id)
     }
     if (et.tipo === 'meta' && et.meta_id) {
       const meta = metas.find(x => x.id === et.meta_id)
       if (!meta || meta.moneda !== moneda) return
       const delta = factor * signo * monto
       await createMetaAporte({ meta_id: meta.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
-      const nuevo = Math.max(0, meta.monto_actual + delta)
-      await updateMeta(meta.id, { monto_actual: nuevo, completada: nuevo >= meta.monto_objetivo })
+      await sincronizarMontoActualMeta(meta.id, meta.monto_objetivo)
     }
   }
 

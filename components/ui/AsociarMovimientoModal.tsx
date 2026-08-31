@@ -7,6 +7,34 @@ import type { Ingreso, Egreso, TarjetaTransaccion, Etiqueta, Ahorro, Meta, Moned
 
 type EntidadMov = 'ingreso' | 'egreso' | 'tarjeta_transaccion'
 
+const aplicarSet = (entidad: EntidadMov, id: string, ids: string[]) => {
+  if (entidad === 'egreso') return setEtiquetasDeEgreso(id, ids)
+  if (entidad === 'ingreso') return setEtiquetasDeIngreso(id, ids)
+  return setEtiquetasDeTarjetaTransaccion(id, ids)
+}
+
+/** Saca una sola etiqueta (proyecto/ahorro/meta) de un movimiento sin tocar el resto de sus
+ *  etiquetas, y revierte la contribución a Ahorro/Meta si correspondía — misma lógica que el
+ *  "Quitar" del modal de Asociar, pero invocable directo desde una fila del Historial. */
+export async function desasociarMovimiento(params: {
+  entidad: EntidadMov; id: string; etiquetaId: string; etiquetasActuales: string[]
+  etiquetas: Etiqueta[]; ahorros: Ahorro[]; metas: Meta[]
+  tipo: 'proyecto' | 'ahorro' | 'meta'
+  monto: number; moneda: Moneda; fecha: string; descripcion: string
+}) {
+  const { entidad, id, etiquetaId, etiquetasActuales, etiquetas, ahorros, metas, tipo, monto, moneda, fecha, descripcion } = params
+  const idsDespues = etiquetasActuales.filter(x => x !== etiquetaId)
+  await aplicarSet(entidad, id, idsDespues)
+  if (tipo === 'ahorro' || tipo === 'meta') {
+    await aplicarContribucionPorEtiquetas({
+      idsAntes: etiquetasActuales, idsDespues, etiquetas, ahorros, metas,
+      monto, moneda, fecha,
+      signo: entidad === 'ingreso' ? -1 : 1,
+      nota: `${entidad === 'egreso' ? 'Egreso' : entidad === 'ingreso' ? 'Ingreso' : 'Tarjeta'}: ${descripcion}`,
+    })
+  }
+}
+
 /** Modal genérico para asociar Ingresos/Egresos/Tarjeta desde la propia página del
  *  Proyecto/Ahorro/Meta — el sentido inverso del kebab que ya existe en cada movimiento.
  *  Mismo mecanismo de aporte automático que el kebab: si tipo es ahorro/meta y la moneda
@@ -52,12 +80,6 @@ export function AsociarMovimientoModal({ open, onClose, tipo, etiquetaId, etique
     if (entidad === 'egreso') return egresoEtiquetas.filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
     if (entidad === 'ingreso') return ingresoEtiquetas.filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
     return txnEtiquetas.filter(r => r.transaccion_id === id).map(r => r.etiqueta_id)
-  }
-
-  const aplicarSet = (entidad: EntidadMov, id: string, ids: string[]) => {
-    if (entidad === 'egreso') return setEtiquetasDeEgreso(id, ids)
-    if (entidad === 'ingreso') return setEtiquetasDeIngreso(id, ids)
-    return setEtiquetasDeTarjetaTransaccion(id, ids)
   }
 
   const toggle = async (f: Fila) => {

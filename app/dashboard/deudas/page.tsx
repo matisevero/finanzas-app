@@ -987,7 +987,7 @@ export default function DeudasPage() {
               <CategoriaSelector modulo="eventos" value={evForm.tipo} onChange={v => setEvForm(p => ({ ...p, tipo: v }))}
                 categorias={categoriasEventoCustom ?? []} categoriasBase={CATEGORIAS_EVENTO} onCategoriasChange={refetchCatsEvento} />
             </div>
-            <div><FieldLabel>Fecha</FieldLabel>
+            <div><FieldLabel>Vencimiento</FieldLabel>
               <FechaInput value={evForm.fecha} onChange={iso => setEvForm(p => ({ ...p, fecha: iso }))} />
             </div>
           </div>

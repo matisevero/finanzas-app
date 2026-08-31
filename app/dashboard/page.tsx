@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta, useMetas } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta, useMetas, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { calcularTendencia, calcularTendenciaBalance } from '@/lib/utils/tendencia'
 import { fmt, fmtFull, ocultarValor } from '@/lib/utils/formatters'
@@ -68,9 +68,11 @@ export default function DashboardPage() {
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
   const { data: tarjetas, loading: lt } = useTarjetas()
-  const monedasAhorro = useAppStore(s => s.monedasAhorro)
   const { data: pagosTC,  loading: lp } = usePagosTarjeta()
   const { data: metas,    loading: lm } = useMetas()
+  const { data: ahorros,  loading: la } = useAhorros()
+  const { data: allIngresosAhorro, loading: lia } = useAllIngresos()
+  const { data: allEgresosAhorro,  loading: lea2 } = useAllEgresos()
 
   const HOY = new Date()
   const { data: eventosMes, loading: lem } = useEventosMes(HOY.getFullYear(), HOY.getMonth() + 1)
@@ -81,30 +83,26 @@ export default function DashboardPage() {
   // Eventos de todo el año activo (para "Vencimientos" en vista Año)
   const { data: eventosAño, loading: lea } = useEventosAño(añoActivo)
 
-  if ((li&&!ingresos) || (le&&!egresos) || (ld&&!deudas) || (lt&&!tarjetas) || (lem&&!eventosMes) || (lemv&&!eventosMesVista) || (lea&&!eventosAño) || (lp&&!pagosTC) || (lm&&!metas)) return <LoadingSpinner />
+  if ((li&&!ingresos) || (le&&!egresos) || (ld&&!deudas) || (lt&&!tarjetas) || (lem&&!eventosMes) || (lemv&&!eventosMesVista) || (lea&&!eventosAño) || (lp&&!pagosTC) || (lm&&!metas) || (la&&!ahorros) || (lia&&!allIngresosAhorro) || (lea2&&!allEgresosAhorro)) return <LoadingSpinner />
 
   const r = calcularResumen(ingresos??[], egresos??[], deudas??[])
 
-  // "Ahorro / Inversiones" por moneda: cuenta ítems de categorías tipo "Inversiones ARS", "Inversiones USD",
-  // "Inversiones EUR", etc. — como tipo/categoria es texto libre (el usuario las crea en Configuración),
-  // matcheamos por nombre de categoría además de por etiqueta. 'usd' queda como caso fijo legacy.
-  const esAhorroOInversion = (etiqueta?: string|null, tipoOCategoria?: string) =>
-    (!!etiqueta && /ahorro|inversi/i.test(etiqueta)) ||
-    (!!tipoOCategoria && /ahorro|inversi/i.test(tipoOCategoria)) ||
-    tipoOCategoria === 'usd'
-
-  const monedasConAhorro = Array.from(new Set([
-    ...(ingresos??[]).filter(i => esAhorroOInversion(i.etiqueta, i.tipo)).map(i => i.moneda),
-    ...(egresos??[]).filter(e => esAhorroOInversion(e.etiqueta, e.categoria)).map(e => e.moneda),
-    ...monedasAhorro,
-  ]))
-
-  // El ahorro nunca puede ser negativo — un mes con más retiros que aportes muestra 0, no un saldo en rojo.
-  const ahorroPorMoneda = monedasConAhorro.map(mon => {
-    const ing = (ingresos??[]).filter(i => i.moneda === mon && esAhorroOInversion(i.etiqueta, i.tipo)).reduce((s,i)=>s+i.monto,0)
-    const egr = (egresos??[]).filter(e => e.moneda === mon && esAhorroOInversion(e.etiqueta, e.categoria)).reduce((s,e)=>s+e.monto,0)
-    return { moneda: mon, monto: Math.max(0, ing - egr) }
-  })
+  // "Ahorro / Inversiones" por moneda — lee el módulo real de Ahorros (mismo cálculo que usa
+  // la propia página de Ahorros: automático por categoría + ajuste manual/etiquetas, nunca
+  // negativo), en vez de la heurística vieja por texto de categoría que no reflejaba lo que
+  // realmente hay cargado en Ahorros.
+  const ahorrosSeguro = ahorros ?? []
+  const automaticoAhorroDe = (a: (typeof ahorrosSeguro)[number]) => {
+    const ing = (allIngresosAhorro??[]).filter(i => i.tipo === a.categoria && i.moneda === a.moneda).reduce((s,i)=>s+i.monto,0)
+    const egr = (allEgresosAhorro??[]).filter(e => e.categoria === a.categoria && e.moneda === a.moneda).reduce((s,e)=>s+e.monto,0)
+    return Math.max(0, ing - egr)
+  }
+  const monedasConAhorro = Array.from(new Set(ahorrosSeguro.map(a => a.moneda)))
+  const ahorroPorMoneda = monedasConAhorro.map(mon => ({
+    moneda: mon,
+    monto: ahorrosSeguro.filter(a => a.moneda === mon)
+      .reduce((s, a) => s + Math.max(0, automaticoAhorroDe(a) + a.ajuste_manual), 0),
+  }))
 
   // Deudas por moneda: agrupa el saldo pendiente real de cada deuda por su moneda.
   const monedasConDeuda = Array.from(new Set((deudas??[]).map(d => d.moneda)))

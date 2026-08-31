@@ -168,7 +168,6 @@ export interface TarjetaTransaccion {
   cuota_actual?: number
   cuota_total?: number
   tipo: 'debito' | 'credito'
-  etiqueta?: string | null
   origen?: 'manual' | 'pdf'
   estado_conciliacion?: EstadoConciliacion
   resumen_id?: string | null

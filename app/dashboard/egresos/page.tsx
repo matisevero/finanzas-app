@@ -6,7 +6,7 @@ import type { ValueType, NameType } from 'recharts/types/component/DefaultToolti
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useEgresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useMetas, useEtiquetas, useEgresoEtiquetas, usePersonas } from '@/hooks'
-import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro, getAllEgresos, aplicarContribucionPorEtiquetas } from '@/lib/queries'
+import { createEgreso, updateEgreso, deleteEgreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeEgreso, updateAhorro, getAllEgresos, aplicarContribucionPorEtiquetas, createAhorroAjuste, sincronizarAjusteManualAhorro } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_EGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -1083,15 +1083,18 @@ export default function EgresosPage() {
             const ahorro = (ahorros ?? []).find(a => a.id === ahorroId)
             if (!ahorro || !egresoPicker) return
             const esCripto = ['BTC', 'ETH'].includes(ahorro.moneda)
-            if (esCripto) {
-              await updateAhorro(ahorroId, { cantidad: (ahorro.cantidad ?? 0) + montoConvertido })
-            } else {
-              await updateAhorro(ahorroId, { ajuste_manual: ahorro.ajuste_manual + montoConvertido })
-            }
             const cotiz = esCripto ? cotizacionUsdRef : (egresoPicker.monto / montoConvertido)
             const notaTxt = esCripto
               ? `Compra de ${montoConvertido} ${ahorro.moneda}${cotiz ? ` — cotización USD ref: $${cotiz.toLocaleString('es-AR')}` : ''}`
               : `Compra de ${montoConvertido} ${ahorro.moneda} — cotización: $${cotiz!.toLocaleString('es-AR')} por ${ahorro.moneda}`
+            if (esCripto) {
+              await updateAhorro(ahorroId, { cantidad: (ahorro.cantidad ?? 0) + montoConvertido })
+            } else {
+              // Se registra como un ahorro_ajustes real (no solo un número tocado en el cache) para
+              // que quede visible en el Historial y se pueda editar/desasociar como cualquier otro.
+              await createAhorroAjuste({ ahorro_id: ahorroId, monto: montoConvertido, fecha: egresoPicker.fecha, nota: notaTxt })
+              await sincronizarAjusteManualAhorro(ahorroId)
+            }
             await updateEgreso(egresoPicker.id, { cotizacion: cotiz ?? null, nota: notaTxt })
             refetchAhorros(); refetch()
           }}
