@@ -160,6 +160,9 @@ export interface TarjetaTransaccion {
   id: string
   tarjeta_id: string
   descripcion: string
+  /** El texto tal cual aparece en el resumen del banco — separado de `descripcion`, que puede
+   *  ser un nombre más amigable (editado a mano, o aprendido de tarjeta_comercios). */
+  descripcion_raw?: string | null
   categoria: string
   fecha: string
   /** A qué período (mes de pago) pertenece — independiente de `fecha`. Un resumen de agosto
