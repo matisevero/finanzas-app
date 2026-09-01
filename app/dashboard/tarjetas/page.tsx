@@ -4,16 +4,16 @@ import { useSearchParams } from 'next/navigation'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, conciliarResumen, createTarjetaResumen, generarDeudaDesdeTarjeta, getTarjetaResumenes, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo, getTarjetaTransacciones, aplicarContribucionPorEtiquetas } from '@/lib/queries'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, generarDeudaDesdeTarjeta, getTarjetaPeriodoTotales, upsertTarjetaPeriodoTotal, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo, getTarjetaTransacciones, aplicarContribucionPorEtiquetas } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
-import { MESES_CORTOS } from '@/lib/utils/constants'
+import { MESES, MESES_CORTOS } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
-import type { Moneda, Quien, TarjetaTransaccion, TarjetaResumen, Deuda } from '@/types'
+import type { Moneda, Quien, TarjetaTransaccion, TarjetaPeriodoTotal, Deuda } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10', ultimos_4:'' }
@@ -74,8 +74,6 @@ export default function TarjetasPage() {
     }
     setPickerTipo(null); setPickerTxn(null)
   }
-  const [resumenes, setResumenes] = useState<TarjetaResumen[]>([])
-  useEffect(() => { getTarjetaResumenes().then(setResumenes).catch(()=>{}) }, [])
   const [cerrandoMes, setCerrandoMes] = useState(false)
   const [deudaDelPeriodo, setDeudaDelPeriodo] = useState<Deuda | null>(null)
   const [selTC, setSelTC]         = useState<string|null>(null)
@@ -83,31 +81,25 @@ export default function TarjetasPage() {
     if (!selTC) { setDeudaDelPeriodo(null); return }
     getDeudaDeTarjetaPeriodo(selTC, añoActivo, mesActivo).then(setDeudaDelPeriodo).catch(()=>setDeudaDelPeriodo(null))
   }, [selTC, añoActivo, mesActivo])
+  const [totalesDeclaradosActivos, setTotalesDeclaradosActivos] = useState<TarjetaPeriodoTotal[]>([])
+  useEffect(() => {
+    if (!selTC) { setTotalesDeclaradosActivos([]); return }
+    getTarjetaPeriodoTotales(selTC, añoActivo, mesActivo).then(setTotalesDeclaradosActivos).catch(()=>setTotalesDeclaradosActivos([]))
+  }, [selTC, añoActivo, mesActivo])
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
   const [showModal, setShowModal]   = useState(false)
-  const [showPDFModal, setShowPDFModal] = useState(false)
   const [showCargaModal, setShowCargaModal] = useState(false)
   const [cargaTarjetaId, setCargaTarjetaId] = useState<string|null>(null)
+  const [cargaPeriodoAño, setCargaPeriodoAño] = useState(añoActivo)
+  const [cargaPeriodoMes, setCargaPeriodoMes] = useState(mesActivo)
+  const [cargaTotalesDeclarados, setCargaTotalesDeclarados] = useState<{ moneda: Moneda; monto: string }[]>([{ moneda: 'ARS', monto: '' }])
   const [cargaModo, setCargaModo] = useState<'total'|'item'|'bloque'>('total')
   const [cargaForm, setCargaForm] = useState({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS' as Moneda, fecha: new Date().toISOString().split('T')[0] })
-  const [cargaItems, setCargaItems] = useState<{ descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string }[]>([])
+  const [cargaItems, setCargaItems] = useState<{ descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string; cuota_actual?:number; cuota_total?:number }[]>([])
   const [cargaBloqueTexto, setCargaBloqueTexto] = useState('')
   const [cargaBloqueMoneda, setCargaBloqueMoneda] = useState<Moneda>('ARS')
   const [guardandoCarga, setGuardandoCarga] = useState(false)
-  const [pdfTarjetaId, setPdfTarjetaId] = useState<string|null>(null)
-  const [pdfLoading, setPdfLoading]   = useState(false)
-  const [pdfError, setPdfError]       = useState('')
-  const [pdfTxns, setPdfTxns]         = useState<any[]>([])
-  const [pdfResumenInfo, setPdfResumenInfo] = useState<{ fecha_cierre:string; fecha_vencimiento:string; fecha_cierre_proximo?:string; fecha_vencimiento_proximo?:string; total_resumen:number; moneda:Moneda } | null>(null)
-  const [pdfStep, setPdfStep]         = useState<'upload'|'review'|'done'>('upload')
-  const [savingPdf, setSavingPdf]     = useState(false)
-  const [comercios, setComercios]     = useState<any[]>([])
-  const [iaDisponible, setIaDisponible] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    fetch('/api/analizar-comprobante').then(r => r.json()).then(d => setIaDisponible(!!d.disponible)).catch(() => setIaDisponible(false))
-  }, [])
 
   // Modal edición de transacción
   const [showTxnModal, setShowTxnModal] = useState(false)
@@ -163,22 +155,87 @@ export default function TarjetasPage() {
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
   }
 
-  // Parsea texto pegado línea por línea: "Descripción .... monto" al final de cada línea.
-  // Acepta formato es-AR (puntos de miles, coma decimal) y un "$" opcional antes del número.
-  const parsearBloque = (texto: string, moneda: Moneda) => {
-    return texto.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
-      const match = line.match(/^(.*?)[\s:]*\$?\s*(-?[\d.,]+)\s*$/)
-      if (!match) return null
+  // Parsea texto pegado línea por línea. Soporta dos formatos:
+  // 1) Tabulado (export real del resumen: FECHA / DESCRIPCION / CUOTA / COMPROBANTE / MONTO / MONEDA,
+  //    con "." como separador decimal y moneda explícita por fila) — se detecta por tener tabs.
+  // 2) Texto libre "Descripción .... monto" al final, formato es-AR (puntos de miles, coma decimal),
+  //    una sola moneda para todo el bloque — lo que había antes.
+  // En ambos casos se ignoran silenciosamente las líneas que no matchean (encabezados, separadores
+  // "===...===", fila de títulos de columna, etc.) — así se puede pegar el resumen completo tal cual,
+  // sin tener que recortarlo a mano. Los pagos/abonos (monto negativo, ej. "SU PAGO EN PESOS") se
+  // excluyen: ya se reflejan en Deudas vía el pago registrado, no son un gasto para categorizar acá.
+  const MESES_ABR3: Record<string, number> = { ene:1, feb:2, mar:3, abr:4, may:5, jun:6, jul:7, ago:8, sep:9, set:9, oct:10, nov:11, dic:12 }
+
+  const parsearFechaResumen = (s: string): string | null => {
+    const m = s.trim().match(/^(\d{1,2})[-\/](\d{1,2}|[a-zA-Zñ]{3,})[-\/](\d{2,4})$/)
+    if (!m) return null
+    const dia = parseInt(m[1], 10)
+    let mes: number
+    if (/^\d+$/.test(m[2])) mes = parseInt(m[2], 10)
+    else { mes = MESES_ABR3[m[2].toLowerCase().slice(0, 3)]; if (!mes) return null }
+    let año = parseInt(m[3], 10)
+    if (m[3].length === 2) año = 2000 + año
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
+    return `${año}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+  }
+
+  // Detecta formato del número: si tiene coma, es es-AR (punto de miles, coma decimal); si no,
+  // se parsea directo (el export tabulado usa "." como separador decimal, sin miles).
+  const parsearMontoFlexible = (s: string): number | null => {
+    const clean = s.trim().replace(/^\$?\s*/, '').replace(/^USD\s*/i, '')
+    if (!clean) return null
+    if (clean.includes(',')) {
+      const n = parseFloat(clean.replace(/\./g, '').replace(',', '.'))
+      return isNaN(n) ? null : n
+    }
+    const n = parseFloat(clean)
+    return isNaN(n) ? null : n
+  }
+
+  const parsearBloque = (texto: string, monedaDefault: Moneda) => {
+    const items: { descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string; cuota_actual?:number; cuota_total?:number }[] = []
+    let pagosOmitidos = 0
+    const lineas = texto.split('\n').map(l => l.trim()).filter(Boolean)
+    // Si CUALQUIER línea tiene tab, tratamos todo el pegado como el export tabulado y NO usamos
+    // el fallback de texto libre para las demás líneas — si no, encabezados como "Total a Pagar
+    // Pesos: $ 353.540,24" (sin tab, pero con un número al final) se cuelan como si fueran un ítem.
+    const esFormatoTabulado = lineas.some(l => l.includes('\t'))
+
+    for (const linea of lineas) {
+      if (esFormatoTabulado) {
+        if (!linea.includes('\t')) continue // encabezado/título/separador del resumen — se ignora
+        const cols = linea.split('\t').map(c => c.trim())
+        if (cols.length < 5) continue
+        const fecha = parsearFechaResumen(cols[0])
+        const monto = parsearMontoFlexible(cols[4])
+        if (!fecha || monto === null) continue // fila de título de columna u otra que no es un ítem real
+        if (monto < 0) { pagosOmitidos++; continue }
+        const descripcion = cols[1] || 'Movimiento'
+        const monedaCol = cols[5]?.toUpperCase()
+        const moneda = (monedaCol === 'USD' || monedaCol === 'ARS' || monedaCol === 'EUR') ? monedaCol as Moneda : monedaDefault
+        const cuotaMatch = cols[2]?.match(/^(\d+)\/(\d+)$/)
+        items.push({
+          descripcion, categoria: 'Otros', monto, moneda, fecha,
+          ...(cuotaMatch ? { cuota_actual: parseInt(cuotaMatch[1], 10), cuota_total: parseInt(cuotaMatch[2], 10) } : {}),
+        })
+        continue
+      }
+
+      const match = linea.match(/^(.*?)[\s:]*\$?\s*(-?[\d.,]+)\s*$/)
+      if (!match) continue
       const descripcion = match[1].trim()
       const montoStr = match[2].replace(/\./g, '').replace(',', '.')
       const monto = parseFloat(montoStr)
-      if (!descripcion || isNaN(monto)) return null
-      return { descripcion, categoria: 'Otros', monto: Math.abs(monto), moneda, fecha: new Date().toISOString().split('T')[0] }
-    }).filter((x): x is { descripcion:string; categoria:string; monto:number; moneda:Moneda; fecha:string } => x !== null)
+      if (!descripcion || isNaN(monto)) continue
+      items.push({ descripcion, categoria: 'Otros', monto: Math.abs(monto), moneda: monedaDefault, fecha: new Date().toISOString().split('T')[0] })
+    }
+    return { items, pagosOmitidos }
   }
 
   const abrirCargaModal = () => {
-    setCargaTarjetaId(selTC && !selTC.includes('|') ? selTC : (tarjetas??[])[0]?.id ?? null)
+    setCargaTarjetaId(selTC ?? (tarjetas??[])[0]?.id ?? null)
+    setCargaPeriodoAño(añoActivo); setCargaPeriodoMes(mesActivo)
+    setCargaTotalesDeclarados([{ moneda: 'ARS', monto: '' }])
     setCargaModo('total')
     setCargaForm({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS', fecha: new Date().toISOString().split('T')[0] })
     setCargaItems([])
@@ -192,45 +249,55 @@ export default function TarjetasPage() {
     setCargaForm(p => ({ ...p, descripcion: '', monto: '' }))
   }
 
+  // El "total declarado" (lo que decís que dice el resumen, por moneda) se guarda aparte y se
+  // compara contra la suma real de lo cargado — reemplaza a la conciliación contra PDF, sin
+  // necesitar el PDF en sí. No bloquea guardar si no coincide, solo avisa.
+  const guardarTotalesDeclarados = async () => {
+    if (!cargaTarjetaId) return
+    for (const t of cargaTotalesDeclarados) {
+      if (!t.monto) continue
+      await upsertTarjetaPeriodoTotal({ tarjeta_id: cargaTarjetaId, año: cargaPeriodoAño, mes: cargaPeriodoMes, moneda: t.moneda, total_declarado: parseFloat(t.monto) })
+    }
+  }
+
   const handleGuardarCargaTotal = async () => {
     if (!cargaTarjetaId || !cargaForm.monto) return
     setGuardandoCarga(true)
     try {
+      await guardarTotalesDeclarados()
       await createTarjetaTransaccion({
         tarjeta_id: cargaTarjetaId, descripcion: cargaForm.descripcion || 'Saldo inicial', categoria: cargaForm.categoria,
-        fecha: cargaForm.fecha, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, tipo: 'credito', etiqueta: null,
+        fecha: cargaForm.fecha, periodo_año: cargaPeriodoAño, periodo_mes: cargaPeriodoMes, monto: parseFloat(cargaForm.monto), moneda: cargaForm.moneda, tipo: 'debito',
       })
       setShowCargaModal(false); refTxns()
-    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+    } catch (e:any) { console.error(e); alert('No se pudo guardar el movimiento: '+(e.message||e)) } finally { setGuardandoCarga(false) }
   }
 
   const handleGuardarCargaItems = async (items: typeof cargaItems) => {
     if (!cargaTarjetaId || items.length === 0) return
     setGuardandoCarga(true)
     try {
+      await guardarTotalesDeclarados()
       for (const it of items) {
         await createTarjetaTransaccion({
           tarjeta_id: cargaTarjetaId, descripcion: it.descripcion, categoria: it.categoria,
-          fecha: it.fecha, monto: it.monto, moneda: it.moneda, tipo: 'credito', etiqueta: null,
+          fecha: it.fecha, periodo_año: cargaPeriodoAño, periodo_mes: cargaPeriodoMes, monto: it.monto, moneda: it.moneda, tipo: 'debito',
+          cuota_actual: it.cuota_actual, cuota_total: it.cuota_total,
         })
       }
       setShowCargaModal(false); setCargaItems([]); refTxns()
-    } catch (e) { console.error(e) } finally { setGuardandoCarga(false) }
+    } catch (e:any) { console.error(e); alert('No se pudieron guardar los movimientos: '+(e.message||e)) } finally { setGuardandoCarga(false) }
   }
 
   const handleDuplicarTxn = async (t: TarjetaTransaccion) => {
     await createTarjetaTransaccion({
       tarjeta_id: t.tarjeta_id, descripcion: t.descripcion, categoria: t.categoria,
-      fecha: t.fecha, monto: t.monto, moneda: t.moneda, cotizacion_ars: t.cotizacion_ars,
-      cuota_actual: t.cuota_actual, cuota_total: t.cuota_total, tipo: t.tipo, etiqueta: t.etiqueta,
+      fecha: t.fecha, periodo_año: t.periodo_año, periodo_mes: t.periodo_mes, monto: t.monto, moneda: t.moneda, cotizacion_ars: t.cotizacion_ars,
+      cuota_actual: t.cuota_actual, cuota_total: t.cuota_total, tipo: t.tipo,
     })
     refTxns()
   }
 
-  // Cargar historial de comercios al montar
-  useEffect(() => {
-    import('@/lib/queries').then(q => q.getTarjetasComercios()).then(setComercios).catch(()=>{})
-  }, [])
   const [saving, setSaving]       = useState(false)
   const [form, setForm]           = useState(FORM_INIT)
   const [tarjetaEditId, setTarjetaEditId] = useState<string|null>(null)
@@ -261,12 +328,11 @@ export default function TarjetasPage() {
     (pagosRaw ?? []).filter(p => p.año === añoActivo && (!esMensual || p.mes === mesActivo))
   , [pagosRaw, añoActivo, esMensual, mesActivo])
 
+  // El período de una transacción de tarjeta es el que elegiste al cargarla (periodo_año/mes),
+  // NO la fecha del ítem — un resumen de agosto trae gastos de julio y agosto, lo que importa
+  // acá es en qué carga entró, no cuándo pasó cada compra puntual.
   const txns = useMemo(() =>
-    (txnsRaw ?? []).filter(t => {
-      const año = Number(t.fecha.slice(0,4))
-      const mes = Number(t.fecha.slice(5,7))
-      return año === añoActivo && (!esMensual || mes === mesActivo)
-    })
+    (txnsRaw ?? []).filter(t => t.periodo_año === añoActivo && (!esMensual || t.periodo_mes === mesActivo))
   , [txnsRaw, añoActivo, esMensual, mesActivo])
 
   const MESES_DISP = esMensual ? [MESES_CORTOS[mesActivo-1]] : MESES_CORTOS
@@ -283,13 +349,8 @@ export default function TarjetasPage() {
     return map
   }, [pagos])
 
-  // "id" puede venir como tarjetaId solo (tarjeta de una única moneda) o "tarjetaId|MONEDA"
-  // (chip específico de una tarjeta multi-moneda). Si viene solo el id, suma todas sus monedas
-  // — aceptable ahí porque en la práctica esa tarjeta ya tiene una sola moneda de todos modos.
-  const pagosDe = (id: string, mes: number): number => {
-    if (id.includes('|')) return pagosPorTC[id]?.[mes] ?? 0
-    return Object.keys(pagosPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (pagosPorTC[k][mes] ?? 0), 0)
-  }
+  const pagosDe = (id: string, mes: number): number =>
+    Object.keys(pagosPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (pagosPorTC[k][mes] ?? 0), 0)
 
   const chartData = useMemo(() => MESES_DISP.map((month) => {
     const mes = MESES_CORTOS.indexOf(month) + 1
@@ -303,7 +364,7 @@ export default function TarjetasPage() {
   }), [tarjetas, pagosPorTC, activaId, MESES_DISP])
 
   const filteredTxns = useMemo(() => (txns??[])
-    .filter(t => activaId==='todas' || t.tarjeta_id===activaId)
+    .filter(t => activaId === 'todas' || t.tarjeta_id === activaId)
     .filter(t => filterCat==='Todos' || t.categoria===filterCat)
     .filter(t => !search || t.descripcion.toLowerCase().includes(search.toLowerCase()))
     .sort((a,b)=>b.fecha.localeCompare(a.fecha))
@@ -315,11 +376,6 @@ export default function TarjetasPage() {
     return map
   }, [pagos])
 
-  // Antes usaba totalPorTC (tabla pagos_tarjeta, que puede estar vacía si solo hay
-  // transacciones cargadas/importadas) — ahora suma lo mismo que ya muestra cada card
-  // individual (transacciones reales), para que "Todas" no quede en $0 por las dudas.
-  // (totalGlobal se calcula más abajo, una vez que existe tarjetasConMoneda)
-
   const compData = useMemo(() => (tarjetas??[]).map((t,i)=>({
     name: t.nombre+' '+t.banco.split(' · ').slice(-1)[0],
     value: totalPorTC[t.id]||0,
@@ -328,38 +384,26 @@ export default function TarjetasPage() {
 
   const cats = ['Todos','Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros']
 
-  // Split tarjetas by moneda — must be before any early return
-  const tarjetasConMoneda = useMemo(() => {
-    const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string }[] = []
-    ;(tarjetas??[]).forEach(t => {
-      const monedas = [...new Set((txns??[]).filter(x=>x.tarjeta_id===t.id).map(x=>x.moneda))]
-      if (monedas.length <= 1) {
-        result.push({ tarjeta: t, moneda: t.moneda })
-      } else {
-        monedas.forEach(mon => result.push({ tarjeta: t, moneda: mon }))
-      }
+  // Una ficha por tarjeta (no una por moneda) — cada una lleva la lista de {moneda, total} del
+  // período activo para mostrarse en líneas, no como tiles separados.
+  const tarjetasConTotales = useMemo(() => {
+    return (tarjetas??[]).map(t => {
+      const txnsDeLaTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id)
+      const monedas = [...new Set(txnsDeLaTarjeta.map(x=>x.moneda))]
+      const totales = monedas.map(mon => ({ moneda: mon, total: txnsDeLaTarjeta.filter(x=>x.moneda===mon).reduce((s,x)=>s+x.monto,0) }))
+      return { tarjeta: t, totales: totales.length ? totales : [{ moneda: t.moneda, total: 0 }] }
     })
-    return result
   }, [tarjetas, txns])
 
-  // Antes usaba totalPorTC (tabla pagos_tarjeta, que puede estar vacía si solo hay
-  // transacciones cargadas/importadas) — ahora suma lo mismo que ya muestra cada card
-  // individual (transacciones reales), para que "Todas" no quede en $0 por las dudas.
-  const totalGlobal = tarjetasConMoneda.filter(x=>x.moneda===m).reduce((s,{tarjeta:t, moneda:mon})=>{
-    const txnsMon = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
-    const totalMon = txnsMon.reduce((ss,x)=>ss+x.monto,0)
-    const ultMes = txnsMon.filter(x=>Number(x.fecha.slice(5,7))===new Date().getMonth()+1).reduce((ss,x)=>ss+x.monto,0)
-    return s + (ultMes||totalMon)
-  }, 0)
+  const totalGlobal = tarjetasConTotales.reduce((s, { totales }) =>
+    s + totales.filter(x=>x.moneda===m).reduce((ss,x)=>ss+x.total,0), 0)
 
-  // Vencimientos del mes activo — independiente de si estás en vista mensual o anual, porque un
-  // vencimiento siempre es un concepto mensual. Un ítem por (tarjeta, moneda) igual que las cards.
+  // Vencimientos del período activo — un ítem por (tarjeta, moneda) igual que las fichas.
   const vencimientosDelMes = useMemo(() => {
     const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string; total: number }[] = []
     ;(tarjetas??[]).forEach(t => {
-      const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && Number(x.fecha.slice(0,4))===añoActivo && Number(x.fecha.slice(5,7))===mesActivo)
+      const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && x.periodo_año===añoActivo && x.periodo_mes===mesActivo)
       const monedas = [...new Set(txnsDelMes.map(x=>x.moneda))]
-      if (monedas.length === 0) return
       monedas.forEach(mon => {
         const total = txnsDelMes.filter(x=>x.moneda===mon).reduce((s,x)=>s+x.monto, 0)
         if (total > 0) result.push({ tarjeta: t, moneda: mon, total })
@@ -379,15 +423,10 @@ export default function TarjetasPage() {
     setExportadoIds(prev => new Set(prev).add(`${t.id}|${moneda}`))
   }
 
-  // "Cerrar mes" a mano — para meses sin resumen del banco. Suma lo cargado (validado o
-  // todavía cargado) del período activo y genera/actualiza el ítem de Deuda, sin pasar
-  // por conciliación (no hay nada del banco contra qué matchear todavía).
-  const handleCerrarMes = async (t: NonNullable<typeof tarjetas>[number], moneda: string) => {
-    const txnsDelMes = (txnsRaw??[]).filter(x =>
-      x.tarjeta_id===t.id && x.moneda===moneda &&
-      Number(x.fecha.slice(0,4))===añoActivo && Number(x.fecha.slice(5,7))===mesActivo &&
-      x.estado_conciliacion !== 'revisar'
-    )
+  // "Generar deuda" a mano — suma lo cargado del período activo y genera/actualiza el ítem de
+  // Deuda correspondiente. Vos decidís cuándo tocarlo; no pasa nada solo.
+  const handleGenerarDeuda = async (t: NonNullable<typeof tarjetas>[number], moneda: string) => {
+    const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && x.moneda===moneda && x.periodo_año===añoActivo && x.periodo_mes===mesActivo)
     const total = txnsDelMes.reduce((s,x)=>s+x.monto, 0)
     if (total <= 0) { alert('No hay gastos cargados para este período todavía.'); return }
     const diaClamp = Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate())
@@ -406,8 +445,8 @@ export default function TarjetasPage() {
 
   if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
-  const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId.split('|')[0])
-  const monedaActiva = activaId==='todas' ? null : activaId.includes('|') ? activaId.split('|')[1] : null
+  const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId)
+  const monedaActiva: string | null = null
 
   const kpiPagos   = activaId==='todas'
     ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+pagosDe(t.id, i+1),0))
@@ -436,7 +475,7 @@ export default function TarjetasPage() {
     ? Math.round(((pctSobreIngresos - pctMesAnt) / pctMesAnt) * 100) : null
 
   // Trend real de "Total pagado" — mes activo vs mes anterior, o año activo vs año anterior según la vista.
-  const tarjetaIdActiva  = activaId === 'todas' ? null : activaId.split('|')[0]
+  const tarjetaIdActiva  = activaId === 'todas' ? null : activaId
   const pagosParaTrend   = (pagosRaw ?? []).filter(p =>
     (tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva) &&
     (monedaActiva === null || p.moneda === monedaActiva))
@@ -447,11 +486,10 @@ export default function TarjetasPage() {
       <PageHeader title="Tarjetas de crédito" subtitle="Seguimiento de pagos y transacciones"
         action={<div className="flex gap-2 flex-wrap justify-end">
           <button className="btn-ghost text-sm" onClick={abrirCargaModal}>+ Cargar movimientos</button>
-          <button className="btn-ghost text-sm" onClick={()=>{ setPdfTarjetaId(selTC); setShowPDFModal(true); setPdfStep('upload'); setPdfTxns([]); setPdfResumenInfo(null); setPdfError('') }}>Importar PDF</button>
           <button className="btn-primary" onClick={()=>{setForm(FORM_INIT);setTarjetaEditId(null);setShowModal(true)}}>+ Nueva tarjeta</button>
         </div>} />
 
-      {/* ── Selector de tarjetas — full width ── */}
+      {/* ── Selector de tarjetas — full width, una ficha por tarjeta con una línea por moneda ── */}
       <div className="flex gap-3 overflow-x-auto pb-2 mb-6">
         <div onClick={()=>setSelTC(null)}
           className={`flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[140px] ${activaId==='todas'?'border-slate-400':'border-slate-100 hover:border-slate-200'}`}>
@@ -460,36 +498,31 @@ export default function TarjetasPage() {
           <div className="text-xs text-slate-400 mt-1">total {periodoLabel}</div>
           <div className="text-lg font-bold font-mono text-slate-700 mt-1">{fmt(totalGlobal,m)}</div>
         </div>
-        {tarjetasConMoneda.map(({tarjeta: t, moneda: mon})=>{
-          const cardId   = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1 ? `${t.id}|${mon}` : t.id
-          const isActive = activaId===cardId
-          const txnsMes  = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon)
-          const totalMon = txnsMes.reduce((s,x)=>s+x.monto,0)
-          const ultMes   = (txns??[]).filter(x=>x.tarjeta_id===t.id && x.moneda===mon && Number(x.fecha.slice(5,7))===new Date().getMonth()+1).reduce((s,x)=>s+x.monto,0)
-          const multiMoneda = tarjetasConMoneda.filter(x=>x.tarjeta.id===t.id).length > 1
+        {tarjetasConTotales.map(({tarjeta: t, totales})=>{
+          const isActive = activaId===t.id
           return (
-            <div key={cardId} onClick={()=>setSelTC(cardId)}
+            <div key={t.id} onClick={()=>setSelTC(t.id)}
               className="group relative flex-shrink-0 bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all min-w-[155px]"
               style={{borderColor: isActive ? t.color : '#f1f5f9'}}>
               <button onClick={e=>{e.stopPropagation(); openEditTarjetaModal(t)}}
                 className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-slate-50 border-none bg-transparent cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-xs">✎</button>
               <div className="flex justify-between items-start mb-2">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{background:t.color}}>{t.icono}</div>
-                <div className="flex flex-col items-end gap-1">
-                  {t.quien!=='ambos' && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorQuien(t.quien).bg} ${colorQuien(t.quien).text}`}>{t.quien}</span>
-                  )}
-                  {multiMoneda && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{mon}</span>
-                  )}
-                </div>
+                {t.quien!=='ambos' && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colorQuien(t.quien).bg} ${colorQuien(t.quien).text}`}>{t.quien}</span>
+                )}
               </div>
               <div className="text-sm font-semibold text-slate-900">{t.nombre}</div>
               <div className="text-xs text-slate-400">{t.banco}{t.ultimos_4 && <span className="font-mono"> ····{t.ultimos_4}</span>}</div>
-              <div className="text-lg font-bold font-mono mt-1" style={{color:t.color}}>
-                {mon==='USD'?'US$':mon==='EUR'?'€':'$'}{(ultMes||totalMon).toLocaleString('es-AR',{maximumFractionDigits:0})}
+              <div className="mt-1 flex flex-col gap-0.5">
+                {totales.map(({moneda: mon, total}) => (
+                  <div key={mon} className="text-base font-bold font-mono leading-tight" style={{color:t.color}}>
+                    {mon==='USD'?'US$':mon==='EUR'?'€':'$'}{total.toLocaleString('es-AR',{maximumFractionDigits:0})}
+                    <span className="text-[10px] font-normal text-slate-400 ml-1">{mon}</span>
+                  </div>
+                ))}
               </div>
-              <div className="text-[10px] text-slate-400">{ultMes?`últ. mes · ${mon}`:`total · ${mon}`}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{periodoLabel}</div>
             </div>
           )
         })}
@@ -537,8 +570,6 @@ export default function TarjetasPage() {
                         </Td>
                         <Td>
                           <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.bg,color:cc.c}}>{t.categoria}</span>
-                          {t.estado_conciliacion==='revisar' && <div className="text-[10px] text-amber-600 font-medium mt-1">A revisar</div>}
-                          {t.estado_conciliacion==='cargado' && <div className="text-[10px] text-slate-400 mt-1">Sin resumen</div>}
                         </Td>
                         <Td className="text-slate-400 text-xs font-mono text-center">{t.cuota_actual&&t.cuota_total?`${t.cuota_actual}/${t.cuota_total}`:'—'}</Td>
                         <Td right>
@@ -571,51 +602,50 @@ export default function TarjetasPage() {
         {/* ── Columna derecha: Widgets ── */}
         <div className="col-span-1 flex flex-col gap-5">
 
-          {/* Estado de conciliación — solo con una tarjeta puntual seleccionada */}
+          {/* Total del período vs. lo declarado — reemplaza a la conciliación contra PDF */}
           {tcActiva && (() => {
             const t = tcActiva
-            const txnsTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id && (!monedaActiva || x.moneda===monedaActiva))
-            const confirmado = txnsTarjeta.filter(x=>x.estado_conciliacion==='validado').reduce((s,x)=>s+x.monto,0)
-            const cargado    = txnsTarjeta.filter(x=>x.estado_conciliacion==='cargado').reduce((s,x)=>s+x.monto,0)
-            const revisarTxns = txnsTarjeta.filter(x=>x.estado_conciliacion==='revisar')
-            const revisar    = revisarTxns.reduce((s,x)=>s+x.monto,0)
-            const monedaMostrar = monedaActiva ?? t.moneda
-            const cierre = t.fecha_cierre_actual ?? null
-            const vencimiento = t.fecha_vencimiento_actual ?? null
-            const ultimoResumen = resumenes.filter(r=>r.tarjeta_id===t.id).sort((a,b)=>b.año-a.año||b.mes-a.mes)[0]
+            const txnsTarjeta = (txns??[]).filter(x=>x.tarjeta_id===t.id)
+            const monedas = [...new Set([...txnsTarjeta.map(x=>x.moneda), ...totalesDeclaradosActivos.map(x=>x.moneda)])]
             return (
               <Card>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-slate-900 font-semibold text-[13px]">Conciliación — {t.nombre}</div>
-                  <button onClick={()=>handleCerrarMes(t, monedaMostrar)} disabled={cerrandoMes} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer disabled:opacity-50 flex-shrink-0">
-                    {cerrandoMes ? '...' : deudaDelPeriodo ? 'Recalcular' : 'Cerrar mes'}
+                  <div className="text-slate-900 font-semibold text-[13px]">{t.nombre} — {periodoLabel}</div>
+                  <button onClick={()=>handleGenerarDeuda(t, monedas[0] ?? t.moneda)} disabled={cerrandoMes} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer disabled:opacity-50 flex-shrink-0">
+                    {cerrandoMes ? '...' : deudaDelPeriodo ? 'Recalcular deuda' : 'Generar deuda'}
                   </button>
                 </div>
                 {deudaDelPeriodo && (
-                  <div className="text-[11px] text-emerald-600 mb-2">Mes cerrado — deuda generada por {fmtFull(deudaDelPeriodo.total_original, deudaDelPeriodo.moneda)}. Si falta un gasto, cargalo y volvé a apretar "Recalcular".</div>
+                  <div className="text-[11px] text-emerald-600 mb-2">Deuda generada por {fmtFull(deudaDelPeriodo.total_original, deudaDelPeriodo.moneda)}. Si falta un gasto, cargalo y volvé a apretar "Recalcular".</div>
                 )}
-                <div className="text-slate-400 text-xs mb-3">
-                  {cierre ? `Cierre ${fmtDate(cierre)}` : `Cierre est. día ${t.dia_cierre}`}
-                  {vencimiento ? ` · Vence ${fmtDate(vencimiento)}` : ` · Vence est. día ${t.dia_vencimiento}`}
-                </div>
-                <div className="flex flex-col gap-1.5 mb-2">
-                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">Confirmado</span><span className="font-mono font-bold text-emerald-600">{fmtFull(confirmado, monedaMostrar)}</span></div>
-                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">Cargado, sin resumen</span><span className="font-mono font-bold text-slate-700">{fmtFull(cargado, monedaMostrar)}</span></div>
-                  <div className="flex items-center justify-between text-xs"><span className="text-slate-400">A revisar</span><span className="font-mono font-bold text-amber-600">{fmtFull(revisar, monedaMostrar)}</span></div>
-                </div>
-                {revisarTxns.length > 0 && (
-                  <div className="border border-amber-200 rounded-lg overflow-hidden mt-2">
-                    {revisarTxns.map(x => (
-                      <div key={x.id} onClick={()=>openEditTxnModal(x)} className="flex items-center justify-between px-2.5 py-1.5 border-b border-amber-100 last:border-0 bg-amber-50 cursor-pointer hover:bg-amber-100">
-                        <div className="min-w-0 text-xs text-slate-700 truncate">{x.descripcion}</div>
-                        <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmtFull(x.monto, x.moneda)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {ultimoResumen && (
-                  <div className="text-[11px] text-slate-400 mt-2">
-                    Último resumen: {fmtFull(ultimoResumen.total_resumen, ultimoResumen.moneda)} ({MESES_CORTOS[ultimoResumen.mes-1]} {ultimoResumen.año})
+                {monedas.length === 0 ? (
+                  <div className="text-slate-400 text-xs">Todavía no cargaste movimientos de este período.</div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {monedas.map(mon => {
+                      const cargado = txnsTarjeta.filter(x=>x.moneda===mon).reduce((s,x)=>s+x.monto,0)
+                      const declarado = totalesDeclaradosActivos.find(x=>x.moneda===mon)?.total_declarado
+                      const diferencia = declarado !== undefined ? Math.round((cargado - declarado) * 100) / 100 : null
+                      return (
+                        <div key={mon} className="bg-slate-50 rounded-lg p-2.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-400">Cargado ({mon})</span>
+                            <span className="font-mono font-bold text-slate-700">{fmtFull(cargado, mon as Moneda)}</span>
+                          </div>
+                          {declarado !== undefined && (
+                            <div className="flex items-center justify-between text-xs mt-1">
+                              <span className="text-slate-400">Declarado</span>
+                              <span className="font-mono text-slate-500">{fmtFull(declarado, mon as Moneda)}</span>
+                            </div>
+                          )}
+                          {diferencia !== null && (
+                            diferencia === 0
+                              ? <div className="text-[11px] text-emerald-600 mt-1">Coincide con lo declarado</div>
+                              : <div className="text-[11px] text-amber-600 mt-1">Diferencia de {fmtFull(Math.abs(diferencia), mon as Moneda)} {diferencia > 0 ? '(cargaste de más)' : '(falta cargar)'}</div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </Card>
@@ -766,223 +796,43 @@ export default function TarjetasPage() {
           </div>
         </div>
       </Modal>
-      {/* ── Modal importar PDF tarjeta ── */}
-      <Modal open={showPDFModal} onClose={()=>setShowPDFModal(false)} title="Importar resumen de tarjeta">
-        {pdfStep==='upload' && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <FieldLabel>Tarjeta</FieldLabel>
-              <select value={pdfTarjetaId||''} onChange={e=>setPdfTarjetaId(e.target.value)} className="input-field">
-                <option value="">Seleccioná una tarjeta</option>
-                {(tarjetas??[]).map(t=><option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Archivo PDF</FieldLabel>
-              {iaDisponible === false && (
-                <p className="text-xs text-slate-400 mb-1.5">Próximamente — todavía no está activada la lectura automática.</p>
-              )}
-              <input type="file" accept=".pdf" disabled={iaDisponible !== true}
-                onChange={async e => {
-                  const file = e.target.files?.[0]
-                  if (!file || !pdfTarjetaId) return
-                  setPdfLoading(true); setPdfError('')
-                  try {
-                    const base64 = await new Promise<string>((res,rej)=>{
-                      const r = new FileReader()
-                      r.onload = ()=>res((r.result as string).split(',')[1])
-                      r.onerror = ()=>rej(new Error('Error leyendo archivo'))
-                      r.readAsDataURL(file)
-                    })
-                    // Build learning context from previous corrections
-                    const tarjetaActual = (tarjetas??[]).find(t=>t.id===pdfTarjetaId)
-                    const comerciosCtx = comercios.length > 0
-                      ? `\n\nREGLAS APRENDIDAS DE CORRECCIONES PREVIAS (usá estas categorías para estos comercios):\n` +
-                        comercios.slice(0,50).map(co =>
-                          `- "${co.descripcion_raw}" → descripcion_limpia: "${co.descripcion_limpia||co.descripcion_raw}", categoria: "${co.categoria}"`
-                        ).join('\n')
-                      : ''
-
-                    const tarjetaCtx = tarjetaActual
-                      ? `\n\nDATOS DE LA TARJETA:\n- Nombre: ${tarjetaActual.nombre}\n- Banco: ${tarjetaActual.banco}\n- Red: detectar del PDF (VISA/Mastercard/Amex)\n- Titular: ${tarjetaActual.quien}`
-                      : ''
-
-                    const resp = await fetch('/api/analizar-comprobante',{
-                      method:'POST',
-                      headers:{'Content-Type':'application/json'},
-                      body: JSON.stringify({
-                        base64, mediaType: 'application/pdf', esPdf: true, maxTokens: 4000,
-                        prompt: `Extraé la información de este resumen de tarjeta de crédito.${tarjetaCtx}${comerciosCtx}
-
-Respondé SOLO con un JSON object, sin texto extra, sin backticks, sin markdown, con esta forma exacta:
-{
-  "resumen": {
-    "fecha_cierre": "YYYY-MM-DD (fecha de cierre de ESTE resumen)",
-    "fecha_vencimiento": "YYYY-MM-DD (fecha de vencimiento de ESTE resumen)",
-    "fecha_cierre_proximo": "YYYY-MM-DD o null (próximo cierre, si el PDF lo indica)",
-    "fecha_vencimiento_proximo": "YYYY-MM-DD o null (próximo vencimiento, si el PDF lo indica)",
-    "total_resumen": número positivo (total a pagar de este resumen),
-    "moneda": "ARS" o "USD"
-  },
-  "transacciones": [
-    {
-      "descripcion": "nombre legible del comercio (no el código interno del extracto)",
-      "descripcion_raw": "nombre exacto como aparece en el extracto",
-      "categoria": "una de: Alimentación|Tecnología|Ropa|Hogar|Viajes|Entretenimiento|Salud|Otros",
-      "fecha": "YYYY-MM-DD",
-      "monto": número positivo,
-      "moneda": "ARS" o "USD",
-      "cuota_actual": número o null,
-      "cuota_total": número o null,
-      "tipo": "debito",
-      "ultimos_4": "últimos 4 dígitos de la tarjeta si aparecen en el PDF, sino null",
-      "red": "VISA|Mastercard|Amex|otra, detectado del PDF"
-    }
-  ]
-}
-En "transacciones" solo incluí gastos/compras, no pagos ni resúmenes de cuenta.
-Para el campo descripcion, usá el nombre real del negocio, no el código técnico del extracto.`
-                      })
-                    })
-                    const data = await resp.json()
-                    if (!resp.ok) throw new Error(data?.error || 'Error analizando el PDF')
-                    const clean = (data.text||'').replace(/\`\`\`json|\`\`\`/g,'').trim()
-                    const parsed = JSON.parse(clean)
-                    setPdfResumenInfo(parsed.resumen ?? null)
-                    setPdfTxns((parsed.transacciones ?? []).map((t:any,i:number)=>({...t,id:i,selected:true,tarjeta_id:pdfTarjetaId})))
-                    setPdfStep('review')
-                  } catch(err:any){
-                    setPdfError('No se pudo procesar el PDF: '+(err.message||'Error'))
-                  } finally { setPdfLoading(false) }
-                }}
-                className="input-field py-2 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" />
-            </div>
-            {pdfLoading && <div className="text-center py-4 text-slate-400 text-sm">Analizando PDF con IA...</div>}
-            {pdfError && <div className="text-red-500 text-sm bg-red-50 px-4 py-3 rounded-xl">{pdfError}</div>}
-          </div>
-        )}
-
-        {pdfStep==='review' && (
-          <div className="flex flex-col gap-4">
-            <div className="text-slate-600 text-sm">{pdfTxns.filter(t=>t.selected).length} de {pdfTxns.length} transacciones seleccionadas</div>
-            <div className="overflow-y-auto max-h-[50vh] flex flex-col gap-1.5">
-              {pdfTxns.map((t,i)=>(
-                <div key={i} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${t.selected?'border-blue-200 bg-blue-50':'border-slate-100 bg-slate-50 opacity-50'}`}
-                  onClick={()=>setPdfTxns(prev=>prev.map((x,j)=>j===i?{...x,selected:!x.selected}:x))}>
-                  <input type="checkbox" checked={t.selected} onChange={()=>{}} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-slate-700 truncate">{t.descripcion}</div>
-                    <div className="text-xs text-slate-400">{t.fecha} · {t.categoria}</div>
-                    {t.descripcion_raw && t.descripcion_raw !== t.descripcion && <div className="text-[10px] text-slate-300 truncate">{t.descripcion_raw}</div>}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <select value={t.categoria}
-                      onClick={e=>e.stopPropagation()}
-                      onChange={e=>setPdfTxns(prev=>prev.map((x,j)=>j===i?{...x,categoria:e.target.value}:x))}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white cursor-pointer">
-                      {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c=><option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <span className={`font-mono font-bold text-sm ${t.moneda==='USD'?'text-blue-700':'text-red-600'}`}>
-                      {t.moneda==='USD'?'US$':'$'}{Number(t.monto).toLocaleString('es-AR')}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={()=>setPdfStep('upload')} className="btn-ghost flex-1">Volver</button>
-              <button onClick={async()=>{
-                setSavingPdf(true)
-                try {
-                  const tarjetaActual = (tarjetas??[]).find(t=>t.id===pdfTarjetaId)
-                  const seleccionadas = pdfTxns.filter(t=>t.selected)
-                  const itemsParaConciliar = seleccionadas.map(t => ({
-                    descripcion: t.descripcion, categoria: t.categoria, fecha: t.fecha,
-                    monto: t.monto, moneda: t.moneda as Moneda,
-                    cuota_actual: t.cuota_actual ?? undefined, cuota_total: t.cuota_total ?? undefined,
-                  }))
-
-                  if (pdfResumenInfo && pdfTarjetaId && tarjetaActual) {
-                    const año = Number(pdfResumenInfo.fecha_cierre.slice(0,4))
-                    const mes = Number(pdfResumenInfo.fecha_cierre.slice(5,7))
-                    const resumen = await createTarjetaResumen({
-                      tarjeta_id: pdfTarjetaId, año, mes,
-                      fecha_cierre: pdfResumenInfo.fecha_cierre, fecha_vencimiento: pdfResumenInfo.fecha_vencimiento,
-                      fecha_cierre_proximo: pdfResumenInfo.fecha_cierre_proximo ?? null,
-                      fecha_vencimiento_proximo: pdfResumenInfo.fecha_vencimiento_proximo ?? null,
-                      total_resumen: pdfResumenInfo.total_resumen, moneda: pdfResumenInfo.moneda,
-                    })
-                    await conciliarResumen(pdfTarjetaId, resumen.id, itemsParaConciliar)
-                    await generarDeudaDesdeTarjeta(tarjetaActual, año, mes, pdfResumenInfo.total_resumen, pdfResumenInfo.moneda, pdfResumenInfo.fecha_vencimiento)
-                    await updateTarjeta(pdfTarjetaId, {
-                      fecha_cierre_actual: pdfResumenInfo.fecha_cierre, fecha_vencimiento_actual: pdfResumenInfo.fecha_vencimiento,
-                      fecha_cierre_proximo: pdfResumenInfo.fecha_cierre_proximo ?? null,
-                      fecha_vencimiento_proximo: pdfResumenInfo.fecha_vencimiento_proximo ?? null,
-                    })
-                    setResumenes(await getTarjetaResumenes())
-                    refTarjetas()
-                  } else {
-                    // El PDF no devolvió fechas de resumen (formato inesperado) — se insertan
-                    // las transacciones igual, sin conciliar, para no perder la carga.
-                    for (const it of itemsParaConciliar) {
-                      await createTarjetaTransaccion({
-                        tarjeta_id: pdfTarjetaId!, descripcion: it.descripcion, categoria: it.categoria,
-                        fecha: it.fecha, monto: it.monto, moneda: it.moneda,
-                        cuota_actual: it.cuota_actual, cuota_total: it.cuota_total,
-                        tipo: 'credito', origen: 'pdf', estado_conciliacion: 'validado',
-                      })
-                    }
-                  }
-                  refTxns()
-
-                  // Guardar aprendizaje: cada transacción corregida
-                  const { upsertTarjetaComercios } = await import('@/lib/queries')
-                  const aprendizaje = seleccionadas.filter(t=>t.descripcion_raw).map(t=>({
-                    descripcion_raw: t.descripcion_raw || t.descripcion,
-                    descripcion_limpia: t.descripcion,
-                    categoria: t.categoria,
-                    tarjeta_id: pdfTarjetaId,
-                    ultimos_4: t.ultimos_4 || null,
-                    red: t.red || null,
-                    banco: tarjetaActual?.banco || null,
-                    quien: tarjetaActual?.quien || null,
-                  }))
-                  if (aprendizaje.length > 0) {
-                    await upsertTarjetaComercios(aprendizaje).catch(()=>{})
-                    setComercios(prev => {
-                      const map = new Map(prev.map(c=>[c.descripcion_raw, c]))
-                      aprendizaje.forEach(a => map.set(a.descripcion_raw, {...a, id:'', user_id:'', created_at:'', updated_at:''}))
-                      return [...map.values()]
-                    })
-                  }
-                  setPdfStep('done')
-                } catch(err:any){ setPdfError('Error guardando: '+(err.message||'')) }
-                finally { setSavingPdf(false) }
-              }} disabled={savingPdf||pdfTxns.filter(t=>t.selected).length===0}
-                className="btn-primary flex-1 disabled:opacity-50">{savingPdf?'Guardando...':'Guardar transacciones'}</button>
-            </div>
-            {pdfError && <div className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-xl">{pdfError}</div>}
-          </div>
-        )}
-
-        {pdfStep==='done' && (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-3">✓</div>
-            <div className="text-slate-900 font-semibold text-lg mb-1">Transacciones importadas</div>
-            <div className="text-slate-400 text-sm mb-5">Ya aparecen en la tabla de transacciones.</div>
-            <button onClick={()=>{ setShowPDFModal(false); setPdfStep('upload'); setPdfTxns([]) }} className="btn-primary">Cerrar</button>
-          </div>
-        )}
-      </Modal>
-
       {/* ── Modal cargar movimientos (para que una tarjeta no arranque en cero) ── */}
       <Modal open={showCargaModal} onClose={() => setShowCargaModal(false)} title="Cargar movimientos">
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Tarjeta</FieldLabel>
             <select value={cargaTarjetaId ?? ''} onChange={e => setCargaTarjetaId(e.target.value)} className="input-field">
               <option value="">Seleccioná una tarjeta</option>
-              {(tarjetas??[]).map(t => <option key={t.id} value={t.id}>{t.nombre} · {t.banco}</option>)}
+              {(tarjetas??[]).map(t => <option key={t.id} value={t.id}>{t.nombre} · {t.banco}{t.quien!=='ambos' ? ` · ${t.quien}` : ''}</option>)}
             </select>
+          </div>
+
+          <div><FieldLabel>Período que estás cargando</FieldLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <select value={cargaPeriodoMes} onChange={e => setCargaPeriodoMes(parseInt(e.target.value))} className="input-field">
+                {MESES.map((mn, i) => <option key={mn} value={i+1}>{mn}</option>)}
+              </select>
+              <select value={cargaPeriodoAño} onChange={e => setCargaPeriodoAño(parseInt(e.target.value))} className="input-field">
+                {[añoActivo-1, añoActivo, añoActivo+1].map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <p className="text-slate-400 text-xs mt-1">Todo lo que cargues acá queda en este período, sin importar la fecha de cada ítem — un resumen trae gastos de más de un mes, pero lo que importa es a qué período le corresponde pagarlo.</p>
+          </div>
+
+          <div><FieldLabel>Total declarado <span className="text-slate-400 font-normal normal-case">(el que dice el resumen, por moneda — opcional pero recomendado)</span></FieldLabel>
+            <div className="flex flex-col gap-2">
+              {cargaTotalesDeclarados.map((td, i) => (
+                <div key={i} className="flex gap-2">
+                  <select value={td.moneda} onChange={e => setCargaTotalesDeclarados(prev => prev.map((x,j) => j===i ? {...x, moneda: e.target.value as Moneda} : x))} className="input-field w-24 flex-shrink-0">
+                    {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <MontoInput value={td.monto} onChange={raw => setCargaTotalesDeclarados(prev => prev.map((x,j) => j===i ? {...x, monto: raw} : x))} placeholder="0" className="flex-1" />
+                  {cargaTotalesDeclarados.length > 1 && (
+                    <button onClick={() => setCargaTotalesDeclarados(prev => prev.filter((_,j) => j!==i))} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs flex-shrink-0">✕</button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => setCargaTotalesDeclarados(prev => [...prev, { moneda: 'USD', monto: '' }])} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer self-start">+ agregar moneda</button>
+            </div>
           </div>
 
           <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
@@ -1053,6 +903,7 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
                   ))}
                 </div>
               )}
+              <ComparacionDeclarado declarados={cargaTotalesDeclarados} items={cargaItems} />
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowCargaModal(false)} className="btn-ghost flex-1">Cancelar</button>
                 <button onClick={() => handleGuardarCargaItems(cargaItems)} disabled={guardandoCarga || !cargaTarjetaId || cargaItems.length===0}
@@ -1063,8 +914,8 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
 
           {cargaModo === 'bloque' && (
             <>
-              <p className="text-slate-400 text-xs -mt-2">Pegá una línea por movimiento, con el monto al final (ej: "Supermercado Coto 15.230"). Se arma la lista abajo para revisar antes de guardar.</p>
-              <div><FieldLabel>Moneda de todo el bloque</FieldLabel>
+              <p className="text-slate-400 text-xs -mt-2">Pegá el detalle del resumen tal cual (funciona con filas tabuladas fecha/descripción/cuota/comprobante/monto/moneda, o con líneas sueltas tipo "Supermercado Coto 15.230"). Los encabezados del resumen y las líneas de pago se descartan solos. Se arma la lista abajo para revisar antes de guardar.</p>
+              <div><FieldLabel>Moneda por defecto <span className="text-slate-400 font-normal normal-case">(si una fila no trae moneda propia)</span></FieldLabel>
                 <select value={cargaBloqueMoneda} onChange={e => setCargaBloqueMoneda(e.target.value as Moneda)} className="input-field">
                   {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -1072,20 +923,24 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
               <textarea value={cargaBloqueTexto} onChange={e => setCargaBloqueTexto(e.target.value)} rows={6}
                 placeholder={'Supermercado Coto 15.230\nNetflix 3.500\nUber 890'} className="input-field font-mono text-xs" />
               {(() => {
-                const parseados = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
+                const { items: parseados, pagosOmitidos } = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
                 return (
                   <>
-                    {parseados.length > 0 && (
+                    {(parseados.length > 0 || pagosOmitidos > 0) && (
                       <div className="max-h-48 overflow-auto flex flex-col gap-1 border-t border-slate-100 pt-2">
-                        <div className="text-xs text-slate-400">{parseados.length} movimiento{parseados.length===1?'':'s'} detectado{parseados.length===1?'':'s'}</div>
+                        <div className="text-xs text-slate-400">
+                          {parseados.length} movimiento{parseados.length===1?'':'s'} detectado{parseados.length===1?'':'s'}
+                          {pagosOmitidos > 0 && ` · ${pagosOmitidos} pago${pagosOmitidos===1?'':'s'} omitido${pagosOmitidos===1?'':'s'} (ya se refleja en Deudas)`}
+                        </div>
                         {parseados.map((it, i) => (
                           <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50">
-                            <span className="text-xs text-slate-600 truncate">{it.descripcion}</span>
+                            <span className="text-xs text-slate-600 truncate">{it.descripcion}{it.cuota_actual && it.cuota_total ? ` (${it.cuota_actual}/${it.cuota_total})` : ''}</span>
                             <span className="font-mono text-xs font-bold text-slate-900 flex-shrink-0">{fmtFull(it.monto, it.moneda)}</span>
                           </div>
                         ))}
                       </div>
                     )}
+                    <ComparacionDeclarado declarados={cargaTotalesDeclarados} items={parseados} />
                     <div className="flex gap-3 pt-2">
                       <button onClick={() => setShowCargaModal(false)} className="btn-ghost flex-1">Cancelar</button>
                       <button onClick={() => handleGuardarCargaItems(parseados)} disabled={guardandoCarga || !cargaTarjetaId || parseados.length===0}
@@ -1157,6 +1012,34 @@ Para el campo descripcion, usá el nombre real del negocio, no el código técni
         />
       )}
 
+    </div>
+  )
+}
+
+/** Compara lo cargado hasta ahora (items en construcción, todavía sin guardar) contra el total
+ *  declarado por moneda — el reemplazo liviano de la conciliación contra PDF: dos números que
+ *  el usuario ya tiene a mano, sin necesitar el PDF en sí. Nunca bloquea, solo informa. */
+function ComparacionDeclarado({ declarados, items }: {
+  declarados: { moneda: Moneda; monto: string }[]
+  items: { monto: number; moneda: Moneda }[]
+}) {
+  const filas = declarados.filter(d => d.monto).map(d => {
+    const declarado = parseFloat(d.monto)
+    const cargado = items.filter(it => it.moneda === d.moneda).reduce((s, it) => s + it.monto, 0)
+    const diferencia = Math.round((cargado - declarado) * 100) / 100
+    return { moneda: d.moneda, declarado, cargado, diferencia }
+  })
+  if (filas.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2">
+      {filas.map(f => (
+        <div key={f.moneda} className={`flex items-center justify-between text-xs rounded-lg px-2.5 py-1.5 ${f.diferencia===0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+          <span className={f.diferencia===0 ? 'text-emerald-700' : 'text-amber-700'}>
+            {f.diferencia===0 ? 'Coincide con lo declarado' : `Diferencia de ${fmtFull(Math.abs(f.diferencia), f.moneda)} ${f.diferencia > 0 ? '(cargaste de más)' : '(falta cargar)'}`}
+          </span>
+          <span className={`font-mono font-bold ${f.diferencia===0 ? 'text-emerald-700' : 'text-amber-700'}`}>{fmtFull(f.cargado, f.moneda)}</span>
+        </div>
+      ))}
     </div>
   )
 }

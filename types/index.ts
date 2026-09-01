@@ -162,16 +162,17 @@ export interface TarjetaTransaccion {
   descripcion: string
   categoria: string
   fecha: string
+  /** A qué período (mes de pago) pertenece — independiente de `fecha`. Un resumen de agosto
+   *  trae gastos de julio y agosto; lo que importa es en qué carga se metió, no la fecha del ítem. */
+  periodo_año: number
+  periodo_mes: number
   monto: number
   moneda: Moneda
   cotizacion_ars?: number
   cuota_actual?: number
   cuota_total?: number
   tipo: 'debito' | 'credito'
-  etiqueta?: string | null
   origen?: 'manual' | 'pdf'
-  estado_conciliacion?: EstadoConciliacion
-  resumen_id?: string | null
   quien?: string | null
   created_at: string
 }
@@ -191,6 +192,19 @@ export interface TarjetaResumen {
   created_at: string
 }
 export type TarjetaResumenInsert = Omit<TarjetaResumen, 'id' | 'created_at'>
+
+/** Total que declarás vos (leído del resumen real) por tarjeta+período+moneda, para comparar
+ *  contra la suma del detalle cargado. Reemplaza al sistema de conciliación contra PDF. */
+export interface TarjetaPeriodoTotal {
+  id: string
+  tarjeta_id: string
+  año: number
+  mes: number
+  moneda: Moneda
+  total_declarado: number
+  created_at: string
+}
+export type TarjetaPeriodoTotalInsert = Omit<TarjetaPeriodoTotal, 'id' | 'created_at'>
 
 export interface PagoTarjeta {
   id: string
@@ -428,8 +442,9 @@ export interface TarjetaTransaccionVista {
   monto: number
   moneda: Moneda
   fecha: string
+  periodo_año: number
+  periodo_mes: number
   tipo: string
-  estado_conciliacion?: string
   etiqueta_ids: string[]
   created_at: string
 }

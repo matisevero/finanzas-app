@@ -6,7 +6,7 @@ import type { ValueType, NameType } from 'recharts/types/component/DefaultToolti
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { useIngresos, useCategoriasCustom, useFrecuenciaCategorias, useDescripcionesDistintas, useEtiquetasDistintas, useProyectos, useAhorros, useMetas, useEtiquetas, useIngresoEtiquetas, usePersonas } from '@/hooks'
-import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro, getAllIngresos, aplicarContribucionPorEtiquetas } from '@/lib/queries'
+import { createIngreso, updateIngreso, deleteIngreso, createProyecto, createAhorro, getEtiquetas, setEtiquetasDeIngreso, updateAhorro, getAllIngresos, aplicarContribucionPorEtiquetas, createAhorroAjuste, sincronizarAjusteManualAhorro } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate, ocultarValor } from '@/lib/utils/formatters'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { MESES_CORTOS, TIPOS_INGRESO, META_COLORS } from '@/lib/utils/constants'
@@ -1092,11 +1092,6 @@ export default function IngresosPage() {
             const ahorro = (ahorros ?? []).find(a => a.id === ahorroId)
             if (!ahorro || !ingresoPicker) return
             const esCripto = ['BTC', 'ETH'].includes(ahorro.moneda)
-            if (esCripto) {
-              await updateAhorro(ahorroId, { cantidad: Math.max(0, (ahorro.cantidad ?? 0) - montoConvertido) })
-            } else {
-              await updateAhorro(ahorroId, { ajuste_manual: ahorro.ajuste_manual - montoConvertido })
-            }
             // Venta de fiat (USD/EUR/USDT): el Ingreso ya está en ARS, la cotización sale de ARS ÷ vendido.
             // Venta de cripto: el Ingreso está en USD (se liquida en USD, no directo a ARS) — acá la
             // cotización sale sola del propio movimiento (USD recibido ÷ unidades vendidas).
@@ -1104,6 +1099,14 @@ export default function IngresosPage() {
             const notaTxt = esCripto
               ? `Venta de ${montoConvertido} ${ahorro.moneda}${cotiz ? ` — $${cotiz.toLocaleString('es-AR')} USD por ${ahorro.moneda}` : ''}`
               : `Venta de ${montoConvertido} ${ahorro.moneda} — cotización: $${cotiz!.toLocaleString('es-AR')} por ${ahorro.moneda}`
+            if (esCripto) {
+              await updateAhorro(ahorroId, { cantidad: Math.max(0, (ahorro.cantidad ?? 0) - montoConvertido) })
+            } else {
+              // Registrado como ahorro_ajustes real (negativo, es un retiro) para que quede visible
+              // en el Historial y se pueda editar/desasociar como cualquier otro.
+              await createAhorroAjuste({ ahorro_id: ahorroId, monto: -montoConvertido, fecha: ingresoPicker.fecha, nota: notaTxt })
+              await sincronizarAjusteManualAhorro(ahorroId)
+            }
             await updateIngreso(ingresoPicker.id, { cotizacion: cotiz ?? null, nota: notaTxt })
             refetchAhorros(); refetch()
           }}

@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/client'
+import { añoMesDeFecha } from '@/lib/utils/formatters'
 import type {
   Ingreso, IngresoInsert, Egreso, EgresoInsert,
   Deuda, DeudaInsert, PagoDeuda,
   Tarjeta, TarjetaInsert, TarjetaTransaccion, PagoTarjeta,
-  TarjetaResumen, TarjetaResumenInsert, Moneda,
+  TarjetaResumen, TarjetaResumenInsert, TarjetaPeriodoTotal, TarjetaPeriodoTotalInsert, Moneda,
   EventoCalendario, EventoInsert,
   Meta, MetaInsert, MetaAporte, MetaAporteInsert,
   Ahorro, AhorroInsert, AhorroAjuste, AhorroAjusteInsert,
@@ -189,9 +190,9 @@ export async function getIngresosByAño(año: number): Promise<Ingreso[]> {
 
 export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('ingresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -200,9 +201,9 @@ export async function createIngreso(form: IngresoInsert): Promise<Ingreso> {
 export async function updateIngreso(id: string, form: Partial<IngresoInsert>): Promise<Ingreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('ingresos').update(updates).eq('id', id).select().single()
   if (error) throw error
@@ -223,9 +224,9 @@ export async function getEgresosByAño(año: number): Promise<Egreso[]> {
 
 export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
   const userId = await uid()
-  const fecha = new Date(form.fecha)
+  const { año, mes } = añoMesDeFecha(form.fecha)
   const { data, error } = await sb().from('egresos')
-    .insert({ ...form, user_id: userId, año: fecha.getFullYear(), mes: fecha.getMonth() + 1 })
+    .insert({ ...form, user_id: userId, año, mes })
     .select().single()
   if (error) throw error
   return data
@@ -234,9 +235,9 @@ export async function createEgreso(form: EgresoInsert): Promise<Egreso> {
 export async function updateEgreso(id: string, form: Partial<EgresoInsert>): Promise<Egreso> {
   const updates: Record<string, unknown> = { ...form }
   if (form.fecha) {
-    const fecha = new Date(form.fecha)
-    updates.año = fecha.getFullYear()
-    updates.mes = fecha.getMonth() + 1
+    const { año, mes } = añoMesDeFecha(form.fecha)
+    updates.año = año
+    updates.mes = mes
   }
   const { data, error } = await sb().from('egresos').update(updates).eq('id', id).select().single()
   if (error) throw error
@@ -390,83 +391,26 @@ export async function upsertPagoTarjeta(pago: Omit<PagoTarjeta, 'id' | 'created_
   return data
 }
 
-// ─── TARJETA RESUMENES + CONCILIACIÓN ────────────────────────────────────────
-export async function getTarjetaResumenes(tarjetaId?: string): Promise<TarjetaResumen[]> {
-  let q = sb().from('tarjeta_resumenes').select('*').order('año', { ascending: false }).order('mes', { ascending: false })
-  if (tarjetaId) q = q.eq('tarjeta_id', tarjetaId)
-  const { data, error } = await q
+// ─── TOTAL DECLARADO POR PERÍODO (reemplaza a la conciliación contra PDF) ────
+// El número que decís vos que dice el resumen, por tarjeta+período+moneda — se compara contra
+// la suma real del detalle cargado (item por item / pegar bloque) para avisar si no coincide.
+export async function getTarjetaPeriodoTotales(tarjetaId: string, año: number, mes: number): Promise<TarjetaPeriodoTotal[]> {
+  const { data, error } = await sb().from('tarjeta_periodo_totales')
+    .select('*').eq('tarjeta_id', tarjetaId).eq('año', año).eq('mes', mes)
   if (error) throw error
   return data ?? []
 }
 
-export async function createTarjetaResumen(form: TarjetaResumenInsert): Promise<TarjetaResumen> {
-  const { data, error } = await sb().from('tarjeta_resumenes')
-    .upsert(form, { onConflict: 'tarjeta_id,año,mes' }).select().single()
+export async function upsertTarjetaPeriodoTotal(form: TarjetaPeriodoTotalInsert): Promise<TarjetaPeriodoTotal> {
+  const { data, error } = await sb().from('tarjeta_periodo_totales')
+    .upsert(form, { onConflict: 'tarjeta_id,año,mes,moneda' }).select().single()
   if (error) throw error
   return data
 }
 
-// Match automático de un ítem del PDF contra transacciones 'cargado' de la misma tarjeta
-// sin resumen todavía: mismo monto (±1 peso por redondeo) y fecha dentro de ±4 días.
-// Devuelve el id de la transacción cargada que matchea, o null si no hay ninguna.
-function buscarMatchManual(
-  item: { monto: number; fecha: string },
-  candidatos: TarjetaTransaccion[]
-): TarjetaTransaccion | null {
-  const fechaItem = new Date(item.fecha).getTime()
-  const DIA_MS = 86400000
-  const match = candidatos.find(c =>
-    Math.abs(c.monto - item.monto) <= 1 &&
-    Math.abs(new Date(c.fecha).getTime() - fechaItem) <= 4 * DIA_MS
-  )
-  return match ?? null
-}
-
-// Conciliar un resumen recién importado contra lo que ya estaba cargado a mano:
-// - ítems del PDF que matchean un 'cargado' → ese 'cargado' pasa a 'validado' (no se
-//   duplica, se referencia el resumen)
-// - ítems del PDF sin match → se insertan como nuevos, origen 'pdf', 'validado'
-// - 'cargado' de esa tarjeta sin resumen que quedaron sin matchear → pasan a 'revisar'
-export async function conciliarResumen(
-  tarjetaId: string,
-  resumenId: string,
-  itemsPdf: { descripcion: string; categoria: string; fecha: string; monto: number; moneda: Moneda; cuota_actual?: number; cuota_total?: number }[]
-): Promise<{ matcheados: number; nuevos: number; aRevisar: number }> {
-  const cargados = (await getTarjetaTransacciones(tarjetaId)).filter(t => t.estado_conciliacion === 'cargado' && !t.resumen_id)
-  const yaUsados = new Set<string>()
-  let matcheados = 0, nuevos = 0
-
-  for (const item of itemsPdf) {
-    const disponibles = cargados.filter(c => !yaUsados.has(c.id))
-    const match = buscarMatchManual(item, disponibles)
-    if (match) {
-      yaUsados.add(match.id)
-      await updateTarjetaTransaccion(match.id, { estado_conciliacion: 'validado', resumen_id: resumenId })
-      matcheados++
-    } else {
-      await createTarjetaTransaccion({
-        tarjeta_id: tarjetaId, descripcion: item.descripcion, categoria: item.categoria,
-        fecha: item.fecha, monto: item.monto, moneda: item.moneda,
-        cuota_actual: item.cuota_actual, cuota_total: item.cuota_total,
-        tipo: 'credito', origen: 'pdf', estado_conciliacion: 'validado', resumen_id: resumenId,
-      })
-      nuevos++
-    }
-  }
-
-  const sinMatch = cargados.filter(c => !yaUsados.has(c.id))
-  for (const c of sinMatch) {
-    await updateTarjetaTransaccion(c.id, { estado_conciliacion: 'revisar' })
-  }
-
-  return { matcheados, nuevos, aRevisar: sinMatch.length }
-}
-
-// Genera (o actualiza) el ítem de Deuda del período — usado tanto al cerrar un resumen
-// como manualmente desde el botón "Cerrar mes". Upsertea por (tarjeta_id, período), así
-// que si el total cambia después (llegó un resumen, o se corrigió algo) actualiza el
-// mismo ítem en vez de duplicarlo, y guarda el monto anterior para mostrar el indicador
-// de "monto revisado".
+// Genera (o actualiza) el ítem de Deuda del período — botón manual "Generar deuda". Upsertea
+// por (tarjeta_id, período), así que si lo volvés a tocar después de cargar más movimientos
+// actualiza el mismo ítem en vez de duplicarlo.
 export async function generarDeudaDesdeTarjeta(
   tarjeta: Tarjeta, año: number, mes: number, total: number, moneda: Moneda, fechaVencimiento: string
 ): Promise<Deuda> {
@@ -695,6 +639,22 @@ export async function deleteMetaAporte(id: string) {
   if (error) throw error
 }
 
+export async function updateMetaAporte(id: string, form: Partial<MetaAporteInsert>): Promise<MetaAporte> {
+  const { data, error } = await sb().from('meta_aportes').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Mismo motivo que `sincronizarAjusteManualAhorro`: recalcula `monto_actual` sumando los
+// meta_aportes reales con una consulta fresca, en vez de "valor actual + delta" desde estado
+// de React que puede estar desactualizado.
+export async function sincronizarMontoActualMeta(metaId: string, montoObjetivo: number): Promise<number> {
+  const aportes = await getMetaAportes(metaId)
+  const suma = Math.max(0, Math.min(montoObjetivo, aportes.reduce((s, a) => s + a.monto, 0)))
+  await updateMeta(metaId, { monto_actual: suma, completada: suma >= montoObjetivo })
+  return suma
+}
+
 // ─── AHORROS ─────────────────────────────────────────────────────────────────
 export async function getAhorros(): Promise<Ahorro[]> {
   const { data, error } = await sb().from('ahorros').select('*').order('created_at')
@@ -757,6 +717,26 @@ export async function deleteAhorroAjuste(id: string) {
   if (error) throw error
 }
 
+export async function updateAhorroAjuste(id: string, form: Partial<AhorroAjusteInsert>): Promise<AhorroAjuste> {
+  const { data, error } = await sb().from('ahorro_ajustes').update(form).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// `ajuste_manual` es un total cacheado en Ahorro para no tener que sumar ahorro_ajustes en
+// cada render de una lista. El bug real: varios puntos del código lo actualizaban calculando
+// "valor actual + delta" a partir de un `ahorro` que puede venir desactualizado del estado de
+// React (ediciones/creaciones rápidas sucesivas, o un array de ahorros pasado a una función que
+// no se refrescó entre pasos) — eso desincroniza el cache del historial real, sin ningún error
+// visible. Esta función siempre recalcula sumando los ahorro_ajustes reales con una consulta
+// fresca a la base (no un valor de estado), así el resultado nunca puede arrastrar un desvío.
+export async function sincronizarAjusteManualAhorro(ahorroId: string): Promise<number> {
+  const ajustes = await getAhorroAjustes(ahorroId)
+  const suma = ajustes.reduce((s, a) => s + a.monto, 0)
+  await updateAhorro(ahorroId, { ajuste_manual: suma })
+  return suma
+}
+
 // ─── Aporte automático al asociar/desasociar un movimiento a Ahorro o Meta ───
 // Se llama después de guardar el nuevo set de etiquetas de un movimiento. Compara
 // idsAntes vs idsDespues: lo que se agregó suma (o resta, según `signo`), lo que se
@@ -783,15 +763,14 @@ export async function aplicarContribucionPorEtiquetas(params: {
       if (!ahorro || ahorro.moneda !== moneda) return
       const delta = factor * signo * monto
       await createAhorroAjuste({ ahorro_id: ahorro.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
-      await updateAhorro(ahorro.id, { ajuste_manual: ahorro.ajuste_manual + delta })
+      await sincronizarAjusteManualAhorro(ahorro.id)
     }
     if (et.tipo === 'meta' && et.meta_id) {
       const meta = metas.find(x => x.id === et.meta_id)
       if (!meta || meta.moneda !== moneda) return
       const delta = factor * signo * monto
       await createMetaAporte({ meta_id: meta.id, monto: delta, fecha, nota: (nota ?? 'Movimiento asociado') + notaExtra })
-      const nuevo = Math.max(0, meta.monto_actual + delta)
-      await updateMeta(meta.id, { monto_actual: nuevo, completada: nuevo >= meta.monto_objetivo })
+      await sincronizarMontoActualMeta(meta.id, meta.monto_objetivo)
     }
   }
 

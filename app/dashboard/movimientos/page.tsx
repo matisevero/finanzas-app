@@ -136,7 +136,7 @@ export default function MovimientosPage() {
     let nuevoId: string
     if (entidad === 'ingreso') { const r = snap as MovimientoUnificado; nuevoId = (await createIngreso({ tipo: r.categoria, monto: r.monto, moneda: r.moneda, descripcion: r.descripcion, fecha: r.fecha, quien: r.quien, recurrente: false } as any)).id }
     else if (entidad === 'egreso') { const r = snap as MovimientoUnificado; nuevoId = (await createEgreso({ categoria: r.categoria, monto: r.monto, moneda: r.moneda, descripcion: r.descripcion, fecha: r.fecha, quien: r.quien, recurrente: false } as any)).id }
-    else { const r = snap as TarjetaTransaccionVista; nuevoId = (await createTarjetaTransaccion({ tarjeta_id: r.tarjeta_id, categoria: r.categoria, monto: r.monto, moneda: r.moneda, descripcion: r.descripcion, fecha: r.fecha, tipo: (r.tipo as any) || 'credito', origen: 'manual', estado_conciliacion: 'cargado' } as any)).id }
+    else { const r = snap as TarjetaTransaccionVista; nuevoId = (await createTarjetaTransaccion({ tarjeta_id: r.tarjeta_id, categoria: r.categoria, monto: r.monto, moneda: r.moneda, descripcion: r.descripcion, fecha: r.fecha, periodo_año: r.periodo_año, periodo_mes: r.periodo_mes, tipo: (r.tipo as any) || 'debito', origen: 'manual' } as any)).id }
     if (snap.etiqueta_ids.length > 0) await etiquetarMovimiento(entidad, nuevoId, snap.etiqueta_ids)
   }
   const duplicarMovimiento = async (row: Fila) => { await recrearMovimiento(entidadDe(row), row); cargar() }

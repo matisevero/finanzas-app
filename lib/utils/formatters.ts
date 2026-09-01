@@ -41,6 +41,21 @@ export function ocultarValor(display: string | number): string {
   return String(display).replace(/\d/g, '•')
 }
 
+/** Parsea un string "YYYY-MM-DD" a {año, mes} a mano (sin pasar por `new Date()`/UTC) — usar
+ *  `new Date(fecha).getFullYear()/getMonth()` corre el día 1 (o el 31/12) al mes/año anterior
+ *  para usuarios en huso horario negativo (ej. Argentina, UTC-3), porque un string de fecha
+ *  sin hora se interpreta como medianoche UTC. */
+export function añoMesDeFecha(fecha: string): { año: number; mes: number } {
+  const [y, m] = fecha.split('-')
+  return { año: parseInt(y, 10), mes: parseInt(m, 10) }
+}
+
+/** Mismo motivo que `añoMesDeFecha` — día del mes a partir de un string "YYYY-MM-DD" sin
+ *  pasar por `new Date().getDate()`, que corre el día 1 al último día del mes anterior. */
+export function diaDeFecha(fecha: string): number {
+  return parseInt(fecha.split('-')[2], 10)
+}
+
 export function fmtDate(dateStr: string, format: 'short' | 'long' | 'month' = 'short'): string {
   const d = new Date(dateStr + 'T00:00:00')
   if (format === 'month') return d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
