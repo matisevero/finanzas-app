@@ -205,6 +205,10 @@ export interface TarjetaPeriodoTotal {
   mes: number
   moneda: Moneda
   total_declarado: number
+  /** Fecha real de vencimiento de ESTE período (puede caer en el mes siguiente al que se
+   *  está cargando — un resumen de agosto vence en septiembre). Igual en todas las filas
+   *  de moneda de un mismo período; se guarda repetida para no armar otra tabla aparte. */
+  fecha_vencimiento?: string | null
   created_at: string
 }
 export type TarjetaPeriodoTotalInsert = Omit<TarjetaPeriodoTotal, 'id' | 'created_at'>

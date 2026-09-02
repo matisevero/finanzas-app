@@ -401,6 +401,15 @@ export async function getTarjetaPeriodoTotales(tarjetaId: string, año: number, 
   return data ?? []
 }
 
+// Todos los totales declarados del usuario, sin filtrar por tarjeta ni período — para armar
+// el widget de Vencimientos (que muestra todas las tarjetas juntas) sin tener que pedir
+// tarjeta por tarjeta.
+export async function getTarjetaPeriodoTotalesTodos(): Promise<TarjetaPeriodoTotal[]> {
+  const { data, error } = await sb().from('tarjeta_periodo_totales').select('*')
+  if (error) throw error
+  return data ?? []
+}
+
 export async function upsertTarjetaPeriodoTotal(form: TarjetaPeriodoTotalInsert): Promise<TarjetaPeriodoTotal> {
   const { data, error } = await sb().from('tarjeta_periodo_totales')
     .upsert(form, { onConflict: 'tarjeta_id,año,mes,moneda' }).select().single()

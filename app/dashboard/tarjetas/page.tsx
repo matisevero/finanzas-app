@@ -3,27 +3,22 @@ import { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas } from '@/hooks'
-import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, generarDeudaDesdeTarjeta, getTarjetaPeriodoTotales, upsertTarjetaPeriodoTotal, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getDeudaDeTarjetaPeriodo, getTarjetaTransacciones, aplicarContribucionPorEtiquetas, getTarjetasComercios, upsertTarjetaComercio, type TarjetaComercio } from '@/lib/queries'
+import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas, useCategoriasCustom } from '@/hooks'
+import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, getTarjetaPeriodoTotales, getTarjetaPeriodoTotalesTodos, upsertTarjetaPeriodoTotal, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getTarjetaTransacciones, aplicarContribucionPorEtiquetas, getTarjetasComercios, upsertTarjetaComercio, type TarjetaComercio } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
-import { MESES, MESES_CORTOS } from '@/lib/utils/constants'
+import { MESES, MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { calcularTendencia } from '@/lib/utils/tendencia'
 import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
+import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
-import type { Moneda, Quien, TarjetaTransaccion, TarjetaPeriodoTotal, Deuda } from '@/types'
+import type { Moneda, Quien, TarjetaTransaccion, TarjetaPeriodoTotal, CategoriaCustom } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const FORM_INIT = { nombre:'', banco:'', limite:'', moneda:'ARS' as Moneda, color:'#1A5E9E', icono:'V', quien:'ambos' as Quien, dia_cierre:'1', dia_vencimiento:'10', ultimos_4:'' }
 const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75']
-const CAT_COLORS: Record<string,{bg:string,c:string}> = {
-  'Alimentación':{bg:'#E9F6EA',c:'#3B6D11'},'Tecnología':{bg:'#E6F1FB',c:'#185FA5'},
-  'Ropa':{bg:'#FBEAF0',c:'#72243E'},'Hogar':{bg:'#EEEDFE',c:'#3C3489'},
-  'Viajes':{bg:'#E1F5EE',c:'#0F6E56'},'Entretenimiento':{bg:'#FAEEDA',c:'#854F0B'},
-  'Salud':{bg:'#FEF0EE',c:'#D03E21'},'Otros':{bg:'#F1EFE8',c:'#5F5E5A'},
-}
 
 export default function TarjetasPage() {
   const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
@@ -65,6 +60,28 @@ export default function TarjetasPage() {
   const comercioDe = (descripcionRaw: string): TarjetaComercio | undefined =>
     comercios.find(c => c.descripcion_raw.trim().toLowerCase() === descripcionRaw.trim().toLowerCase())
 
+  // Mismas categorías que Egresos (mismo módulo 'egresos') — un gasto de tarjeta es, en el
+  // fondo, un egreso más; usar la misma taxonomía evita tener dos sistemas de categorías
+  // paralelos y te deja reusar las categorías propias que ya armaste ahí.
+  const { data: rawCategoriasEgreso, refetch: refetchCategoriasEgreso } = useCategoriasCustom('egresos')
+  const categoriasCustom = (rawCategoriasEgreso ?? []) as CategoriaCustom[]
+  const tiposBaseEgreso = useMemo(() =>
+    Object.entries(TIPOS_EGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
+  , [])
+  const allTiposCategoria = useMemo(() => {
+    const flat: { key: string; label: string; icon: string; color: string }[] = []
+    const traverse = (cats: CategoriaCustom[], prefix = '') => {
+      cats.forEach(c => {
+        flat.push({ key: c.id, label: prefix + c.nombre, icon: c.icono, color: c.color })
+        if (c.children?.length) traverse(c.children, prefix + '  ')
+      })
+    }
+    traverse(categoriasCustom)
+    return [...tiposBaseEgreso, ...flat]
+  }, [categoriasCustom, tiposBaseEgreso])
+  const getTipoCategoria = (cat: string) =>
+    allTiposCategoria.find(t => t.key === cat) ?? { key: cat, label: cat, icon: '', color: '#888780' }
+
   const [pickerTipo, setPickerTipo] = useState<'proyecto'|'ahorro'|'meta'|null>(null)
   const [pickerTxn, setPickerTxn]   = useState<string|null>(null)
   const handleConfirmEtiquetasTxn = async (ids: string[]) => {
@@ -84,18 +101,21 @@ export default function TarjetasPage() {
     }
     setPickerTipo(null); setPickerTxn(null)
   }
-  const [cerrandoMes, setCerrandoMes] = useState(false)
-  const [deudaDelPeriodo, setDeudaDelPeriodo] = useState<Deuda | null>(null)
   const [selTC, setSelTC]         = useState<string|null>(null)
-  useEffect(() => {
-    if (!selTC) { setDeudaDelPeriodo(null); return }
-    getDeudaDeTarjetaPeriodo(selTC, añoActivo, mesActivo).then(setDeudaDelPeriodo).catch(()=>setDeudaDelPeriodo(null))
-  }, [selTC, añoActivo, mesActivo])
   const [totalesDeclaradosActivos, setTotalesDeclaradosActivos] = useState<TarjetaPeriodoTotal[]>([])
   useEffect(() => {
     if (!selTC) { setTotalesDeclaradosActivos([]); return }
     getTarjetaPeriodoTotales(selTC, añoActivo, mesActivo).then(setTotalesDeclaradosActivos).catch(()=>setTotalesDeclaradosActivos([]))
   }, [selTC, añoActivo, mesActivo])
+
+  // Todos los períodos declarados (de cualquier tarjeta) — para saber la fecha real de
+  // vencimiento de cada una en el widget de Vencimientos, sin pedir tarjeta por tarjeta.
+  const [periodoTotalesTodos, setPeriodoTotalesTodos] = useState<TarjetaPeriodoTotal[]>([])
+  const refetchPeriodoTotalesTodos = () => getTarjetaPeriodoTotalesTodos().then(setPeriodoTotalesTodos).catch(()=>{})
+  useEffect(() => { refetchPeriodoTotalesTodos() }, [])
+  const vencimientoDeclarado = (tarjetaId: string, año: number, mes: number): string | null =>
+    periodoTotalesTodos.find(p => p.tarjeta_id === tarjetaId && p.año === año && p.mes === mes && p.fecha_vencimiento)?.fecha_vencimiento ?? null
+
   const [filterCat, setFilterCat] = useState('Todos')
   const [search, setSearch]       = useState('')
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
@@ -106,8 +126,9 @@ export default function TarjetasPage() {
   const [cargaPeriodoAño, setCargaPeriodoAño] = useState(añoActivo)
   const [cargaPeriodoMes, setCargaPeriodoMes] = useState(mesActivo)
   const [cargaTotalesDeclarados, setCargaTotalesDeclarados] = useState<{ moneda: Moneda; monto: string }[]>([{ moneda: 'ARS', monto: '' }])
+  const [cargaFechaVencimiento, setCargaFechaVencimiento] = useState('')
   const [cargaModo, setCargaModo] = useState<'total'|'item'|'bloque'>('total')
-  const [cargaForm, setCargaForm] = useState({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS' as Moneda, fecha: new Date().toISOString().split('T')[0] })
+  const [cargaForm, setCargaForm] = useState({ descripcion:'', categoria:'otro', monto:'', moneda:'ARS' as Moneda, fecha: new Date().toISOString().split('T')[0] })
   const [cargaItems, setCargaItems] = useState<{ descripcion:string; descripcion_raw:string; categoria:string; monto:number; moneda:Moneda; fecha:string; cuota_actual?:number; cuota_total?:number }[]>([])
   const [cargaBloqueTexto, setCargaBloqueTexto] = useState('')
   const [cargaBloqueMoneda, setCargaBloqueMoneda] = useState<Moneda>('ARS')
@@ -116,12 +137,12 @@ export default function TarjetasPage() {
   // Modal edición de transacción
   const [showTxnModal, setShowTxnModal] = useState(false)
   const [txnEditId, setTxnEditId]       = useState<string|null>(null)
-  const [txnForm, setTxnForm]           = useState({ descripcion:'', descripcion_raw:'', categoria:'Otros', fecha:'', periodo_año: añoActivo, periodo_mes: mesActivo, monto:'', moneda:'ARS' as Moneda, cuota_actual:'', cuota_total:'' })
+  const [txnForm, setTxnForm]           = useState({ descripcion:'', descripcion_raw:'', categoria:'otro', fecha:'', periodo_año: añoActivo, periodo_mes: mesActivo, monto:'', moneda:'ARS' as Moneda, cuota_actual:'', cuota_total:'' })
   const [savingTxn, setSavingTxn]       = useState(false)
 
   const openEditTxnModal = (t: any) => {
     setTxnForm({
-      descripcion: t.descripcion ?? '', descripcion_raw: t.descripcion_raw ?? '', categoria: t.categoria ?? 'Otros',
+      descripcion: t.descripcion ?? '', descripcion_raw: t.descripcion_raw ?? '', categoria: t.categoria ?? 'otro',
       fecha: t.fecha ?? '', periodo_año: t.periodo_año ?? añoActivo, periodo_mes: t.periodo_mes ?? mesActivo,
       monto: String(t.monto ?? ''), moneda: (t.moneda ?? 'ARS') as Moneda,
       cuota_actual: t.cuota_actual ? String(t.cuota_actual) : '', cuota_total: t.cuota_total ? String(t.cuota_total) : '',
@@ -228,6 +249,15 @@ export default function TarjetasPage() {
     return `${año}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
   }
 
+  // Busca "Vencimiento Actual: 01-Sep-26" (o similar) en el encabezado del resumen pegado —
+  // el vencimiento real puede caer en el mes siguiente al período que estás cargando, así que
+  // no se puede derivar del día fijo de la tarjeta + el mes activo, hay que leerlo del resumen.
+  const detectarVencimientoEnTexto = (texto: string): string | null => {
+    const m = texto.match(/vencimiento[^:\n]*:\s*([0-9]{1,2}[-\/][a-zA-Zñ0-9]{2,}[-\/][0-9]{2,4})/i)
+    if (!m) return null
+    return parsearFechaResumen(m[1])
+  }
+
   // Detecta formato del número: si tiene coma, es es-AR (punto de miles, coma decimal); si no,
   // se parsea directo (el export tabulado usa "." como separador decimal, sin miles).
   const parsearMontoFlexible = (s: string): number | null => {
@@ -266,7 +296,7 @@ export default function TarjetasPage() {
         const cuotaMatch = cols[2]?.match(/^(\d+)\/(\d+)$/)
         items.push({
           descripcion: comercio?.descripcion_limpia || descripcionRaw, descripcion_raw: descripcionRaw,
-          categoria: comercio?.categoria || 'Otros', monto, moneda, fecha,
+          categoria: comercio?.categoria || 'otro', monto, moneda, fecha,
           ...(cuotaMatch ? { cuota_actual: parseInt(cuotaMatch[1], 10), cuota_total: parseInt(cuotaMatch[2], 10) } : {}),
         })
         continue
@@ -281,7 +311,7 @@ export default function TarjetasPage() {
       const comercio = comercioDe(descripcionRaw)
       items.push({
         descripcion: comercio?.descripcion_limpia || descripcionRaw, descripcion_raw: descripcionRaw,
-        categoria: comercio?.categoria || 'Otros', monto: Math.abs(monto), moneda: monedaDefault, fecha: new Date().toISOString().split('T')[0],
+        categoria: comercio?.categoria || 'otro', monto: Math.abs(monto), moneda: monedaDefault, fecha: new Date().toISOString().split('T')[0],
       })
     }
     return { items, pagosOmitidos }
@@ -291,8 +321,9 @@ export default function TarjetasPage() {
     setCargaTarjetaId(selTC ?? (tarjetas??[])[0]?.id ?? null)
     setCargaPeriodoAño(añoActivo); setCargaPeriodoMes(mesActivo)
     setCargaTotalesDeclarados([{ moneda: 'ARS', monto: '' }])
+    setCargaFechaVencimiento('')
     setCargaModo('total')
-    setCargaForm({ descripcion:'', categoria:'Otros', monto:'', moneda:'ARS', fecha: new Date().toISOString().split('T')[0] })
+    setCargaForm({ descripcion:'', categoria:'otro', monto:'', moneda:'ARS', fecha: new Date().toISOString().split('T')[0] })
     setCargaItems([])
     setCargaBloqueTexto('')
     setShowCargaModal(true)
@@ -315,8 +346,9 @@ export default function TarjetasPage() {
     if (!cargaTarjetaId) return
     for (const t of cargaTotalesDeclarados) {
       if (!t.monto) continue
-      await upsertTarjetaPeriodoTotal({ tarjeta_id: cargaTarjetaId, año: cargaPeriodoAño, mes: cargaPeriodoMes, moneda: t.moneda, total_declarado: parseFloat(t.monto) })
+      await upsertTarjetaPeriodoTotal({ tarjeta_id: cargaTarjetaId, año: cargaPeriodoAño, mes: cargaPeriodoMes, moneda: t.moneda, total_declarado: parseFloat(t.monto), fecha_vencimiento: cargaFechaVencimiento || null })
     }
+    refetchPeriodoTotalesTodos()
   }
 
   const handleGuardarCargaTotal = async () => {
@@ -443,7 +475,7 @@ export default function TarjetasPage() {
     color: CHART_COLORS[i%CHART_COLORS.length],
   })).filter(d=>d.value>0), [tarjetas, totalPorTC])
 
-  const cats = ['Todos','Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros']
+  const cats = [{ key: 'Todos', label: 'Todos' }, ...allTiposCategoria]
 
   // Una ficha por tarjeta (no una por moneda) — cada una lleva la lista de {moneda, total} del
   // período activo para mostrarse en líneas, no como tiles separados.
@@ -461,47 +493,33 @@ export default function TarjetasPage() {
 
   // Vencimientos del período activo — un ítem por (tarjeta, moneda) igual que las fichas.
   const vencimientosDelMes = useMemo(() => {
-    const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string; total: number }[] = []
+    const result: { tarjeta: NonNullable<typeof tarjetas>[number]; moneda: string; total: number; fechaVenc: string | null }[] = []
     ;(tarjetas??[]).forEach(t => {
       const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && x.periodo_año===añoActivo && x.periodo_mes===mesActivo)
       const monedas = [...new Set(txnsDelMes.map(x=>x.moneda))]
+      const fechaVenc = vencimientoDeclarado(t.id, añoActivo, mesActivo)
       monedas.forEach(mon => {
         const total = txnsDelMes.filter(x=>x.moneda===mon).reduce((s,x)=>s+x.monto, 0)
-        if (total > 0) result.push({ tarjeta: t, moneda: mon, total })
+        if (total > 0) result.push({ tarjeta: t, moneda: mon, total, fechaVenc })
       })
     })
-    return result.sort((a,b) => a.tarjeta.dia_vencimiento - b.tarjeta.dia_vencimiento)
-  }, [tarjetas, txnsRaw, añoActivo, mesActivo])
+    return result.sort((a,b) => (a.fechaVenc ?? '9999').localeCompare(b.fechaVenc ?? '9999') || a.tarjeta.dia_vencimiento - b.tarjeta.dia_vencimiento)
+  }, [tarjetas, txnsRaw, añoActivo, mesActivo, periodoTotalesTodos])
 
   const [exportadoIds, setExportadoIds] = useState<Set<string>>(new Set())
-  const handleExportarADeuda = async (t: NonNullable<typeof tarjetas>[number], moneda: string, total: number) => {
-    const diaClamp = Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate())
+  const handleExportarAVencimiento = async (t: NonNullable<typeof tarjetas>[number], moneda: string, total: number, fechaVenc: string | null) => {
+    // Si declaraste la fecha real al cargar el resumen, se usa esa (puede caer en el mes
+    // siguiente). Si no la declaraste, se cae al día fijo configurado en la tarjeta como
+    // aproximación — mejor eso que nada, pero avisá si no coincide con la realidad.
+    const [díaEv, mesEv, añoEv] = fechaVenc
+      ? [parseInt(fechaVenc.slice(8,10)), parseInt(fechaVenc.slice(5,7)), parseInt(fechaVenc.slice(0,4))]
+      : [Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate()), mesActivo, añoActivo]
     await createEvento({
-      dia: diaClamp, mes: mesActivo, año: añoActivo, tipo: 'tarjeta',
+      dia: díaEv, mes: mesEv, año: añoEv, tipo: 'tarjeta',
       descripcion: `${t.nombre}${t.banco ? ' — ' + t.banco : ''}`,
       monto: total, moneda: moneda as Moneda, recurrente: false, pagado: false,
     })
     setExportadoIds(prev => new Set(prev).add(`${t.id}|${moneda}`))
-  }
-
-  // "Generar deuda" a mano — suma lo cargado del período activo y genera/actualiza el ítem de
-  // Deuda correspondiente. Vos decidís cuándo tocarlo; no pasa nada solo.
-  const handleGenerarDeuda = async (t: NonNullable<typeof tarjetas>[number], moneda: string) => {
-    const txnsDelMes = (txnsRaw??[]).filter(x => x.tarjeta_id===t.id && x.moneda===moneda && x.periodo_año===añoActivo && x.periodo_mes===mesActivo)
-    const total = txnsDelMes.reduce((s,x)=>s+x.monto, 0)
-    if (total <= 0) { alert('No hay gastos cargados para este período todavía.'); return }
-    const diaClamp = Math.min(t.dia_vencimiento, new Date(añoActivo, mesActivo, 0).getDate())
-    const fechaVenc = `${añoActivo}-${String(mesActivo).padStart(2,'0')}-${String(diaClamp).padStart(2,'0')}`
-    setCerrandoMes(true)
-    try {
-      await generarDeudaDesdeTarjeta(t, añoActivo, mesActivo, total, moneda as Moneda, fechaVenc)
-      const deudaActualizada = await getDeudaDeTarjetaPeriodo(t.id, añoActivo, mesActivo)
-      setDeudaDelPeriodo(deudaActualizada)
-      alert(deudaDelPeriodo
-        ? `Recalculado: ${fmtFull(total, moneda)}. Ya lo vas a ver actualizado en Deudas.`
-        : `Deuda del período generada: ${fmtFull(total, moneda)}. Si falta algo, cargalo acá y volvé a apretar este botón para recalcular.`)
-    } catch (e:any) { alert('Error generando la deuda: '+(e.message||'')) }
-    finally { setCerrandoMes(false) }
   }
 
   if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
@@ -620,7 +638,7 @@ export default function TarjetasPage() {
                 <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
               <div className="flex gap-1 flex-wrap">
-                {cats.map(c=><button key={c} onClick={()=>setFilterCat(c)} className={`chip text-xs py-1 px-2.5 ${filterCat===c?'chip-on':''}`}>{c}</button>)}
+                {cats.map(c=><button key={c.key} onClick={()=>setFilterCat(c.key)} className={`chip text-xs py-1 px-2.5 ${filterCat===c.key?'chip-on':''}`}>{c.label}</button>)}
               </div>
             </div>
 
@@ -637,7 +655,7 @@ export default function TarjetasPage() {
                 </tr></thead>
                 <tbody>
                   {filteredTxns.map(t=>{
-                    const cc = CAT_COLORS[t.categoria]||{bg:'#F1EFE8',c:'#5F5E5A'}
+                    const cc = getTipoCategoria(t.categoria)
                     const isUSD = t.moneda==='USD'
                     const tc = (tarjetas??[]).find(x=>x.id===t.tarjeta_id)
                     return (
@@ -655,7 +673,7 @@ export default function TarjetasPage() {
                           <EtiquetaChips etiquetaIds={etiquetasDeTxn(t.id)} etiquetas={etiquetas ?? []} proyectos={proyectos ?? []} ahorros={ahorros ?? []} />
                         </Td>
                         <Td>
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.bg,color:cc.c}}>{t.categoria}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:cc.color+'18',color:cc.color}}>{cc.icon} {cc.label}</span>
                         </Td>
                         <Td className="text-slate-400 text-xs font-mono text-center">{t.cuota_actual&&t.cuota_total?`${t.cuota_actual}/${t.cuota_total}`:'—'}</Td>
                         <Td right>
@@ -697,13 +715,7 @@ export default function TarjetasPage() {
               <Card>
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-slate-900 font-semibold text-[13px]">{t.nombre} — {periodoLabel}</div>
-                  <button onClick={()=>handleGenerarDeuda(t, monedas[0] ?? t.moneda)} disabled={cerrandoMes} className="text-xs text-slate-500 hover:text-slate-800 border-none bg-transparent cursor-pointer disabled:opacity-50 flex-shrink-0">
-                    {cerrandoMes ? '...' : deudaDelPeriodo ? 'Recalcular deuda' : 'Generar deuda'}
-                  </button>
                 </div>
-                {deudaDelPeriodo && (
-                  <div className="text-[11px] text-emerald-600 mb-2">Deuda generada por {fmtFull(deudaDelPeriodo.total_original, deudaDelPeriodo.moneda)}. Si falta un gasto, cargalo y volvé a apretar "Recalcular".</div>
-                )}
                 {monedas.length === 0 ? (
                   <div className="text-slate-400 text-xs">Todavía no cargaste movimientos de este período.</div>
                 ) : (
@@ -744,24 +756,28 @@ export default function TarjetasPage() {
               <div className="text-slate-900 font-semibold text-[13px] mb-0.5">Vencimientos — {MESES_CORTOS[mesActivo-1]} {añoActivo}</div>
               <div className="text-slate-400 text-xs mb-3">Cuándo y cuánto hay que pagar</div>
               <div className="flex flex-col">
-                {vencimientosDelMes.map(({tarjeta: t, moneda: mon, total}) => {
+                {vencimientosDelMes.map(({tarjeta: t, moneda: mon, total, fechaVenc}) => {
                   const key = `${t.id}|${mon}`
                   const yaExportado = exportadoIds.has(key)
+                  const diaMostrado = fechaVenc ? parseInt(fechaVenc.slice(8,10)) : t.dia_vencimiento
+                  const mesDistinto = fechaVenc && parseInt(fechaVenc.slice(5,7)) !== mesActivo
                   return (
                     <div key={key} className="group flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-7 h-7 rounded-lg flex flex-col items-center justify-center flex-shrink-0" style={{background:t.color+'18'}}>
-                          <span className="text-xs font-bold font-mono leading-none" style={{color:t.color}}>{t.dia_vencimiento}</span>
+                          <span className="text-xs font-bold font-mono leading-none" style={{color:t.color}}>{diaMostrado}</span>
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-slate-700 truncate">{t.nombre}</div>
-                          <div className="text-[11px] text-slate-400">vence el {t.dia_vencimiento}</div>
+                          <div className="text-[11px] text-slate-400">
+                            {fechaVenc ? `vence ${fmtDate(fechaVenc)}${mesDistinto ? ' (mes siguiente)' : ''}` : `vence el ${t.dia_vencimiento} (aprox., sin declarar)`}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <span className={`font-mono font-bold text-xs ${yaExportado?'text-emerald-600':'text-red-600'}`}>{fmtFull(total, mon as Moneda)}</span>
                         <RowMenu items={[
-                          { label: yaExportado ? 'Ya exportado a Deuda' : 'Exportar a Deuda', onClick: () => !yaExportado && handleExportarADeuda(t, mon, total), disabled: yaExportado },
+                          { label: yaExportado ? 'Ya exportado al calendario' : 'Exportar a Vencimiento', onClick: () => !yaExportado && handleExportarAVencimiento(t, mon, total, fechaVenc), disabled: yaExportado },
                         ]} />
                       </div>
                     </div>
@@ -904,6 +920,11 @@ export default function TarjetasPage() {
             <p className="text-slate-400 text-xs mt-1">Todo lo que cargues acá queda en este período, sin importar la fecha de cada ítem — un resumen trae gastos de más de un mes, pero lo que importa es a qué período le corresponde pagarlo.</p>
           </div>
 
+          <div><FieldLabel>Fecha de vencimiento <span className="text-slate-400 font-normal normal-case">(la real del resumen — puede caer en el mes siguiente)</span></FieldLabel>
+            <FechaInput value={cargaFechaVencimiento} onChange={setCargaFechaVencimiento} />
+            <p className="text-slate-400 text-xs mt-1">Se completa sola si el texto que pegás en "Pegar bloque" trae el encabezado con la fecha — si no, poné la que corresponda. Se usa para el widget de Vencimientos y para exportarlo al calendario.</p>
+          </div>
+
           <div><FieldLabel>Total declarado <span className="text-slate-400 font-normal normal-case">(el que dice el resumen, por moneda — opcional pero recomendado)</span></FieldLabel>
             <div className="flex flex-col gap-2">
               {cargaTotalesDeclarados.map((td, i) => (
@@ -961,9 +982,8 @@ export default function TarjetasPage() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div><FieldLabel>Categoría</FieldLabel>
-                  <select value={cargaForm.categoria} onChange={e => setCargaForm(p => ({ ...p, categoria: e.target.value }))} className="input-field">
-                    {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <CategoriaSelector modulo="egresos" value={cargaForm.categoria} onChange={v => setCargaForm(p => ({ ...p, categoria: v }))}
+                    categorias={categoriasCustom} categoriasBase={tiposBaseEgreso} onCategoriasChange={refetchCategoriasEgreso} />
                 </div>
                 <div><FieldLabel>Monto</FieldLabel><MontoInput value={cargaForm.monto} onChange={raw => setCargaForm(p => ({ ...p, monto: raw }))} placeholder="0" /></div>
                 <div><FieldLabel>Moneda</FieldLabel>
@@ -1006,7 +1026,13 @@ export default function TarjetasPage() {
                   {monedasPalette.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              <textarea value={cargaBloqueTexto} onChange={e => setCargaBloqueTexto(e.target.value)} rows={6}
+              <textarea value={cargaBloqueTexto} onChange={e => {
+                setCargaBloqueTexto(e.target.value)
+                if (!cargaFechaVencimiento) {
+                  const detectado = detectarVencimientoEnTexto(e.target.value)
+                  if (detectado) setCargaFechaVencimiento(detectado)
+                }
+              }} rows={6}
                 placeholder={'Supermercado Coto 15.230\nNetflix 3.500\nUber 890'} className="input-field font-mono text-xs" />
               {(() => {
                 const { items: parseados, pagosOmitidos } = parsearBloque(cargaBloqueTexto, cargaBloqueMoneda)
@@ -1070,9 +1096,8 @@ export default function TarjetasPage() {
             )}
           </div>
           <div><FieldLabel>Categoría</FieldLabel>
-            <select value={txnForm.categoria} onChange={e => setTxnForm(p => ({ ...p, categoria: e.target.value }))} className="input-field">
-              {['Alimentación','Tecnología','Ropa','Hogar','Viajes','Entretenimiento','Salud','Otros'].map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <CategoriaSelector modulo="egresos" value={txnForm.categoria} onChange={v => setTxnForm(p => ({ ...p, categoria: v }))}
+              categorias={categoriasCustom} categoriasBase={tiposBaseEgreso} onCategoriasChange={refetchCategoriasEgreso} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Monto</FieldLabel>
