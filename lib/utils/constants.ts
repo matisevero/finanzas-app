@@ -83,14 +83,18 @@ export const ICONOS_GENERALES = [
 ]
 
 // ─── Categorías de precios recurrentes ───────────────────────────────────────
-export const CATS_PRECIO = ['Servicios','Salarios','Suscripciones','Alimentos','Transporte','Vivienda','Otro'] as const
-
-export const COLORES_PRECIO: Record<string, string> = {
-  Servicios:     '#E8A020',
-  Salarios:      '#40B046',
-  Suscripciones: '#5B3FA6',
-  Alimentos:     '#1D9E75',
-  Transporte:    '#C07010',
-  Vivienda:      '#1A5E9E',
-  Otro:          '#888780',
+// Las claves son literalmente los mismos strings que ya se venían guardando en
+// precio_items.categoria — así los ítems viejos siguen matcheando sin migración.
+// Se usan como categorías "base" del CategoriaSelector; el usuario puede agregar
+// las suyas propias arriba de estas (quedan guardadas en categorias_custom).
+export const TIPOS_PRECIO: Record<string, { label: string; color: string; icon: string }> = {
+  Servicios:     { label: 'Servicios',     color: '#E8A020', icon: '⚡' },
+  Salarios:      { label: 'Salarios',      color: '#40B046', icon: '💼' },
+  Suscripciones: { label: 'Suscripciones', color: '#5B3FA6', icon: '📺' },
+  Alimentos:     { label: 'Alimentos',     color: '#1D9E75', icon: '🛒' },
+  Transporte:    { label: 'Transporte',    color: '#C07010', icon: '🚗' },
+  Vivienda:      { label: 'Vivienda',      color: '#1A5E9E', icon: '🏠' },
+  Otro:          { label: 'Otro',          color: '#888780', icon: '📦' },
 }
+export const CATS_PRECIO = Object.keys(TIPOS_PRECIO)
+export const COLORES_PRECIO: Record<string, string> = Object.fromEntries(Object.entries(TIPOS_PRECIO).map(([k,v])=>[k,v.color]))

@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, useTarjetas, useEventosMes, useEventosAño, usePagosTarjeta, useMetas, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, useTarjetas, useTarjetaTransacciones, useEventosMes, useEventosAño, useMetas, useAhorros, useAllIngresos, useAllEgresos } from '@/hooks'
 import { calcularResumen, proyectarCashFlow } from '@/lib/utils/calculations'
 import { calcularTendencia, calcularTendenciaBalance } from '@/lib/utils/tendencia'
 import { fmt, fmtFull, ocultarValor } from '@/lib/utils/formatters'
@@ -68,7 +68,7 @@ export default function DashboardPage() {
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
   const { data: tarjetas, loading: lt } = useTarjetas()
-  const { data: pagosTC,  loading: lp } = usePagosTarjeta()
+  const { data: txnsTC,   loading: ltx } = useTarjetaTransacciones()
   const { data: metas,    loading: lm } = useMetas()
   const { data: ahorros,  loading: la } = useAhorros()
   const { data: allIngresosAhorro, loading: lia } = useAllIngresos()
@@ -83,7 +83,7 @@ export default function DashboardPage() {
   // Eventos de todo el año activo (para "Vencimientos" en vista Año)
   const { data: eventosAño, loading: lea } = useEventosAño(añoActivo)
 
-  if ((li&&!ingresos) || (le&&!egresos) || (ld&&!deudas) || (lt&&!tarjetas) || (lem&&!eventosMes) || (lemv&&!eventosMesVista) || (lea&&!eventosAño) || (lp&&!pagosTC) || (lm&&!metas) || (la&&!ahorros) || (lia&&!allIngresosAhorro) || (lea2&&!allEgresosAhorro)) return <LoadingSpinner />
+  if ((li&&!ingresos) || (le&&!egresos) || (ld&&!deudas) || (lt&&!tarjetas) || (ltx&&!txnsTC) || (lem&&!eventosMes) || (lemv&&!eventosMesVista) || (lea&&!eventosAño) || (lm&&!metas) || (la&&!ahorros) || (lia&&!allIngresosAhorro) || (lea2&&!allEgresosAhorro)) return <LoadingSpinner />
 
   const r = calcularResumen(ingresos??[], egresos??[], deudas??[])
 
@@ -124,8 +124,11 @@ export default function DashboardPage() {
   const totalEgresosMes  = egresosMes.reduce((s,x) => s+x.monto, 0)
 
   // Tarjetas — total pagado en el año o en el mes, según la vista (sin pagos_tarjeta hook, usamos egresos categoria tarjeta)
-  const totalTarjetas    = (egresos??[]).filter(e => e.categoria === 'tarjeta').reduce((s,e) => s+e.monto, 0)
-  const totalTarjetasMes = egresosMes.filter(e => e.categoria === 'tarjeta').reduce((s,e) => s+e.monto, 0)
+  // Lo que realmente cargaste en Tarjetas (por período de carga, no por fecha de cada ítem
+  // — ver la página de Tarjetas), no lo que hayas categorizado a mano como "tarjeta" en
+  // Egresos, que la mayoría de las veces queda vacío si usás el módulo de Tarjetas de verdad.
+  const totalTarjetas    = (txnsTC??[]).filter(t => t.periodo_año === añoActivo).reduce((s,t) => s+t.monto, 0)
+  const totalTarjetasMes = (txnsTC??[]).filter(t => t.periodo_año === añoActivo && t.periodo_mes === mesActivo).reduce((s,t) => s+t.monto, 0)
 
   // Desglose día a día del mes seleccionado
   const diasEnMesVista = new Date(añoActivo, mesActivo, 0).getDate()
@@ -144,7 +147,7 @@ export default function DashboardPage() {
 
   // Acumulado del año por tarjeta + % sobre los ingresos del año, para la card de Tarjetas de crédito
   const acumuladoPorTC = (tarjetas ?? []).reduce((acc, t) => {
-    acc[t.id] = (pagosTC ?? []).filter(p => p.tarjeta_id === t.id && p.año === añoActivo).reduce((s, p) => s + p.monto, 0)
+    acc[t.id] = (txnsTC ?? []).filter(x => x.tarjeta_id === t.id && x.periodo_año === añoActivo).reduce((s, x) => s + x.monto, 0)
     return acc
   }, {} as Record<string, number>)
 
@@ -154,7 +157,7 @@ export default function DashboardPage() {
   const trendIngresos = calcularTendencia(ingresos ?? [], vistaTipo, mesActivo, añoActivo)
   const trendEgresos  = calcularTendencia(egresos ?? [], vistaTipo, mesActivo, añoActivo)
   const trendAhorro   = calcularTendenciaBalance(ingresos ?? [], egresos ?? [], vistaTipo, mesActivo, añoActivo)
-  const trendTarjetas = calcularTendencia(pagosTC ?? [], vistaTipo, mesActivo, añoActivo)
+  const trendTarjetas = calcularTendencia((txnsTC??[]).map(t => ({ mes: t.periodo_mes, año: t.periodo_año, monto: t.monto })), vistaTipo, mesActivo, añoActivo)
 
   const getWidgetValue = (id: string) => {
     switch(id) {

@@ -2,14 +2,15 @@
 import { useState, useMemo, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { usePrecioItems, useAllEgresos } from '@/hooks'
+import { usePrecioItems, useAllEgresos, useAllIngresos, useCategoriasCustom } from '@/hooks'
 import { createClient } from '@/lib/supabase/client'
 import { updatePrecioItem, deletePrecioItem, archivarPrecioItem } from '@/lib/queries'
 import { fmt, fmtDate } from '@/lib/utils/formatters'
-import { CATS_PRECIO, COLORES_PRECIO } from '@/lib/utils/constants'
+import { TIPOS_PRECIO } from '@/lib/utils/constants'
 import { PageHeader, Card, Modal, LoadingSpinner, EmptyState, FieldLabel, RowMenu } from '@/components/ui'
+import CategoriaSelector from '@/components/ui/CategoriaSelector'
 import MontoInput from '@/components/ui/MontoInput'
-import type { PrecioItem, PrecioHistorial, Egreso } from '@/types'
+import type { PrecioItem, PrecioHistorial, Egreso, Ingreso, CategoriaCustom } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 const CHART_COLORS = ['#1A5E9E','#F54927','#40B046','#5B3FA6','#E8A020','#D4537E','#1D9E75','#888780']
@@ -19,6 +20,29 @@ export default function PreciosPage() {
   const { monedaPrincipal: m } = useAppStore()
   const { data: items, loading, refetch } = usePrecioItems()
   const { data: egresos } = useAllEgresos()
+  const { data: ingresos } = useAllIngresos()
+  const { data: rawCategoriasPrecio, refetch: refetchCategoriasPrecio } = useCategoriasCustom('precios')
+  const categoriasCustom = (rawCategoriasPrecio ?? []) as CategoriaCustom[]
+  const tiposBasePrecio = useMemo(() =>
+    Object.entries(TIPOS_PRECIO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
+  , [])
+  // Igual que en Tarjetas: base + custom, con fallback para categorías "raras" que hayan
+  // quedado de antes de que este selector existiera — se ven igual, se pueden filtrar, y
+  // desde acá mismo se pueden renombrar/limpiar en vez de quedar como texto suelto.
+  const allTiposPrecio = useMemo(() => {
+    const flat: { key: string; label: string; icon: string; color: string }[] = []
+    const traverse = (cats: CategoriaCustom[], prefix = '') => {
+      cats.forEach(c => {
+        flat.push({ key: c.id, label: prefix + c.nombre, icon: c.icono, color: c.color })
+        if (c.children?.length) traverse(c.children, prefix + '  ')
+      })
+    }
+    traverse(categoriasCustom)
+    return [...tiposBasePrecio, ...flat]
+  }, [categoriasCustom, tiposBasePrecio])
+  const getTipoPrecio = (cat: string) =>
+    allTiposPrecio.find(t => t.key === cat) ?? { key: cat, label: cat, icon: '', color: '#888780' }
+
   const [historial, setHistorial] = useState<Record<string, PrecioHistorial[]>>({})
   const [loadingHist, setLoadingHist] = useState(false)
   // La selección vive en el store global (persistida) así no se pierde al navegar a otra
@@ -34,10 +58,14 @@ export default function PreciosPage() {
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const [showValModal, setShowValModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [selIcon, setSelIcon] = useState('📦')
-  const [form, setForm] = useState({ nombre:'', categoria:'Servicios', icono:'📦' })
+  // Íconos múltiples: un Set de los elegidos, se guardan concatenados en el mismo campo
+  // `icono` (ya era texto libre, no hace falta tocar el esquema).
+  const [selIcons, setSelIcons] = useState<string[]>(['📦'])
+  const toggleIcon = (ic: string) => setSelIcons(prev => prev.includes(ic) ? (prev.length>1 ? prev.filter(x=>x!==ic) : prev) : [...prev, ic])
+  const [form, setForm] = useState({ nombre:'', categoria:'Servicios' })
   const [valForm, setValForm] = useState({ item_id:'', mes:new Date().toISOString().slice(0,7), valor:'' })
   const [buscarEgreso, setBuscarEgreso] = useState('')
+  const [buscarIngreso, setBuscarIngreso] = useState('')
 
   const sb = createClient()
 
@@ -103,23 +131,24 @@ export default function PreciosPage() {
     }))
   }, [selected, historial, items])
 
-  const openNewItem = () => { setEditId(null); setForm({nombre:'',categoria:'Servicios',icono:'📦'}); setSelIcon('📦'); setShowModal(true) }
+  const openNewItem = () => { setEditId(null); setForm({nombre:'',categoria:'Servicios'}); setSelIcons(['📦']); setShowModal(true) }
   const openEditItem = (item: PrecioItem) => {
-    setEditId(item.id); setForm({ nombre:item.nombre, categoria:item.categoria, icono:item.icono }); setSelIcon(item.icono); setShowModal(true)
+    setEditId(item.id); setForm({ nombre:item.nombre, categoria:item.categoria }); setSelIcons(item.icono ? [...item.icono] : ['📦']); setShowModal(true)
   }
 
   const saveItem = async () => {
     if (!form.nombre) return
     setSaving(true)
     try {
+      const icono = selIcons.join('') || '📦'
       if (editId) {
-        await updatePrecioItem(editId, { nombre:form.nombre, categoria:form.categoria, icono:selIcon })
+        await updatePrecioItem(editId, { nombre:form.nombre, categoria:form.categoria, icono })
       } else {
         const { data: { user } } = await sb.auth.getUser()
         if (!user) return
-        await sb.from('precio_items').insert({ nombre:form.nombre, categoria:form.categoria, icono:selIcon, user_id:user.id })
+        await sb.from('precio_items').insert({ nombre:form.nombre, categoria:form.categoria, icono, user_id:user.id })
       }
-      setShowModal(false); setEditId(null); setForm({nombre:'',categoria:'Servicios',icono:'📦'}); refetch()
+      setShowModal(false); setEditId(null); setForm({nombre:'',categoria:'Servicios'}); refetch()
     } finally { setSaving(false) }
   }
 
@@ -140,7 +169,7 @@ export default function PreciosPage() {
     if (!valForm.valor||!valForm.item_id) return
     setSaving(true)
     try {
-      await sb.from('precio_historial').upsert({ item_id:valForm.item_id, mes:valForm.mes, valor:parseFloat(valForm.valor), moneda:'ARS', egreso_id:null }, { onConflict:'item_id,mes' })
+      await sb.from('precio_historial').upsert({ item_id:valForm.item_id, mes:valForm.mes, valor:parseFloat(valForm.valor), moneda:'ARS', egreso_id:null, ingreso_id:null }, { onConflict:'item_id,mes' })
       await loadHistorial([valForm.item_id])
       setShowValModal(false)
     } finally { setSaving(false) }
@@ -158,10 +187,38 @@ export default function PreciosPage() {
       .slice(0, 6)
   }, [egresos, buscarEgreso, valForm.item_id, items])
 
+  // Mismo mecanismo para Ingresos — un ítem de Precios puede seguir algo que cobrás (ej. tu
+  // sueldo, un alquiler que cobrás) en vez de algo que pagás.
+  const ingresosSugeridos = useMemo(() => {
+    const itemNombre = (items??[]).find(i=>i.id===valForm.item_id)?.nombre?.toLowerCase() ?? ''
+    const q = (buscarIngreso || itemNombre).toLowerCase()
+    if (!q) return []
+    return (ingresos??[])
+      .filter(i => i.descripcion.toLowerCase().includes(q))
+      .sort((a,b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, 6)
+  }, [ingresos, buscarIngreso, valForm.item_id, items])
+
   // Egresos que ya están cargados como valor de este ítem (se ven en azul en la lista) —
   // tocar uno ya vinculado lo saca de la comparación, tocar uno suelto lo agrega.
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const egresoIdsVinculados = new Set((historial[valForm.item_id] ?? []).map(h => h.egreso_id).filter(Boolean))
+  const ingresoIdsVinculados = new Set((historial[valForm.item_id] ?? []).map(h => h.ingreso_id).filter(Boolean))
+
+  const toggleIngresoVinculado = async (i: Ingreso) => {
+    setLinkingId(i.id)
+    try {
+      if (ingresoIdsVinculados.has(i.id)) {
+        await sb.from('precio_historial').delete().eq('item_id', valForm.item_id).eq('ingreso_id', i.id)
+      } else {
+        await sb.from('precio_historial').upsert(
+          { item_id: valForm.item_id, mes: i.fecha.slice(0,7), valor: i.monto, moneda: 'ARS', ingreso_id: i.id },
+          { onConflict: 'item_id,mes' }
+        )
+      }
+      await loadHistorial([valForm.item_id])
+    } finally { setLinkingId(null) }
+  }
 
   const toggleEgresoVinculado = async (e: Egreso) => {
     setLinkingId(e.id)
@@ -194,8 +251,8 @@ export default function PreciosPage() {
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ítem..." className="input-field pl-8 py-1.5 text-xs" />
         </div>
         <div className="flex gap-1 flex-wrap">
-          {['Todos',...CATS_PRECIO].map(c=>(
-            <button key={c} onClick={()=>setFilterCat(c)} className={`chip text-xs py-1 px-3 ${filterCat===c?'chip-on':''}`}>{c}</button>
+          {[{key:'Todos',label:'Todos'}, ...allTiposPrecio].map(c=>(
+            <button key={c.key} onClick={()=>setFilterCat(c.key)} className={`chip text-xs py-1 px-3 ${filterCat===c.key?'chip-on':''}`}>{c.label}</button>
           ))}
         </div>
         <button onClick={()=>setMostrarArchivados(a=>!a)} className={`chip text-xs py-1 px-3 ml-auto ${mostrarArchivados?'chip-on':''}`}>
@@ -211,7 +268,7 @@ export default function PreciosPage() {
           {filtered.map((item,idx)=>{
             const stats = itemStats[item.id]
             const hist  = historial[item.id]??[]
-            const color = COLORES_PRECIO[item.categoria]||'#888780'
+            const color = getTipoPrecio(item.categoria).color
             const on    = selected.has(item.id)
             const isSal = item.categoria==='Salarios'
             const pctGood = stats?.pct!=null ? (isSal ? stats.pct>=0 : stats.pct<=0) : null
@@ -230,7 +287,7 @@ export default function PreciosPage() {
                     <span className="text-2xl">{item.icono}</span>
                     <div>
                       <div className="text-slate-900 font-semibold text-sm">{item.nombre}</div>
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{background:color+'18',color}}>{item.categoria}</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{background:color+'18',color}}>{getTipoPrecio(item.categoria).label}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -338,7 +395,7 @@ export default function PreciosPage() {
                           <span>{item.icono}</span>
                           <div>
                             <div className="text-sm font-medium text-slate-700">{item.nombre}</div>
-                            <div className="text-xs text-slate-400">{item.categoria}</div>
+                            <div className="text-xs text-slate-400">{getTipoPrecio(item.categoria).label}</div>
                           </div>
                         </div>
                       </td>
@@ -368,19 +425,19 @@ export default function PreciosPage() {
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Nombre</FieldLabel><input value={form.nombre} onChange={e=>setForm(p=>({...p,nombre:e.target.value}))} placeholder="Ej: Luz departamento" className="input-field" /></div>
           <div><FieldLabel>Categoría</FieldLabel>
-            <select value={form.categoria} onChange={e=>setForm(p=>({...p,categoria:e.target.value}))} className="input-field">
-              {CATS_PRECIO.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
+            <CategoriaSelector modulo="precios" value={form.categoria} onChange={v=>setForm(p=>({...p,categoria:v}))}
+              categorias={categoriasCustom} categoriasBase={tiposBasePrecio} onCategoriasChange={refetchCategoriasPrecio} />
           </div>
-          <div><FieldLabel>Ícono</FieldLabel>
+          <div><FieldLabel>Ícono <span className="text-slate-400 font-normal normal-case">(podés elegir más de uno)</span></FieldLabel>
             <div className="flex flex-wrap gap-2 mt-1">
               {ICONOS.map(ic=>(
-                <button key={ic} onClick={()=>setSelIcon(ic)}
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg cursor-pointer border-2 transition-all ${selIcon===ic?'border-blue-700 bg-blue-50':'border-slate-200 bg-slate-50'}`}>
+                <button key={ic} onClick={()=>toggleIcon(ic)}
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg cursor-pointer border-2 transition-all ${selIcons.includes(ic)?'border-blue-700 bg-blue-50':'border-slate-200 bg-slate-50'}`}>
                   {ic}
                 </button>
               ))}
             </div>
+            <div className="text-slate-400 text-xs mt-1">Elegido: {selIcons.join(' ')}</div>
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={()=>{setShowModal(false); setEditId(null)}} className="btn-ghost flex-1">Cancelar</button>
@@ -390,7 +447,7 @@ export default function PreciosPage() {
       </Modal>
 
       {/* Modal agregar valor */}
-      <Modal open={showValModal} onClose={()=>{setShowValModal(false); setBuscarEgreso('')}} title="Agregar valor">
+      <Modal open={showValModal} onClose={()=>{setShowValModal(false); setBuscarEgreso(''); setBuscarIngreso('')}} title="Agregar valor">
         <div className="flex flex-col gap-4">
           <div><FieldLabel>Ítem</FieldLabel>
             <select value={valForm.item_id} onChange={e=>setValForm(p=>({...p,item_id:e.target.value}))} className="input-field">
@@ -427,13 +484,41 @@ export default function PreciosPage() {
             </div>
           )}
 
-          <div className="text-[11px] text-slate-400 -mt-1">O cargá un valor a mano, sin vincular a ningún gasto:</div>
+          {valForm.item_id && (
+            <div>
+              <FieldLabel>Ingresos ya cargados — tocá para sumarlos o sacarlos de la comparación</FieldLabel>
+              <input value={buscarIngreso} onChange={e=>setBuscarIngreso(e.target.value)} placeholder="Buscar en Ingresos..." className="input-field text-sm mb-1.5" />
+              {ingresosSugeridos.length > 0 && (
+                <div className="flex flex-col gap-1 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-1">
+                  {ingresosSugeridos.map(i => {
+                    const vinculado = ingresoIdsVinculados.has(i.id)
+                    return (
+                      <button key={i.id} onClick={()=>toggleIngresoVinculado(i)} type="button" disabled={linkingId===i.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer text-left transition-all disabled:opacity-50"
+                        style={vinculado ? { background:'#EFF4FE', border:'1.5px solid #1A5E9E' } : { background:'transparent', border:'1.5px solid transparent' }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2"
+                            style={vinculado ? { background:'#1A5E9E', borderColor:'#1A5E9E' } : { borderColor:'#cbd5e1' }}>
+                            {vinculado && <span className="text-white text-[9px] font-bold">✓</span>}
+                          </div>
+                          <span className="text-xs text-slate-600 truncate">{i.descripcion} · {fmtDate(i.fecha)}</span>
+                        </div>
+                        <span className="text-xs font-mono text-slate-500 flex-shrink-0 ml-2">{fmt(i.monto, i.moneda as any)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="text-[11px] text-slate-400 -mt-1">O cargá un valor a mano, sin vincular a ningún movimiento:</div>
           <div className="grid grid-cols-2 gap-3">
             <div><FieldLabel>Mes</FieldLabel><input type="month" value={valForm.mes} onChange={e=>setValForm(p=>({...p,mes:e.target.value}))} className="input-field" /></div>
             <div><FieldLabel>Valor ($)</FieldLabel><MontoInput value={valForm.valor} onChange={raw=>setValForm(p=>({...p,valor:raw}))} placeholder="0" /></div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={()=>{setShowValModal(false); setBuscarEgreso('')}} className="btn-ghost flex-1">Cancelar</button>
+            <button onClick={()=>{setShowValModal(false); setBuscarEgreso(''); setBuscarIngreso('')}} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={saveValor} disabled={saving||!valForm.valor||!valForm.item_id} className="btn-primary flex-1 disabled:opacity-50">{saving?'Guardando...':'Guardar'}</button>
           </div>
         </div>
