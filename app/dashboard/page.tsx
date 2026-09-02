@@ -145,9 +145,10 @@ export default function DashboardPage() {
   const eventosVencimientos = esMensual ? (eventosMesVista ?? []) : (eventosAño ?? [])
   const vencimientosTitulo  = esMensual ? `Vencimientos de ${MESES[mesActivo-1].toLowerCase()}` : `Vencimientos pendientes ${añoActivo}`
 
-  // Acumulado del año por tarjeta + % sobre los ingresos del año, para la card de Tarjetas de crédito
+  // Acumulado del período activo por tarjeta (año completo en vista Año, mes activo en vista
+  // Mes) + % sobre los ingresos del mismo período, para la card de Tarjetas de crédito.
   const acumuladoPorTC = (tarjetas ?? []).reduce((acc, t) => {
-    acc[t.id] = (txnsTC ?? []).filter(x => x.tarjeta_id === t.id && x.periodo_año === añoActivo).reduce((s, x) => s + x.monto, 0)
+    acc[t.id] = (txnsTC ?? []).filter(x => x.tarjeta_id === t.id && x.periodo_año === añoActivo && (!esMensual || x.periodo_mes === mesActivo)).reduce((s, x) => s + x.monto, 0)
     return acc
   }, {} as Record<string, number>)
 
@@ -426,7 +427,8 @@ export default function DashboardPage() {
             <div className="text-slate-400 text-sm text-center py-4">Sin tarjetas registradas</div>
           ):(tarjetas??[]).map(t=>{
             const acumulado = acumuladoPorTC[t.id] ?? 0
-            const pct = r.totalIngresos > 0 ? Math.round(acumulado / r.totalIngresos * 100) : 0
+            const ingresosParaPct = esMensual ? totalIngresosMes : r.totalIngresos
+            const pct = ingresosParaPct > 0 ? Math.round(acumulado / ingresosParaPct * 100) : 0
             return (
             <div key={t.id} className="mb-4 last:mb-0">
               <div className="flex justify-between items-center mb-1.5">
@@ -441,11 +443,11 @@ export default function DashboardPage() {
                 </div>
                 <div className="text-right">
                   <div className="font-mono text-sm font-bold text-slate-600">{saldosOcultos ? ocultarValor(fmt(acumulado,m)) : fmt(acumulado,m)}</div>
-                  <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
+                  <div className="text-slate-400 text-xs">{esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `acumulado ${añoActivo}`}</div>
                 </div>
               </div>
               <ProgressBar value={pct} color={t.color} height={6} />
-              <div className="text-slate-400 text-[11px] mt-1">{pct}% de tus ingresos del año</div>
+              <div className="text-slate-400 text-[11px] mt-1">{pct}% de tus ingresos {esMensual ? 'del mes' : 'del año'}</div>
             </div>
           )})}
         </Card>
@@ -642,11 +644,12 @@ export default function DashboardPage() {
             </>}
 
             {expandedChart==='tarjetas' && <>
-              <div className="text-slate-900 font-semibold text-lg mb-5">Tarjetas de crédito — acumulado {añoActivo}</div>
+              <div className="text-slate-900 font-semibold text-lg mb-5">Tarjetas de crédito — {esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `acumulado ${añoActivo}`}</div>
               <div className="flex flex-col gap-5">
                 {(tarjetas??[]).map(t=>{
                   const acumulado = acumuladoPorTC[t.id] ?? 0
-                  const pct = r.totalIngresos > 0 ? Math.round(acumulado / r.totalIngresos * 100) : 0
+                  const ingresosParaPct = esMensual ? totalIngresosMes : r.totalIngresos
+                  const pct = ingresosParaPct > 0 ? Math.round(acumulado / ingresosParaPct * 100) : 0
                   return (
                   <div key={t.id} className="p-4 rounded-xl border border-slate-100">
                     <div className="flex items-center gap-4">
@@ -659,12 +662,12 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-right">
                         <div className="font-mono text-lg font-bold text-slate-700">{saldosOcultos ? ocultarValor(fmtFull(acumulado,m)) : fmtFull(acumulado,m)}</div>
-                        <div className="text-slate-400 text-xs">acumulado {añoActivo}</div>
+                        <div className="text-slate-400 text-xs">{esMensual ? `${MESES_CORTOS[mesActivo-1]} ${añoActivo}` : `acumulado ${añoActivo}`}</div>
                       </div>
                     </div>
                     <div className="mt-3">
                       <ProgressBar value={pct} color={t.color} height={8} />
-                      <div className="text-slate-400 text-xs mt-1">{pct}% de tus ingresos del año</div>
+                      <div className="text-slate-400 text-xs mt-1">{pct}% de tus ingresos {esMensual ? 'del mes' : 'del año'}</div>
                     </div>
                   </div>
                 )})}

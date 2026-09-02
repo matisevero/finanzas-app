@@ -2,10 +2,11 @@
 import { useState, useMemo } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, usePagosTarjeta, useTarjetas, useEtiquetas, useIngresoEtiquetas, useEgresoEtiquetas } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, usePagosTarjeta, useTarjetas, useEtiquetas, useIngresoEtiquetas, useEgresoEtiquetas, useCategoriasCustom } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
-import { MESES_CORTOS } from '@/lib/utils/constants'
+import { MESES_CORTOS, TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { PageHeader, Card, LoadingSpinner } from '@/components/ui'
+import type { CategoriaCustom } from '@/types'
 
 const TT = { background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, color:'#0f172a' }
 
@@ -27,6 +28,28 @@ export default function ComparadorPage() {
   const { data: ingresoEtiquetas, loading: lie } = useIngresoEtiquetas()
   const { data: egresoEtiquetas,  loading: lee } = useEgresoEtiquetas()
 
+  // Ingresos.tipo y Egresos.categoria pueden ser una clave base ("salario", "servicios") O el
+  // id de una categoría propia creada con el CategoriaSelector — sin resolver ese id contra
+  // categorias_custom, se mostraba el UUID crudo en vez del nombre ("16a742ec-ec0d-...").
+  const { data: rawCategoriasIngreso } = useCategoriasCustom('ingresos')
+  const { data: rawCategoriasEgreso }  = useCategoriasCustom('egresos')
+  const allTiposIngreso = useMemo(() => {
+    const base = Object.entries(TIPOS_INGRESO).map(([key, cfg]) => ({ key, label: cfg.label }))
+    const flat: { key: string; label: string }[] = []
+    const traverse = (cats: CategoriaCustom[], prefix = '') => cats.forEach(c => { flat.push({ key: c.id, label: prefix + c.nombre }); if (c.children?.length) traverse(c.children, prefix + '  ') })
+    traverse((rawCategoriasIngreso ?? []) as CategoriaCustom[])
+    return [...base, ...flat]
+  }, [rawCategoriasIngreso])
+  const allTiposEgreso = useMemo(() => {
+    const base = Object.entries(TIPOS_EGRESO).map(([key, cfg]) => ({ key, label: cfg.label }))
+    const flat: { key: string; label: string }[] = []
+    const traverse = (cats: CategoriaCustom[], prefix = '') => cats.forEach(c => { flat.push({ key: c.id, label: prefix + c.nombre }); if (c.children?.length) traverse(c.children, prefix + '  ') })
+    traverse((rawCategoriasEgreso ?? []) as CategoriaCustom[])
+    return [...base, ...flat]
+  }, [rawCategoriasEgreso])
+  const labelIngreso = (tipo: string) => allTiposIngreso.find(t => t.key === tipo)?.label ?? (tipo.charAt(0).toUpperCase() + tipo.slice(1))
+  const labelEgreso   = (cat: string)  => allTiposEgreso.find(t => t.key === cat)?.label ?? (cat.charAt(0).toUpperCase() + cat.slice(1))
+
   const [active, setActive]           = useState<Set<string>>(new Set())
   const [chartType, setChartType]     = useState<'bar'|'line'>('bar')
   const [activeMeses, setActiveMeses] = useState<Set<number>>(new Set([0,1,2,3,4,5,6,7,8,9,10,11]))
@@ -36,14 +59,14 @@ export default function ComparadorPage() {
     // Ingresos: tipos únicos
     const tiposIng = [...new Set((ingresos??[]).map(i => i.tipo))].sort()
     const ingItems = tiposIng.map((tipo, idx) => ({
-      id: `i_${tipo}`, label: tipo.charAt(0).toUpperCase() + tipo.slice(1),
+      id: `i_${tipo}`, label: labelIngreso(tipo),
       color: ING_COLORS[idx % ING_COLORS.length], grupoId: 'ingresos',
     }))
 
     // Egresos: categorías únicas
     const catsEgr = [...new Set((egresos??[]).map(e => e.categoria))].sort()
     const egrItems = catsEgr.map((cat, idx) => ({
-      id: `e_${cat}`, label: cat.charAt(0).toUpperCase() + cat.slice(1),
+      id: `e_${cat}`, label: labelEgreso(cat),
       color: EGR_COLORS[idx % EGR_COLORS.length], grupoId: 'egresos',
     }))
 
@@ -72,7 +95,7 @@ export default function ComparadorPage() {
       { id:'tarjetas', label:'Tarjetas', icon:'▣', items: tarItems },
       { id:'etiquetas',label:'Etiquetas',icon:'◆', items: etiItems },
     ]
-  }, [ingresos, egresos, deudas, tarjetas, etiquetas])
+  }, [ingresos, egresos, deudas, tarjetas, etiquetas, allTiposIngreso, allTiposEgreso])
 
   const allItems = useMemo(() => grupos.flatMap(g => g.items), [grupos])
 
