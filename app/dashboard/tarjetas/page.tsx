@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
-import { useTarjetas, usePagosTarjeta, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas, useCategoriasCustom } from '@/hooks'
+import { useTarjetas, useTarjetaTransacciones, usePersonas, useIngresos, useEtiquetas, useProyectos, useAhorros, useMetas, useCategoriasCustom } from '@/hooks'
 import { createTarjetaTransaccion, updateTarjetaTransaccion, deleteTarjetaTransaccion, createTarjeta, updateTarjeta, eliminarOArchivarTarjeta, createEvento, getTarjetaPeriodoTotales, getTarjetaPeriodoTotalesTodos, upsertTarjetaPeriodoTotal, getTarjetaTransaccionEtiquetas, setEtiquetasDeTarjetaTransaccion, createProyecto, createAhorro, getEtiquetas, getTarjetaTransacciones, aplicarContribucionPorEtiquetas, getTarjetasComercios, upsertTarjetaComercio, type TarjetaComercio } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { MESES, MESES_CORTOS, TIPOS_EGRESO } from '@/lib/utils/constants'
@@ -28,7 +28,6 @@ export default function TarjetasPage() {
   const { data: tarjetas, loading: lt, refetch: refTarjetas } = useTarjetas()
   const { data: personas } = usePersonas()
   const quienOpts = useMemo(() => quienOpciones(personas), [personas])
-  const { data: pagosRaw, loading: lp } = usePagosTarjeta()
   const { data: txnsRaw,  loading: lx, refetch: refTxns } = useTarjetaTransacciones()
   const { data: ingresosRaw } = useIngresos()
   const { data: etiquetas, refetch: refetchEtiquetas } = useEtiquetas()
@@ -417,44 +416,44 @@ export default function TarjetasPage() {
   useEffect(() => { setSeleccionados(new Set()) }, [activaId, añoActivo, mesActivo])
 
   // Todo lo que sigue queda acotado al año activo (y, si esMensual, además al mes activo)
-  const pagos = useMemo(() =>
-    (pagosRaw ?? []).filter(p => p.año === añoActivo && (!esMensual || p.mes === mesActivo))
-  , [pagosRaw, añoActivo, esMensual, mesActivo])
+  // Consumo real por mes (lo que cargaste), no pagos registrados — un mes puede tener gastos
+  // cargados sin que hayas usado "Registrar pago" todavía, y acá igual tiene que aparecer.
+  const txnsDelAño = useMemo(() =>
+    (txnsRaw ?? []).filter(t => t.periodo_año === añoActivo)
+  , [txnsRaw, añoActivo])
 
   // El período de una transacción de tarjeta es el que elegiste al cargarla (periodo_año/mes),
   // NO la fecha del ítem — un resumen de agosto trae gastos de julio y agosto, lo que importa
   // acá es en qué carga entró, no cuándo pasó cada compra puntual.
   const txns = useMemo(() =>
-    (txnsRaw ?? []).filter(t => t.periodo_año === añoActivo && (!esMensual || t.periodo_mes === mesActivo))
-  , [txnsRaw, añoActivo, esMensual, mesActivo])
+    txnsDelAño.filter(t => !esMensual || t.periodo_mes === mesActivo)
+  , [txnsDelAño, esMensual, mesActivo])
 
   const MESES_DISP = esMensual ? [MESES_CORTOS[mesActivo-1]] : MESES_CORTOS
 
-  // Clave compuesta tarjeta+moneda — así una tarjeta con pagos en ARS y USD no los mezcla en
-  // un solo número sin sentido, y al elegir el chip de una moneda específica se ve solo esa.
-  const pagosPorTC = useMemo(() => {
+  const consumoPorTC = useMemo(() => {
     const map: Record<string, Record<number,number>> = {}
-    ;(pagos??[]).forEach(p => {
-      const key = `${p.tarjeta_id}|${p.moneda}`
+    ;(txnsDelAño??[]).forEach(t => {
+      const key = `${t.tarjeta_id}|${t.moneda}`
       if (!map[key]) map[key]={}
-      map[key][p.mes] = (map[key][p.mes] ?? 0) + p.monto
+      map[key][t.periodo_mes] = (map[key][t.periodo_mes] ?? 0) + t.monto
     })
     return map
-  }, [pagos])
+  }, [txnsDelAño])
 
-  const pagosDe = (id: string, mes: number): number =>
-    Object.keys(pagosPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (pagosPorTC[k][mes] ?? 0), 0)
+  const consumoDe = (id: string, mes: number): number =>
+    Object.keys(consumoPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (consumoPorTC[k][mes] ?? 0), 0)
 
   const chartData = useMemo(() => MESES_DISP.map((month) => {
     const mes = MESES_CORTOS.indexOf(month) + 1
     const point: Record<string,number|string> = { month }
     if (activaId==='todas') {
-      ;(tarjetas??[]).forEach(t => { point[t.id] = pagosDe(t.id, mes) })
+      ;(tarjetas??[]).forEach(t => { point[t.id] = consumoDe(t.id, mes) })
     } else {
-      point['pago'] = pagosDe(activaId, mes)
+      point['pago'] = consumoDe(activaId, mes)
     }
     return point
-  }), [tarjetas, pagosPorTC, activaId, MESES_DISP])
+  }), [tarjetas, consumoPorTC, activaId, MESES_DISP])
 
   const filteredTxns = useMemo(() => (txns??[])
     .filter(t => activaId === 'todas' || t.tarjeta_id === activaId)
@@ -465,9 +464,9 @@ export default function TarjetasPage() {
 
   const totalPorTC = useMemo(() => {
     const map: Record<string,number> = {}
-    ;(pagos??[]).forEach(p => { map[p.tarjeta_id] = (map[p.tarjeta_id]||0)+p.monto })
+    ;(txns??[]).forEach(t => { map[t.tarjeta_id] = (map[t.tarjeta_id]||0)+t.monto })
     return map
-  }, [pagos])
+  }, [txns])
 
   const compData = useMemo(() => (tarjetas??[]).map((t,i)=>({
     name: t.nombre+' '+t.banco.split(' · ').slice(-1)[0],
@@ -522,14 +521,14 @@ export default function TarjetasPage() {
     setExportadoIds(prev => new Set(prev).add(`${t.id}|${moneda}`))
   }
 
-  if ((lt&&!tarjetas)||(lp&&!pagosRaw)||(lx&&!txnsRaw)) return <LoadingSpinner />
+  if ((lt&&!tarjetas)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId)
   const monedaActiva: string | null = null
 
   const kpiPagos   = activaId==='todas'
-    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+pagosDe(t.id, i+1),0))
-    : MESES_DISP.map((_,i)=>pagosDe(activaId, i+1))
+    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+consumoDe(t.id, i+1),0))
+    : MESES_DISP.map((_,i)=>consumoDe(activaId, i+1))
   const kpiTotal   = kpiPagos.reduce((a,b)=>a+b,0)
   const kpiUlt     = kpiPagos[kpiPagos.length-1]
   const kpiPen     = kpiPagos[kpiPagos.length-2]
@@ -546,19 +545,20 @@ export default function TarjetasPage() {
   // Mes anterior, para la comparativa — mismo límite ya aceptado en otras pantallas: en enero no
   // hay diciembre del año en curso dentro de este mismo fetch (año-acotado), así que ese mes no
   // muestra comparativa.
+  const tarjetaIdActiva  = activaId === 'todas' ? null : activaId
   const mesAnteriorNum = mesActivo === 1 ? null : mesActivo - 1
-  const pagosMesAnt = mesAnteriorNum ? (pagosRaw ?? []).filter(p => p.año === añoActivo && p.mes === mesAnteriorNum && p.moneda === monedaParaPct && (tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva)).reduce((s,p)=>s+p.monto,0) : 0
+  const consumoMesAnt = mesAnteriorNum ? txnsDelAño.filter(t => t.periodo_mes === mesAnteriorNum && t.moneda === monedaParaPct && (tarjetaIdActiva === null || t.tarjeta_id === tarjetaIdActiva)).reduce((s,t)=>s+t.monto,0) : 0
   const ingresosMesAnt = mesAnteriorNum ? (ingresosRaw ?? []).filter(i => i.año === añoActivo && i.mes === mesAnteriorNum && i.moneda === monedaParaPct).reduce((s,i)=>s+i.monto,0) : 0
-  const pctMesAnt = ingresosMesAnt > 0 ? Math.round(pagosMesAnt / ingresosMesAnt * 100) : null
+  const pctMesAnt = ingresosMesAnt > 0 ? Math.round(consumoMesAnt / ingresosMesAnt * 100) : null
   const trendPct = (esMensual && mesAnteriorNum && pctSobreIngresos !== null && pctMesAnt !== null && pctMesAnt > 0)
     ? Math.round(((pctSobreIngresos - pctMesAnt) / pctMesAnt) * 100) : null
 
-  // Trend real de "Total pagado" — mes activo vs mes anterior, o año activo vs año anterior según la vista.
-  const tarjetaIdActiva  = activaId === 'todas' ? null : activaId
-  const pagosParaTrend   = (pagosRaw ?? []).filter(p =>
-    (tarjetaIdActiva === null || p.tarjeta_id === tarjetaIdActiva) &&
-    (monedaActiva === null || p.moneda === monedaActiva))
-  const trendTotalPagado = calcularTendencia(pagosParaTrend, vistaTipo, mesActivo, añoActivo)
+  // Trend real de "Total pagado" (en realidad "Total consumido") — mes activo vs mes anterior,
+  // o año activo vs año anterior según la vista.
+  const consumoParaTrend = (txnsRaw ?? [])
+    .filter(t => (tarjetaIdActiva === null || t.tarjeta_id === tarjetaIdActiva) && (monedaActiva === null || t.moneda === monedaActiva))
+    .map(t => ({ mes: t.periodo_mes, año: t.periodo_año, monto: t.monto }))
+  const trendTotalPagado = calcularTendencia(consumoParaTrend, vistaTipo, mesActivo, añoActivo)
 
   return (
     <div>
@@ -790,7 +790,7 @@ export default function TarjetasPage() {
           {/* Evolución de pagos */}
           <Card>
             <CardTitle>
-              Evolución de pagos
+              Evolución de consumo
               <span className="text-slate-400 text-xs font-normal ml-2">{activaId==='todas'?'Todas las tarjetas':tcActiva?.nombre}</span>
             </CardTitle>
             <ResponsiveContainer width="100%" height={180}>
@@ -811,8 +811,8 @@ export default function TarjetasPage() {
           <Card>
             <div className="flex flex-col gap-3">
               {[
-                {l:`Total pagado ${periodoLabel}`, v:fmt(kpiTotal,(monedaActiva ?? m) as Moneda), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
-                {l:`Último pago (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,(monedaActiva ?? m) as Moneda), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
+                {l:`Total consumido ${periodoLabel}`, v:fmt(kpiTotal,(monedaActiva ?? m) as Moneda), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
+                {l:`Último mes (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,(monedaActiva ?? m) as Moneda), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
                 {l:'Mes más caro', v:fmt(kpiMayor,(monedaActiva ?? m) as Moneda), s:kpiMayorMes},
                 {l:'% sobre ingresos', v:pctSobreIngresos!==null?`${pctSobreIngresos}%`:'—', s:trendPct!==null?(trendPct>=0?'▲':'▼')+' '+Math.abs(trendPct)+'% vs mes anterior':(pctSobreIngresos===null?`Sin ingresos en ${monedaParaPct} este período`:''), c:pctSobreIngresos!==null?(pctSobreIngresos>40?'#F54927':pctSobreIngresos>25?'#E8A020':'#40B046'):undefined},
               ].map(k=>(
