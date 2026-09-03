@@ -16,6 +16,7 @@ import type {
   Persona, PersonaInsert,
   CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
   MovimientoUnificado, TarjetaTransaccionVista,
+  CashflowSimItem, CashflowSimItemInsert, CashflowResumenMensual,
 } from '@/types'
 
 const sb = () => createClient()
@@ -591,6 +592,74 @@ export async function upsertSaldoInicial(año: number, mes: number, monto: numbe
   const { error } = await sb().from('saldo_inicial')
     .upsert({ user_id: userId, año, mes, monto, moneda }, { onConflict: 'user_id,año,mes' })
   if (error) throw error
+}
+
+// ─── SALDO REAL AUTOMÁTICO (Cash Flow) ────────────────────────────────────────
+// Reemplaza el uso de `saldo_inicial` (manual) para el Cash Flow: se deriva 100%
+// de lo que ya está cargado en Ingresos/Egresos, sin que haya que tocar nada a
+// mano. Suma todos los Ingresos y resta todos los Egresos de esa moneda con
+// fecha ANTERIOR a `antesDe` (normalmente el día 1 del mes que estás mirando),
+// así te da el saldo real que tenías al arrancar ese mes — funciona igual para
+// meses pasados, el actual, o futuros.
+export async function getSaldoRealHistorico(moneda: string, antesDe: string): Promise<number> {
+  const userId = await uid()
+  const [{ data: ing, error: e1 }, { data: egr, error: e2 }] = await Promise.all([
+    sb().from('ingresos').select('monto').eq('user_id', userId).eq('moneda', moneda).lt('fecha', antesDe),
+    sb().from('egresos').select('monto').eq('user_id', userId).eq('moneda', moneda).lt('fecha', antesDe),
+  ])
+  if (e1) throw e1
+  if (e2) throw e2
+  const totalIngresos = (ing ?? []).reduce((s, i) => s + i.monto, 0)
+  const totalEgresos  = (egr ?? []).reduce((s, e) => s + e.monto, 0)
+  return totalIngresos - totalEgresos
+}
+
+// ─── CASH FLOW — SIMULADOR (items "supuestos") ────────────────────────────────
+// Acotado a (año, mes) — no se precargan los del mes anterior.
+export async function getCashflowSimItems(año: number, mes: number): Promise<CashflowSimItem[]> {
+  const { data, error } = await sb().from('cashflow_sim_items')
+    .select('*').eq('año', año).eq('mes', mes).order('created_at')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createCashflowSimItem(form: CashflowSimItemInsert): Promise<CashflowSimItem> {
+  const userId = await uid()
+  const { data, error } = await sb().from('cashflow_sim_items')
+    .insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCashflowSimItem(id: string, updates: Partial<CashflowSimItemInsert>): Promise<void> {
+  const { error } = await sb().from('cashflow_sim_items').update(updates).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteCashflowSimItem(id: string): Promise<void> {
+  const { error } = await sb().from('cashflow_sim_items').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── CASH FLOW — RESUMEN MENSUAL (histórico) ──────────────────────────────────
+// Se pisa (upsert) cada vez que cambia algo relevante en la pantalla — así, aunque
+// los items del simulador de ese mes se limpien al pasar al siguiente, el resumen
+// de "cuánto ibas a poder ahorrar" queda guardado para siempre.
+export async function upsertCashflowResumen(r: {
+  año: number; mes: number; moneda: string
+  saldo_inicio_mes: number; saldo_fin_proyectado: number
+  gasto_diario_disponible: number; ahorro_estimado: number
+}): Promise<void> {
+  const userId = await uid()
+  const { error } = await sb().from('cashflow_resumen_mensual')
+    .upsert({ ...r, user_id: userId, updated_at: new Date().toISOString() }, { onConflict: 'user_id,año,mes,moneda' })
+  if (error) throw error
+}
+
+export async function getCashflowResumen(año: number, mes: number, moneda: string): Promise<CashflowResumenMensual | null> {
+  const { data } = await sb().from('cashflow_resumen_mensual')
+    .select('*').eq('año', año).eq('mes', mes).eq('moneda', moneda).maybeSingle()
+  return data
 }
 
 // ─── METAS ───────────────────────────────────────────────────────────────────

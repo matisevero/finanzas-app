@@ -102,6 +102,52 @@ export function proyectarCashFlow(
   })
 }
 
+// ─── Cash flow diario — versión con desglose real/pendiente ──────────────────
+// Usada por la página de Cash Flow. A diferencia de `proyectarCashFlow` (que
+// sigue usando el Dashboard sin tocar), acá el saldo de arranque es el saldo real
+// automático (histórico de Ingresos−Egresos) y cada día distingue movimientos
+// "real" (ya cargados en Ingresos/Egresos) de "pendiente" (eventos de calendario
+// con vencimiento conocido pero sin pagar todavía — pasale solo los `!pagado`,
+// los pagados ya están reflejados en los Egresos/Ingresos reales que generaron).
+export interface MovimientoDia {
+  id: string
+  descripcion: string
+  monto: number
+  tipo: 'ingreso' | 'egreso'
+  origen: 'real' | 'pendiente'
+}
+export interface DiaFlowDetallado {
+  dia: number; entradas: number; salidas: number; neto: number; saldo: number
+  movimientos: MovimientoDia[]
+}
+
+export function proyectarCashFlowMes(
+  saldoInicioMes: number,
+  eventosPendientes: EventoCalendario[],
+  ingresosDelMes: Ingreso[],
+  egresosDelMes: Egreso[],
+  diasEnMes: number
+): DiaFlowDetallado[] {
+  let acum = saldoInicioMes
+  return Array.from({ length: diasEnMes }, (_, i) => {
+    const dia = i + 1
+    const movimientos: MovimientoDia[] = []
+    ingresosDelMes.filter(ing => diaDeFecha(ing.fecha) === dia).forEach(ing =>
+      movimientos.push({ id: ing.id, descripcion: ing.descripcion, monto: ing.monto, tipo: 'ingreso', origen: 'real' }))
+    egresosDelMes.filter(eg => diaDeFecha(eg.fecha) === dia).forEach(eg =>
+      movimientos.push({ id: eg.id, descripcion: eg.descripcion, monto: eg.monto, tipo: 'egreso', origen: 'real' }))
+    eventosPendientes.filter(ev => ev.dia === dia).forEach(ev =>
+      movimientos.push({
+        id: ev.id, descripcion: ev.descripcion, monto: ev.monto ?? 0,
+        tipo: ev.tipo === 'ingreso' ? 'ingreso' : 'egreso', origen: 'pendiente',
+      }))
+    const entradas = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
+    const salidas  = movimientos.filter(m => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0)
+    acum += entradas - salidas
+    return { dia, entradas, salidas, neto: entradas - salidas, saldo: Math.round(acum), movimientos }
+  })
+}
+
 // ─── Meta de ahorro ───────────────────────────────────────────────────────────
 export function calcularMeta(objetivo: number, actual: number, fechaLimite: string) {
   const hoy    = new Date()

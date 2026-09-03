@@ -27,6 +27,10 @@ export function useYear() {
 
 export function useIngresos()    { const y = useAppStore(s => s.añoActivo); return useAsync(() => Q.getIngresosByAño(y), [y]) }
 export function useEgresos()     { const y = useAppStore(s => s.añoActivo); return useAsync(() => Q.getEgresosByAño(y), [y]) }
+// Variantes con año explícito — para pantallas (como Cash Flow) que navegan su
+// propio año, independiente del año activo global del resto del dashboard.
+export function useIngresosByAño(año: number) { return useAsync(() => Q.getIngresosByAño(año), [año]) }
+export function useEgresosByAño(año: number)  { return useAsync(() => Q.getEgresosByAño(año), [año]) }
 export function useDeudas()      { return useAsync(() => Q.getDeudas(), []) }
 export function useTarjetas()    { return useAsync(() => Q.getTarjetas(), []) }
 export function useMetas()       { return useAsync(() => Q.getMetas(), []) }
@@ -59,6 +63,15 @@ export function useEventosAño(año: number) {
 }
 export function useSaldoInicial(año: number, mes: number) {
   return useAsync(() => Q.getSaldoInicial(año, mes), [año, mes])
+}
+export function useSaldoRealHistorico(moneda: string, antesDe: string) {
+  return useAsync(() => Q.getSaldoRealHistorico(moneda, antesDe), [moneda, antesDe])
+}
+export function useCashflowSimItems(año: number, mes: number) {
+  return useAsync(() => Q.getCashflowSimItems(año, mes), [año, mes])
+}
+export function useCashflowResumen(año: number, mes: number, moneda: string) {
+  return useAsync(() => Q.getCashflowResumen(año, mes, moneda), [año, mes, moneda])
 }
 export function useTarjetaTransacciones(tarjetaId?: string) {
   return useAsync(() => Q.getTarjetaTransacciones(tarjetaId), [tarjetaId])

@@ -384,6 +384,40 @@ export interface SaldoInicial {
   created_at: string
 }
 
+// ─── Cash Flow — simulador (items "supuestos" del mes) ───────────────────────
+// Viven acotados a un (año, mes): el simulador arranca limpio al cambiar de mes,
+// no se arrastran de un mes a otro. `checked` = el usuario confirmó que el supuesto
+// se cumplió tal cual lo planeó (auto-validación manual, no matching automático).
+export interface CashflowSimItem {
+  id: string
+  user_id: string
+  año: number
+  mes: number
+  dia: number | null
+  descripcion: string
+  monto: number
+  moneda: Moneda
+  tipo: 'ingreso' | 'egreso'
+  checked: boolean
+  created_at: string
+}
+export type CashflowSimItemInsert = Omit<CashflowSimItem, 'id' | 'user_id' | 'created_at'>
+
+// ─── Cash Flow — resumen mensual (histórico, sobrevive aunque se limpien los
+// items del simulador de ese mes al pasar al siguiente) ───────────────────────
+export interface CashflowResumenMensual {
+  id: string
+  user_id: string
+  año: number
+  mes: number
+  moneda: Moneda
+  saldo_inicio_mes: number
+  saldo_fin_proyectado: number
+  gasto_diario_disponible: number
+  ahorro_estimado: number
+  updated_at: string
+}
+
 // ─── App state ───────────────────────────────────────────────────────────────
 export interface AppConfig {
   añoActivo: number
