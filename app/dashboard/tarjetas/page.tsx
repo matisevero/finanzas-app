@@ -12,6 +12,7 @@ import { quienOpciones, colorQuien } from '@/lib/utils/quien'
 import { PageHeader, Card, CardTitle, Modal, Table, Th, Td, LoadingSpinner, EmptyState, FieldLabel, ProgressBar, RowMenu } from '@/components/ui'
 import { EtiquetaChips, EtiquetaPickerModal } from '@/components/ui/Etiquetas'
 import CategoriaSelector from '@/components/ui/CategoriaSelector'
+import MultiDropdown from '@/components/ui/MultiDropdown'
 import FechaInput from '@/components/ui/FechaInput'
 import MontoInput from '@/components/ui/MontoInput'
 import type { Moneda, Quien, TarjetaTransaccion, TarjetaPeriodoTotal, CategoriaCustom } from '@/types'
@@ -115,7 +116,7 @@ export default function TarjetasPage() {
   const vencimientoDeclarado = (tarjetaId: string, año: number, mes: number): string | null =>
     periodoTotalesTodos.find(p => p.tarjeta_id === tarjetaId && p.año === año && p.mes === mes && p.fecha_vencimiento)?.fecha_vencimiento ?? null
 
-  const [filterCat, setFilterCat] = useState('Todos')
+  const [filterCats, setFilterCats] = useState<string[]>([])
   const [search, setSearch]       = useState('')
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [eliminandoLote, setEliminandoLote] = useState(false)
@@ -175,10 +176,25 @@ export default function TarjetasPage() {
         cuota_total: txnForm.cuota_total ? parseInt(txnForm.cuota_total) : undefined,
       })
       // Si le pusiste un nombre distinto al texto crudo, lo recordamos — la próxima vez que
-      // aparezca ese mismo texto crudo (pegar bloque / ítem por ítem) se sugiere solo.
+      // aparezca ese mismo texto crudo (pegar bloque / ítem por ítem) se sugiere solo. Y de
+      // paso, revisamos si ya hay OTROS movimientos cargados con ese mismo texto crudo que
+      // todavía no tengan este nombre/categoría — para no tener que ir uno por uno a mano.
       if (txnForm.descripcion_raw && txnForm.descripcion.trim() !== txnForm.descripcion_raw.trim()) {
         await upsertTarjetaComercio({ descripcion_raw: txnForm.descripcion_raw, descripcion_limpia: txnForm.descripcion, categoria: txnForm.categoria, tarjeta_id: null, ultimos_4: null, red: null, banco: null, quien: null })
         refetchComercios()
+
+        const rawLower = txnForm.descripcion_raw.trim().toLowerCase()
+        const todas = await getTarjetaTransacciones()
+        const parecidos = todas.filter(t =>
+          t.id !== txnEditId && t.descripcion_raw && t.descripcion_raw.trim().toLowerCase() === rawLower &&
+          (t.descripcion.trim() !== txnForm.descripcion.trim() || t.categoria !== txnForm.categoria)
+        )
+        if (parecidos.length > 0) {
+          const aplicar = confirm(`Encontré ${parecidos.length} movimiento${parecidos.length===1?'':'s'} más cargado${parecidos.length===1?'':'s'} con el mismo texto original ("${txnForm.descripcion_raw}"). ¿Le pongo el mismo nombre ("${txnForm.descripcion}") y categoría a todos?`)
+          if (aplicar) {
+            for (const t of parecidos) await updateTarjetaTransaccion(t.id, { descripcion: txnForm.descripcion, categoria: txnForm.categoria })
+          }
+        }
       }
       setShowTxnModal(false); setTxnEditId(null); refTxns()
     } catch (e) { console.error(e) } finally { setSavingTxn(false) }
@@ -441,32 +457,46 @@ export default function TarjetasPage() {
     return map
   }, [txnsDelAño])
 
-  const consumoDe = (id: string, mes: number): number =>
-    Object.keys(consumoPorTC).filter(k => k.startsWith(id+'|')).reduce((s,k) => s + (consumoPorTC[k][mes] ?? 0), 0)
+  const consumoDe = (id: string, mes: number, moneda: string): number =>
+    consumoPorTC[`${id}|${moneda}`]?.[mes] ?? 0
+
+  // La columna de estadísticas (Evolución/KPIs/%) suma en UNA moneda a la vez — nunca ARS+USD
+  // juntos, sería un número sin sentido. Si la tarjeta (o "Todas") tiene más de una moneda
+  // cargada, se elige cuál mirar con el selector; si solo hay una, no hace falta elegir nada.
+  const [monedaKPISel, setMonedaKPISel] = useState<Moneda | null>(null)
+  const monedasKPIDisponibles = useMemo(() => {
+    const prefijo = activaId === 'todas' ? '' : activaId + '|'
+    return Array.from(new Set(Object.keys(consumoPorTC).filter(k => k.startsWith(prefijo)).map(k => k.split('|')[1]))) as Moneda[]
+  }, [consumoPorTC, activaId])
+  const monedaActiva: Moneda | null = monedaKPISel && monedasKPIDisponibles.includes(monedaKPISel) ? monedaKPISel : (monedasKPIDisponibles[0] ?? null)
 
   const chartData = useMemo(() => MESES_DISP.map((month) => {
     const mes = MESES_CORTOS.indexOf(month) + 1
     const point: Record<string,number|string> = { month }
+    if (!monedaActiva) return point
     if (activaId==='todas') {
-      ;(tarjetas??[]).forEach(t => { point[t.id] = consumoDe(t.id, mes) })
+      ;(tarjetas??[]).forEach(t => { point[t.id] = consumoDe(t.id, mes, monedaActiva) })
     } else {
-      point['pago'] = consumoDe(activaId, mes)
+      point['pago'] = consumoDe(activaId, mes, monedaActiva)
     }
     return point
-  }), [tarjetas, consumoPorTC, activaId, MESES_DISP])
+  }), [tarjetas, consumoPorTC, activaId, MESES_DISP, monedaActiva])
 
   const filteredTxns = useMemo(() => (txns??[])
     .filter(t => activaId === 'todas' || t.tarjeta_id === activaId)
-    .filter(t => filterCat==='Todos' || t.categoria===filterCat)
+    .filter(t => filterCats.length===0 || filterCats.includes(t.categoria))
     .filter(t => !search || t.descripcion.toLowerCase().includes(search.toLowerCase()))
     .sort((a,b)=>b.fecha.localeCompare(a.fecha))
-  , [txns, activaId, filterCat, search])
+  , [txns, activaId, filterCats, search])
 
+  // Mismo cuidado de moneda que en consumoPorTC — comparar tarjetas entre sí solo tiene
+  // sentido dentro de una misma moneda (se usa la moneda principal como default razonable
+  // para esta comparación cruzada, ya que acá se listan TODAS las tarjetas juntas).
   const totalPorTC = useMemo(() => {
     const map: Record<string,number> = {}
-    ;(txns??[]).forEach(t => { map[t.tarjeta_id] = (map[t.tarjeta_id]||0)+t.monto })
+    ;(txns??[]).filter(t => t.moneda === m).forEach(t => { map[t.tarjeta_id] = (map[t.tarjeta_id]||0)+t.monto })
     return map
-  }, [txns])
+  }, [txns, m])
 
   const compData = useMemo(() => (tarjetas??[]).map((t,i)=>({
     name: t.nombre+' '+t.banco.split(' · ').slice(-1)[0],
@@ -474,7 +504,6 @@ export default function TarjetasPage() {
     color: CHART_COLORS[i%CHART_COLORS.length],
   })).filter(d=>d.value>0), [tarjetas, totalPorTC])
 
-  const cats = [{ key: 'Todos', label: 'Todos' }, ...allTiposCategoria]
 
   // Una ficha por tarjeta (no una por moneda) — cada una lleva la lista de {moneda, total} del
   // período activo para mostrarse en líneas, no como tiles separados.
@@ -524,11 +553,10 @@ export default function TarjetasPage() {
   if ((lt&&!tarjetas)||(lx&&!txnsRaw)) return <LoadingSpinner />
 
   const tcActiva = activaId==='todas' ? null : (tarjetas??[]).find(t=>t.id===activaId)
-  const monedaActiva: string | null = null
 
-  const kpiPagos   = activaId==='todas'
-    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+consumoDe(t.id, i+1),0))
-    : MESES_DISP.map((_,i)=>consumoDe(activaId, i+1))
+  const kpiPagos   = !monedaActiva ? MESES_DISP.map(()=>0) : activaId==='todas'
+    ? MESES_DISP.map((_,i)=>(tarjetas??[]).reduce((s,t)=>s+consumoDe(t.id, i+1, monedaActiva),0))
+    : MESES_DISP.map((_,i)=>consumoDe(activaId, i+1, monedaActiva))
   const kpiTotal   = kpiPagos.reduce((a,b)=>a+b,0)
   const kpiUlt     = kpiPagos[kpiPagos.length-1]
   const kpiPen     = kpiPagos[kpiPagos.length-2]
@@ -536,12 +564,12 @@ export default function TarjetasPage() {
   const kpiMayor   = Math.max(...kpiPagos)
   const kpiMayorMes = MESES_DISP[kpiPagos.indexOf(kpiMayor)]
 
-  // % sobre ingresos (mismo criterio que el Dashboard) — comparado en la misma moneda que se
-  // está mostrando (la del chip elegido, o la principal en "Todas"), con el mismo alcance
-  // (mes activo o año activo según la vista).
-  const monedaParaPct = ((monedaActiva ?? m) as Moneda)
+  // % sobre ingresos — comparado en la misma moneda que se está mostrando en el selector de
+  // arriba (nunca "la principal por defecto" si la tarjeta es de otra moneda), con el mismo
+  // alcance (mes activo o año activo según la vista).
+  const monedaParaPct = (monedaActiva ?? m) as Moneda
   const ingresosPeriodo = (ingresosRaw ?? []).filter(i => i.moneda === monedaParaPct && (!esMensual || i.mes === mesActivo)).reduce((s,i)=>s+i.monto,0)
-  const pctSobreIngresos = ingresosPeriodo > 0 ? Math.round(kpiTotal / ingresosPeriodo * 100) : null
+  const pctSobreIngresos = (monedaActiva && ingresosPeriodo > 0) ? Math.round(kpiTotal / ingresosPeriodo * 100) : null
   // Mes anterior, para la comparativa — mismo límite ya aceptado en otras pantallas: en enero no
   // hay diciembre del año en curso dentro de este mismo fetch (año-acotado), así que ese mes no
   // muestra comparativa.
@@ -633,13 +661,16 @@ export default function TarjetasPage() {
               )}
             </div>
             <div className="flex gap-2 flex-wrap mb-4 items-center">
-              <div className="relative flex-1 min-w-[160px]">
+              <div className="relative flex-1 min-w-[140px] max-w-[220px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
                 <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="input-field pl-8 py-1.5 text-xs" />
               </div>
-              <div className="flex gap-1 flex-wrap">
-                {cats.map(c=><button key={c.key} onClick={()=>setFilterCat(c.key)} className={`chip text-xs py-1 px-2.5 ${filterCat===c.key?'chip-on':''}`}>{c.label}</button>)}
-              </div>
+              <MultiDropdown label="Categoría" options={allTiposCategoria.map(t => ({ key: t.key, label: t.label }))} selected={filterCats} onChange={setFilterCats} />
+              {filterCats.length > 0 && (
+                <button onClick={() => setFilterCats([])} className="text-xs text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer underline">
+                  Limpiar
+                </button>
+              )}
             </div>
 
             {filteredTxns.length===0 ? (
@@ -789,10 +820,20 @@ export default function TarjetasPage() {
 
           {/* Evolución de pagos */}
           <Card>
-            <CardTitle>
-              Evolución de consumo
-              <span className="text-slate-400 text-xs font-normal ml-2">{activaId==='todas'?'Todas las tarjetas':tcActiva?.nombre}</span>
-            </CardTitle>
+            <div className="flex items-center justify-between mb-1">
+              <CardTitle>
+                Evolución de consumo
+                <span className="text-slate-400 text-xs font-normal ml-2">{activaId==='todas'?'Todas las tarjetas':tcActiva?.nombre}</span>
+              </CardTitle>
+              {monedasKPIDisponibles.length > 1 && (
+                <div className="flex gap-1 flex-shrink-0">
+                  {monedasKPIDisponibles.map(mon => (
+                    <button key={mon} onClick={()=>setMonedaKPISel(mon)}
+                      className={`chip text-xs py-0.5 px-2 ${monedaActiva===mon?'chip-on':''}`}>{mon}</button>
+                  ))}
+                </div>
+              )}
+            </div>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={chartData} barCategoryGap="30%" barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -814,7 +855,7 @@ export default function TarjetasPage() {
                 {l:`Total consumido ${periodoLabel}`, v:fmt(kpiTotal,(monedaActiva ?? m) as Moneda), s:trendTotalPagado.trend!==undefined?(trendTotalPagado.trend>=0?'▲':'▼')+' '+Math.abs(trendTotalPagado.trend)+'% '+trendTotalPagado.label:(activaId==='todas'?'Todas las tarjetas':tcActiva?.banco||'')},
                 {l:`Último mes (${MESES_DISP[MESES_DISP.length-1]})`, v:fmt(kpiUlt,(monedaActiva ?? m) as Moneda), s:kpiTrend!==null?(kpiTrend>=0?'▲':'▼')+' '+Math.abs(kpiTrend)+'% vs anterior':'', c:kpiTrend!==null&&kpiTrend>=0?'#F54927':'#40B046'},
                 {l:'Mes más caro', v:fmt(kpiMayor,(monedaActiva ?? m) as Moneda), s:kpiMayorMes},
-                {l:'% sobre ingresos', v:pctSobreIngresos!==null?`${pctSobreIngresos}%`:'—', s:trendPct!==null?(trendPct>=0?'▲':'▼')+' '+Math.abs(trendPct)+'% vs mes anterior':(pctSobreIngresos===null?`Sin ingresos en ${monedaParaPct} este período`:''), c:pctSobreIngresos!==null?(pctSobreIngresos>40?'#F54927':pctSobreIngresos>25?'#E8A020':'#40B046'):undefined},
+                {l:`% sobre ingresos en ${monedaParaPct}`, v:pctSobreIngresos!==null?`${pctSobreIngresos}%`:'—', s:trendPct!==null?(trendPct>=0?'▲':'▼')+' '+Math.abs(trendPct)+'% vs mes anterior':(pctSobreIngresos===null?`Sin ingresos en ${monedaParaPct} este período`:''), c:pctSobreIngresos!==null?(pctSobreIngresos>40?'#F54927':pctSobreIngresos>25?'#E8A020':'#40B046'):undefined},
               ].map(k=>(
                 <div key={k.l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                   <div className="label mb-1">{k.l}</div>
