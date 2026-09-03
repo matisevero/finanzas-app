@@ -38,10 +38,57 @@ const weekdayShort = (año: number, mes: number, dia: number) => {
   return DAYS_SHORT[dow - 1]
 }
 
+let tmpIdSeq = 0
+const tmpId = () => `tmp-${Date.now()}-${tmpIdSeq++}`
+
+// ── Chip compacto — solo el monto, descripción completa en el title (hover) ──
+function Chip({
+  monto, tipo, origen, descripcion, checked, onToggle, onMenu, draggable, onDragStart,
+}: {
+  monto: number
+  tipo: 'ingreso' | 'egreso'
+  origen: 'real' | 'pendiente' | 'supuesto'
+  descripcion: string
+  checked?: boolean
+  onToggle?: () => void
+  onMenu?: () => void
+  draggable?: boolean
+  onDragStart?: () => void
+}) {
+  const styles = {
+    real:      { bg: '#E6F1FB', border: '#85B7EB', text: '#0C447C' },
+    pendiente: { bg: '#FAEEDA', border: '#EF9F27', text: '#633806' },
+    supuesto:  { bg: '#fff',    border: checked ? '#94A3B8' : '#A9A29C', text: '#475569' },
+  }[origen]
+  const isDashed = origen === 'supuesto'
+  const title = `${descripcion} · ${tipo === 'ingreso' ? '+' : '-'}${fmt(monto, 'ARS')}`
+
+  return (
+    <div
+      title={title}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none ${draggable ? 'cursor-grab' : ''} ${checked ? 'opacity-50 line-through' : ''}`}
+      style={{ background: styles.bg, border: `1px ${isDashed ? 'dashed' : 'solid'} ${styles.border}`, color: styles.text }}
+    >
+      {origen === 'supuesto' && (
+        <input type="checkbox" checked={!!checked} onChange={onToggle} onClick={e => e.stopPropagation()}
+          className="w-[9px] h-[9px] cursor-pointer flex-shrink-0" />
+      )}
+      <span>{tipo === 'ingreso' ? '+' : '-'}{fmtM(monto)}</span>
+      {origen === 'supuesto' && onMenu && (
+        <button onClick={e => { e.stopPropagation(); onMenu() }}
+          className="ml-0.5 border-none bg-transparent cursor-pointer text-[10px] leading-none px-0.5"
+          style={{ color: styles.text }} aria-label="Más opciones">⋮</button>
+      )}
+    </div>
+  )
+}
+
 // ── Calendario del simulador — semana / quincena / mes ────────────────────────
 function CalendarioCashflow({
   flowData, simItems, mesBase, añoBase, diasEnMes,
-  onAddSupuesto, onToggleChecked, onDeleteSupuesto, onMoveSupuesto,
+  onAddSupuesto, onToggleChecked, onDeleteSupuesto, onMoveSupuesto, onDuplicateSupuesto,
 }: {
   flowData: DiaFlowDetallado[]
   simItems: CashflowSimItem[]
@@ -52,6 +99,7 @@ function CalendarioCashflow({
   onToggleChecked: (id: string, checked: boolean) => void
   onDeleteSupuesto: (id: string) => void
   onMoveSupuesto: (id: string, dia: number|null) => void
+  onDuplicateSupuesto: (item: CashflowSimItem) => void
 }) {
   const [vista, setVista]     = useState<Vista>('semana')
   const [offset, setOffset]   = useState(0)
@@ -60,9 +108,28 @@ function CalendarioCashflow({
   const [newMonto, setNewMonto]   = useState('')
   const [newTipo, setNewTipo]     = useState<'ingreso'|'egreso'>('egreso')
   const [newDia, setNewDia]       = useState('')
+  const [menuAbierto, setMenuAbierto] = useState<string | null>(null)
   const dragId = useRef<string|null>(null)
 
   useEffect(() => { setOffset(0) }, [vista, mesBase, añoBase])
+  useEffect(() => {
+    if (!menuAbierto) return
+    const cerrar = () => setMenuAbierto(null)
+    document.addEventListener('click', cerrar)
+    return () => document.removeEventListener('click', cerrar)
+  }, [menuAbierto])
+
+  const esMesActual = añoBase === HOY.getFullYear() && mesBase === HOY.getMonth()
+
+  const offsetHoy = useMemo(() => {
+    if (vista === 'mes') return 0
+    if (vista === 'quincena') return Math.floor((HOY.getDate() - 1) / 14)
+    const d = new Date(añoBase, mesBase, 1)
+    const dow = d.getDay() || 7
+    d.setDate(d.getDate() - dow + 1)
+    const diffDias = Math.floor((HOY.getTime() - d.getTime()) / 86400000)
+    return Math.floor(diffDias / 7)
+  }, [vista, mesBase, añoBase])
 
   const dayList: (number|null)[] = useMemo(() => {
     if (vista === 'semana') {
@@ -107,7 +174,7 @@ function CalendarioCashflow({
   }
 
   const unscheduled = simItems.filter(i => i.dia === null)
-  const gridCols = vista === 'semana' ? 7 : 7
+  const gridCols = 7
 
   // saldo simulado (real + pendiente + supuestos) al final del rango visible
   const saldoSimuladoFinRango = useMemo(() => {
@@ -123,10 +190,10 @@ function CalendarioCashflow({
 
   return (
     <Card className="mb-6">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <div>
           <div className="text-slate-900 font-semibold text-[15px]">Simulador</div>
-          <div className="text-slate-400 text-xs mt-0.5">Arrastrá los supuestos para ver cómo cambia tu saldo día a día</div>
+          <div className="text-slate-400 text-xs mt-0.5">Pasá el mouse por un monto para ver la descripción</div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <ChartToggle options={VISTAS} value={vista} onChange={v => setVista(v as Vista)} />
@@ -138,6 +205,12 @@ function CalendarioCashflow({
               <button onClick={() => setOffset(o => o-1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer text-sm">‹</button>
               <span className="text-xs font-medium text-slate-600 min-w-[110px] text-center">{rangoLabel}</span>
               <button onClick={() => setOffset(o => o+1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer text-sm">›</button>
+              {esMesActual && (
+                <button onClick={() => setOffset(offsetHoy)}
+                  className="px-2.5 py-1 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 cursor-pointer text-xs font-semibold">
+                  Hoy
+                </button>
+              )}
             </div>
           )}
           <button onClick={() => setShowModal(true)}
@@ -148,56 +221,49 @@ function CalendarioCashflow({
       </div>
 
       <div className="overflow-x-auto -mx-1 px-1 pb-1">
-      <div className={vista === 'mes' ? 'min-w-[820px]' : 'min-w-[560px]'}>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
+      <div className={vista === 'mes' ? 'min-w-[700px]' : 'min-w-[480px]'}>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
         {dayList.map((dia, i) => {
           const dFlow = dia !== null ? flowData[dia - 1] : null
           const isToday = dia !== null && dia === HOY.getDate() && mesBase === HOY.getMonth() && añoBase === HOY.getFullYear()
           const supuestosDia = dia !== null ? simItems.filter(s => s.dia === dia) : []
           const label = dia !== null ? weekdayShort(añoBase, mesBase, dia) : ''
+          const movs = dFlow?.movimientos ?? []
           return (
             <div key={i}
-              className={`min-h-[120px] rounded-xl border p-1.5 flex flex-col gap-1.5 transition-colors ${isToday ? 'border-blue-400 bg-blue-50' : 'border-dashed border-slate-200'}`}
+              className={`min-h-[56px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${isToday ? 'border-blue-400 bg-blue-50' : 'border-dashed border-slate-200'}`}
               onDragOver={e => { if (dia !== null) { e.preventDefault(); e.currentTarget.style.background = '#EFF6FF' } }}
               onDragLeave={e => { e.currentTarget.style.background = '' }}
               onDrop={e => { e.currentTarget.style.background = ''; if (dia !== null) handleDrop(dia) }}>
               {dia !== null && (
-                <div className="text-center">
-                  <div className="text-[9px] text-slate-400 uppercase tracking-wider">{label}{isToday ? ' · hoy' : ''}</div>
-                  <div className="text-[13px] font-semibold text-slate-700">{dia}</div>
-                  <div className={`text-[10px] font-mono font-bold ${(dFlow?.saldo ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmtM(dFlow?.saldo ?? 0)}</div>
+                <div className="flex items-center justify-between px-0.5">
+                  <span className="text-[9px] text-slate-400 uppercase tracking-wider">{label}{isToday ? ' ·' : ''}</span>
+                  <span className="text-[11px] font-semibold text-slate-700">{dia}</span>
                 </div>
               )}
-              {/* Real */}
-              {(dFlow?.movimientos ?? []).filter(m => m.origen === 'real').map(m => (
-                <div key={`r-${m.id}`} className="rounded-lg px-2 py-1 text-[10px]" style={{ background:'#E6F1FB', border:'0.5px solid #85B7EB', color:'#0C447C' }}>
-                  <div className="font-medium leading-tight truncate">{m.descripcion}</div>
-                  <div className="font-mono mt-0.5 opacity-80">{m.tipo === 'ingreso' ? '+' : '-'}{fmtM(m.monto)}</div>
-                </div>
-              ))}
-              {/* Pendiente */}
-              {(dFlow?.movimientos ?? []).filter(m => m.origen === 'pendiente').map(m => (
-                <div key={`p-${m.id}`} className="rounded-lg px-2 py-1 text-[10px] relative" style={{ background:'#FAEEDA', border:'0.5px solid #EF9F27', color:'#633806' }}>
-                  <span className="absolute top-0.5 right-0.5 text-[8px] font-bold px-1 rounded" style={{ background:'#EF9F27', color:'#fff' }}>venc.</span>
-                  <div className="font-medium leading-tight truncate pr-6">{m.descripcion}</div>
-                  <div className="font-mono mt-0.5 opacity-80">{m.tipo === 'ingreso' ? '+' : '-'}{fmtM(m.monto)}</div>
-                </div>
-              ))}
-              {/* Supuestos */}
-              {supuestosDia.map(s => (
-                <div key={s.id} draggable={!s.checked}
-                  onDragStart={() => { dragId.current = s.id }}
-                  className={`rounded-lg px-2 py-1 text-[10px] relative group flex items-start gap-1.5 ${s.checked ? '' : 'cursor-grab'}`}
-                  style={{ background:'#fff', border: `1px dashed ${s.checked ? '#94A3B8' : '#A9A29C'}`, color:'#475569' }}>
-                  <input type="checkbox" checked={s.checked} onChange={() => onToggleChecked(s.id, !s.checked)}
-                    className="mt-0.5 w-[11px] h-[11px] flex-shrink-0 cursor-pointer" />
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-medium leading-tight truncate ${s.checked ? 'line-through opacity-60' : ''}`}>{s.descripcion}</div>
-                    <div className="font-mono mt-0.5 opacity-80">{s.tipo === 'ingreso' ? '+' : '-'}{fmtM(s.monto)}</div>
+              {dia !== null && (
+                <div className={`text-[9px] font-mono font-bold px-0.5 ${(dFlow?.saldo ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmtM(dFlow?.saldo ?? 0)}</div>
+              )}
+              <div className="flex flex-wrap gap-0.5">
+                {movs.map(m => (
+                  <Chip key={`${m.origen}-${m.id}`} monto={m.monto} tipo={m.tipo} origen={m.origen} descripcion={m.descripcion} />
+                ))}
+                {supuestosDia.map(s => (
+                  <Chip key={s.id} monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
+                    checked={s.checked} draggable={!s.checked}
+                    onDragStart={() => { dragId.current = s.id }}
+                    onToggle={() => onToggleChecked(s.id, !s.checked)}
+                    onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
+                ))}
+              </div>
+              {supuestosDia.map(s => menuAbierto === s.id && (
+                <div key={`menu-${s.id}`} className="relative z-10">
+                  <div className="absolute left-0 top-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[110px]" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => { onDuplicateSupuesto(s); setMenuAbierto(null) }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 border-none bg-transparent cursor-pointer">Duplicar</button>
+                    <button onClick={() => { onDeleteSupuesto(s.id); setMenuAbierto(null) }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 border-none bg-transparent cursor-pointer">Eliminar</button>
                   </div>
-                  <button onClick={() => onDeleteSupuesto(s.id)}
-                    className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer border-none text-[9px] font-bold"
-                    style={{ background:'#94A3B8', color:'#fff' }}>×</button>
                 </div>
               ))}
             </div>
@@ -208,30 +274,34 @@ function CalendarioCashflow({
       </div>
 
       {/* Zona sin fecha */}
-      <div className="border border-dashed border-slate-200 rounded-xl p-3 mt-3">
-        <div className="text-[11px] text-slate-400 mb-2">Supuestos sin fecha — arrastrá al día que quieras</div>
-        <div className="flex flex-wrap gap-2 min-h-[28px]"
+      <div className="border border-dashed border-slate-200 rounded-lg p-2 mt-2">
+        <div className="text-[10px] text-slate-400 mb-1.5">Supuestos sin fecha — arrastrá al día que quieras</div>
+        <div className="flex flex-wrap gap-1.5 min-h-[24px]"
           onDragOver={e => e.preventDefault()}
           onDrop={() => handleDrop(null)}>
           {unscheduled.length === 0 && <span className="text-[11px] text-slate-300 self-center">Todos los supuestos tienen fecha asignada</span>}
           {unscheduled.map(s => (
-            <div key={s.id} draggable={!s.checked}
-              onDragStart={() => { dragId.current = s.id }}
-              className="rounded-lg px-2 py-1.5 text-[11px] flex items-center gap-2 relative group"
-              style={{ background:'#fff', border:'1px dashed #A9A29C', color:'#475569', cursor: s.checked ? 'default' : 'grab' }}>
-              <input type="checkbox" checked={s.checked} onChange={() => onToggleChecked(s.id, !s.checked)} className="w-[10px] h-[10px] cursor-pointer" />
-              <span className={`font-medium ${s.checked ? 'line-through opacity-60' : ''}`}>{s.descripcion}</span>
-              <span className="font-mono text-[10px] opacity-80">{s.tipo === 'ingreso' ? '+' : '-'}{fmtM(s.monto)}</span>
-              <button onClick={() => onDeleteSupuesto(s.id)}
-                className="w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer border-none text-[10px] font-bold ml-1"
-                style={{ background:'#94A3B8', color:'#fff' }}>×</button>
+            <div key={s.id} className="relative">
+              <Chip monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
+                checked={s.checked} draggable={!s.checked}
+                onDragStart={() => { dragId.current = s.id }}
+                onToggle={() => onToggleChecked(s.id, !s.checked)}
+                onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
+              {menuAbierto === s.id && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[110px] z-10" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => { onDuplicateSupuesto(s); setMenuAbierto(null) }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 border-none bg-transparent cursor-pointer">Duplicar</button>
+                  <button onClick={() => { onDeleteSupuesto(s.id); setMenuAbierto(null) }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-red-600 hover:bg-red-50 border-none bg-transparent cursor-pointer">Eliminar</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
 
       {/* Leyenda */}
-      <div className="flex gap-4 mt-3 flex-wrap">
+      <div className="flex gap-4 mt-2 flex-wrap">
         {[['Real','#1A5E9E'],['Pendiente (vencimiento)','#EF9F27'],['Supuesto','#A9A29C']].map(([label, color]) => (
           <div key={label} className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-sm" style={{ background: color }} />
@@ -283,16 +353,27 @@ export default function CashFlowPage() {
   const { data: eventos,  loading: le } = useEventosMes(año, mesNum)
   const { data: ingresosAño, loading: li } = useIngresosByAño(año)
   const { data: egresosAño,  loading: lx } = useEgresosByAño(año)
-  const { data: saldoInicioMes, loading: ls } = useSaldoRealHistorico(m, primerDiaMes)
-  const { data: simItemsRaw, loading: lsim, refetch: refSim } = useCashflowSimItems(año, mesNum)
+  const { data: saldoHist, loading: ls } = useSaldoRealHistorico(m, primerDiaMes)
+  const { data: simItemsRaw, loading: lsim } = useCashflowSimItems(año, mesNum)
 
-  const ingresosDelMes = useMemo(() => (ingresosAño ?? []).filter(i => i.mes === mesNum && i.moneda === m), [ingresosAño, mesNum, m])
-  const egresosDelMes  = useMemo(() => (egresosAño  ?? []).filter(e => e.mes === mesNum && e.moneda === m), [egresosAño, mesNum, m])
+  const saldoInicioMes = saldoHist?.saldo ?? 0
+
+  // Estado local optimista: se sincroniza cuando llega una carga nueva (cambio
+  // de mes/año), pero las mutaciones (agregar/mover/tildar/duplicar/borrar) NO
+  // dependen de un refetch — así no hay flicker de loading en cada acción.
+  const [items, setItems] = useState<CashflowSimItem[]>([])
+  useEffect(() => { if (simItemsRaw) setItems(simItemsRaw) }, [simItemsRaw])
+
+  // Normalizado (mayúsculas + default 'ARS') para no perder movimientos por
+  // diferencias de casing o campo vacío, mismo criterio que getSaldoRealHistorico.
+  const normMoneda = (mo: string | null | undefined) => (mo || 'ARS').trim().toUpperCase()
+  const mNorm = normMoneda(m)
+  const ingresosDelMes = useMemo(() => (ingresosAño ?? []).filter(i => i.mes === mesNum && normMoneda(i.moneda) === mNorm), [ingresosAño, mesNum, mNorm])
+  const egresosDelMes  = useMemo(() => (egresosAño  ?? []).filter(e => e.mes === mesNum && normMoneda(e.moneda) === mNorm), [egresosAño, mesNum, mNorm])
   const eventosPendientes = useMemo(() => (eventos ?? []).filter(ev => !ev.pagado), [eventos])
-  const simItems = simItemsRaw ?? []
 
   const flowData = useMemo(() =>
-    proyectarCashFlowMes(saldoInicioMes ?? 0, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes)
+    proyectarCashFlowMes(saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes)
   , [saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes])
 
   const navMes = (dir: number) => {
@@ -307,7 +388,7 @@ export default function CashFlowPage() {
 
   const diaHoy = (mes === HOY.getMonth() && año === HOY.getFullYear()) ? HOY.getDate() : 1
   const diasRestantes = Math.max(1, diasEnMes - diaHoy)
-  const saldoHoy = flowData.find(d => d.dia === diaHoy)?.saldo ?? (saldoInicioMes ?? 0)
+  const saldoHoy = flowData.find(d => d.dia === diaHoy)?.saldo ?? saldoInicioMes
   const pagosRestantes = flowData
     .filter(d => d.dia > diaHoy)
     .reduce((s, d) => s + d.movimientos.filter(mv => mv.tipo === 'egreso').reduce((s2, mv) => s2 + mv.monto, 0), 0)
@@ -316,15 +397,22 @@ export default function CashFlowPage() {
   const totalIngresos   = ingresosDelMes.reduce((s, i) => s + i.monto, 0)
   const totalPendientes = eventosPendientes.filter(ev => ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
 
-  // saldo simulado fin de mes incluyendo supuestos (checked o no, todos cuentan)
-  const totalSupuestosNeto = simItems.reduce((s, i) => s + (i.tipo === 'ingreso' ? i.monto : -i.monto), 0)
+  // Mismo cálculo "sin filtrar moneda" que usa el Dashboard (ingresosMes/egresosMes ahí no
+  // filtran por moneda, solo por mes) — lo calculo acá también para poder comparar en
+  // pantalla contra lo que muestra el Dashboard y detectar si la diferencia es de moneda.
+  const ingresosMesSinFiltroMoneda = useMemo(() => (ingresosAño ?? []).filter(i => i.mes === mesNum), [ingresosAño, mesNum])
+  const egresosMesSinFiltroMoneda  = useMemo(() => (egresosAño  ?? []).filter(e => e.mes === mesNum), [egresosAño, mesNum])
+  const totalIngresosSinFiltro = ingresosMesSinFiltroMoneda.reduce((s, i) => s + i.monto, 0)
+  const totalEgresosSinFiltro  = egresosMesSinFiltroMoneda.reduce((s, e) => s + e.monto, 0)
+
+  const totalSupuestosNeto = items.reduce((s, i) => s + (i.tipo === 'ingreso' ? i.monto : -i.monto), 0)
   const saldoFinSimulado = saldoFin + totalSupuestosNeto
-  const ahorroEstimado = saldoFinSimulado - (saldoInicioMes ?? 0)
+  const ahorroEstimado = saldoFinSimulado - saldoInicioMes
 
   // Persistir resumen histórico del mes (debounced) — sobrevive aunque se limpien los
   // supuestos de este mes al pasar al siguiente.
   useEffect(() => {
-    if (saldoInicioMes === null || saldoInicioMes === undefined) return
+    if (!saldoHist) return
     const t = setTimeout(() => {
       upsertCashflowResumen({
         año, mes: mesNum, moneda: m,
@@ -335,29 +423,44 @@ export default function CashFlowPage() {
       }).catch(() => {})
     }, 800)
     return () => clearTimeout(t)
-  }, [año, mesNum, m, saldoInicioMes, saldoFinSimulado, gastoDiarioDisp, ahorroEstimado])
+  }, [año, mesNum, m, saldoHist, saldoInicioMes, saldoFinSimulado, gastoDiarioDisp, ahorroEstimado])
 
-  const handleAddSupuesto = useCallback(async (desc: string, monto: number, tipo: 'ingreso'|'egreso', dia: number|null) => {
-    await createCashflowSimItem({ año, mes: mesNum, dia, descripcion: desc, monto, moneda: m, tipo, checked: false })
-    refSim()
-  }, [año, mesNum, m, refSim])
+  // ── Mutaciones optimistas: actualizan el estado local al toque, sin esperar
+  // ni refetchear — la llamada a Supabase corre en segundo plano. Si falla, se
+  // revierte el cambio local.
+  const handleAddSupuesto = useCallback((desc: string, monto: number, tipo: 'ingreso'|'egreso', dia: number|null) => {
+    const optimista: CashflowSimItem = {
+      id: tmpId(), user_id: '', año, mes: mesNum, dia, descripcion: desc, monto, moneda: m, tipo, checked: false,
+      created_at: new Date().toISOString(),
+    }
+    setItems(prev => [...prev, optimista])
+    createCashflowSimItem({ año, mes: mesNum, dia, descripcion: desc, monto, moneda: m, tipo, checked: false })
+      .then(creado => setItems(prev => prev.map(i => i.id === optimista.id ? creado : i)))
+      .catch(() => setItems(prev => prev.filter(i => i.id !== optimista.id)))
+  }, [año, mesNum, m])
 
-  const handleToggleChecked = useCallback(async (id: string, checked: boolean) => {
-    await updateCashflowSimItem(id, { checked })
-    refSim()
-  }, [refSim])
+  const handleDuplicateSupuesto = useCallback((item: CashflowSimItem) => {
+    handleAddSupuesto(`${item.descripcion} (copia)`, item.monto, item.tipo, item.dia)
+  }, [handleAddSupuesto])
 
-  const handleDeleteSupuesto = useCallback(async (id: string) => {
-    await deleteCashflowSimItem(id)
-    refSim()
-  }, [refSim])
+  const handleToggleChecked = useCallback((id: string, checked: boolean) => {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, checked } : i))
+    updateCashflowSimItem(id, { checked }).catch(() => setItems(prev => prev.map(i => i.id === id ? { ...i, checked: !checked } : i)))
+  }, [])
 
-  const handleMoveSupuesto = useCallback(async (id: string, dia: number|null) => {
-    await updateCashflowSimItem(id, { dia })
-    refSim()
-  }, [refSim])
+  const handleDeleteSupuesto = useCallback((id: string) => {
+    const prevItems = items
+    setItems(prev => prev.filter(i => i.id !== id))
+    deleteCashflowSimItem(id).catch(() => setItems(prevItems))
+  }, [items])
 
-  if ((le && !eventos) || (li && !ingresosAño) || (lx && !egresosAño) || ls || lsim) return <LoadingSpinner />
+  const handleMoveSupuesto = useCallback((id: string, dia: number|null) => {
+    const prevItems = items
+    setItems(prev => prev.map(i => i.id === id ? { ...i, dia } : i))
+    updateCashflowSimItem(id, { dia }).catch(() => setItems(prevItems))
+  }, [items])
+
+  if ((le && !eventos) || (li && !ingresosAño) || (lx && !egresosAño) || (ls && !saldoHist) || (lsim && !simItemsRaw)) return <LoadingSpinner />
 
   return (
     <div>
@@ -375,7 +478,7 @@ export default function CashFlowPage() {
 
       <CalendarioCashflow
         flowData={flowData}
-        simItems={simItems}
+        simItems={items}
         mesBase={mes}
         añoBase={año}
         diasEnMes={diasEnMes}
@@ -383,6 +486,7 @@ export default function CashFlowPage() {
         onToggleChecked={handleToggleChecked}
         onDeleteSupuesto={handleDeleteSupuesto}
         onMoveSupuesto={handleMoveSupuesto}
+        onDuplicateSupuesto={handleDuplicateSupuesto}
       />
 
       {/* ── Banner saldo calculado ── */}
@@ -405,17 +509,34 @@ export default function CashFlowPage() {
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-slate-400 text-xs">Saldo al 1° del mes =</span>
-            <span className={`text-2xl font-bold font-mono ${(saldoInicioMes ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-              {fmt(saldoInicioMes ?? 0, m)}
+            <span className={`text-2xl font-bold font-mono ${saldoInicioMes >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+              {fmt(saldoInicioMes, m)}
             </span>
           </div>
         </div>
+        {saldoHist && (
+          <div className="text-slate-300 text-[11px] mt-2 pt-2 border-t border-slate-50">
+            Desglose histórico (todo lo cargado antes del 1°): Ingresos {fmt(saldoHist.totalIngresos, m)} ({saldoHist.countIngresos} registros) − Egresos {fmt(saldoHist.totalEgresos, m)} ({saldoHist.countEgresos} registros)
+          </div>
+        )}
+        {saldoHist && saldoHist.otrasMonedas.length > 0 && (
+          <div className="text-amber-600 text-[11px] mt-1.5 pt-1.5 border-t border-amber-50 bg-amber-50/50 -mx-6 px-6 py-1.5 rounded-b-2xl">
+            ⚠ Este número es solo en {m} — también tenés movimientos históricos en otra moneda que NO están incluidos acá:{' '}
+            {saldoHist.otrasMonedas.map(o => `${o.moneda}: +${o.ingresos.toLocaleString('es-AR')} / -${o.egresos.toLocaleString('es-AR')}`).join(' · ')}
+          </div>
+        )}
+        {(totalIngresosSinFiltro !== totalIngresos || totalEgresosSinFiltro !== egresosDelMes.reduce((s,e)=>s+e.monto,0)) && (
+          <div className="text-red-500 text-[11px] mt-1.5 pt-1.5 border-t border-red-50 bg-red-50/50 -mx-6 px-6 py-1.5">
+            🔍 Comparación con el Dashboard (que no filtra por moneda): Ingresos del mes sin filtrar = {fmt(totalIngresosSinFiltro, m)} (acá arriba: {fmt(totalIngresos, m)}) ·
+            Egresos del mes sin filtrar = {fmt(totalEgresosSinFiltro, m)}. Si esto no coincide con lo que ves en el Dashboard, avisame los números exactos.
+          </div>
+        )}
       </div>
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
-          { l: 'Saldo al 1° del mes',    v: fmt(saldoInicioMes ?? 0, m), s: 'Ingresos − Egresos históricos', c: (saldoInicioMes ?? 0) >= 0 ? '#1A5E9E' : '#F54927' },
+          { l: 'Saldo al 1° del mes',    v: fmt(saldoInicioMes, m), s: 'Ingresos − Egresos históricos', c: saldoInicioMes >= 0 ? '#1A5E9E' : '#F54927' },
           { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Real + pendientes, sin supuestos', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
           { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#F54927' },
           { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasRestantes} días restantes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#40B046' : '#F54927' },
@@ -486,7 +607,7 @@ export default function CashFlowPage() {
             {diasConEvs.map(d => {
               const isHoy = d.dia === HOY.getDate() && mes === HOY.getMonth() && año === HOY.getFullYear()
               const isNeg = d.saldo < 0
-              const saldoC = isNeg ? '#F54927' : d.saldo < (saldoInicioMes ?? 0) * 0.3 ? '#E8A020' : '#1A5E9E'
+              const saldoC = isNeg ? '#F54927' : d.saldo < saldoInicioMes * 0.3 ? '#E8A020' : '#1A5E9E'
               const badge = isHoy ? { l: 'hoy', bg: '#1A5E9E', c: '#fff' }
                           : isNeg ? { l: 'déficit', bg: '#FEF2F2', c: '#F54927' }
                           : d.entradas > d.salidas ? { l: 'cobro', bg: '#E9F6EA', c: '#40B046' }

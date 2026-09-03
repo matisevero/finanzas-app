@@ -601,17 +601,61 @@ export async function upsertSaldoInicial(año: number, mes: number, monto: numbe
 // fecha ANTERIOR a `antesDe` (normalmente el día 1 del mes que estás mirando),
 // así te da el saldo real que tenías al arrancar ese mes — funciona igual para
 // meses pasados, el actual, o futuros.
-export async function getSaldoRealHistorico(moneda: string, antesDe: string): Promise<number> {
+// Devuelve el desglose (no solo el neto) para que la UI pueda mostrar de dónde
+// sale el número. IMPORTANTE: NO filtra por moneda en la query — trae todos los
+// movimientos y los agrupa acá. Si filtrábamos con `.eq('moneda', moneda)`, un
+// Ingreso o Egreso cargado en otra moneda (ej. un gasto grande en USD mientras
+// la mayoría de tus ingresos están en ARS) quedaba afuera de la cuenta sin que
+// se notara — el saldo en ARS parecía "casi todo ingreso" porque los egresos en
+// otra moneda ni se sumaban ni se restaban. Ahora se agrupan por moneda acá, así
+// además se puede avisar en la UI si hay plata en otra moneda que no está
+// entrando en el número principal.
+// `Number(x.monto)` es defensivo: las columnas NUMERIC de Postgres a veces
+// llegan como string vía PostgREST — sumarlas con `+` sin convertir concatena
+// texto en vez de sumar.
+export interface SaldoRealHistorico {
+  totalIngresos: number
+  totalEgresos: number
+  saldo: number
+  countIngresos: number
+  countEgresos: number
+  otrasMonedas: { moneda: string; ingresos: number; egresos: number }[]
+}
+export async function getSaldoRealHistorico(moneda: string, antesDe: string): Promise<SaldoRealHistorico> {
   const userId = await uid()
   const [{ data: ing, error: e1 }, { data: egr, error: e2 }] = await Promise.all([
-    sb().from('ingresos').select('monto').eq('user_id', userId).eq('moneda', moneda).lt('fecha', antesDe),
-    sb().from('egresos').select('monto').eq('user_id', userId).eq('moneda', moneda).lt('fecha', antesDe),
+    sb().from('ingresos').select('monto, moneda').eq('user_id', userId).lt('fecha', antesDe),
+    sb().from('egresos').select('monto, moneda').eq('user_id', userId).lt('fecha', antesDe),
   ])
   if (e1) throw e1
   if (e2) throw e2
-  const totalIngresos = (ing ?? []).reduce((s, i) => s + i.monto, 0)
-  const totalEgresos  = (egr ?? []).reduce((s, e) => s + e.monto, 0)
-  return totalIngresos - totalEgresos
+  const norm = (mo: string | null | undefined) => (mo || 'ARS').trim().toUpperCase()
+  const target = norm(moneda)
+
+  const porMoneda = new Map<string, { ingresos: number; egresos: number; countIng: number; countEgr: number }>()
+  const add = (mo: string, campo: 'ingresos' | 'egresos', monto: number) => {
+    const cur = porMoneda.get(mo) ?? { ingresos: 0, egresos: 0, countIng: 0, countEgr: 0 }
+    cur[campo] += monto
+    if (campo === 'ingresos') cur.countIng++
+    else cur.countEgr++
+    porMoneda.set(mo, cur)
+  }
+  ;(ing ?? []).forEach(i => add(norm(i.moneda), 'ingresos', Number(i.monto) || 0))
+  ;(egr ?? []).forEach(e => add(norm(e.moneda), 'egresos', Number(e.monto) || 0))
+
+  const propio = porMoneda.get(target) ?? { ingresos: 0, egresos: 0, countIng: 0, countEgr: 0 }
+  const otrasMonedas = Array.from(porMoneda.entries())
+    .filter(([mo]) => mo !== target)
+    .map(([mo, v]) => ({ moneda: mo, ingresos: v.ingresos, egresos: v.egresos }))
+
+  return {
+    totalIngresos: propio.ingresos,
+    totalEgresos: propio.egresos,
+    saldo: propio.ingresos - propio.egresos,
+    countIngresos: propio.countIng,
+    countEgresos: propio.countEgr,
+    otrasMonedas,
+  }
 }
 
 // ─── CASH FLOW — SIMULADOR (items "supuestos") ────────────────────────────────
