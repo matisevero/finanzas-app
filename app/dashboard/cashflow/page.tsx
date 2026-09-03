@@ -78,7 +78,7 @@ function Chip({
       draggable={draggable}
       onDragStart={onDragStart}
       onClick={e => { e.stopPropagation(); onToggleExpand() }}
-      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none cursor-pointer ${draggable ? 'cursor-grab' : ''} ${checked ? 'opacity-50' : ''} ${expanded ? 'w-full' : ''}`}
+      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono leading-none cursor-pointer ${draggable ? 'cursor-grab' : ''} ${checked ? 'opacity-50' : ''} ${expanded ? 'w-full' : ''}`}
       style={{ background: styles.bg, border: `1px ${isDashed ? 'dashed' : 'solid'} ${styles.border}`, color: styles.text }}
     >
       {origen === 'supuesto' && (
@@ -86,11 +86,11 @@ function Chip({
           className="w-[9px] h-[9px] cursor-pointer flex-shrink-0" />
       )}
       {expanded ? (
-        <span className={`whitespace-normal break-words flex-1 ${checked ? 'line-through' : ''}`}>
+        <span className={`whitespace-normal break-words flex-1 ${checked ? 'line-through' : ''} ${tipo === 'egreso' ? 'font-bold' : 'font-medium'}`}>
           {descripcion} · {tipo === 'ingreso' ? '+' : '-'}{fmt(monto, 'ARS')}
         </span>
       ) : (
-        <span className={checked ? 'line-through' : ''}>{tipo === 'ingreso' ? '+' : '-'}{fmtM(monto)}</span>
+        <span className={`${checked ? 'line-through' : ''} ${tipo === 'egreso' ? 'font-bold' : 'font-medium'}`}>{tipo === 'ingreso' ? '+' : '-'}{fmtM(monto)}</span>
       )}
       {origen === 'supuesto' && onMenu && (
         <button onClick={e => { e.stopPropagation(); onMenu() }}
@@ -125,7 +125,14 @@ function CalendarioCashflow({
   const [newTipo, setNewTipo]     = useState<'ingreso'|'egreso'>('egreso')
   const [newDia, setNewDia]       = useState('')
   const [menuAbierto, setMenuAbierto] = useState<string | null>(null)
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
+  const toggleExpand = (key: string) => {
+    setExpandedKeys(prev => {
+      if (prev.includes(key)) return prev.filter(k => k !== key)
+      const next = [...prev, key]
+      return next.length > 10 ? next.slice(next.length - 10) : next
+    })
+  }
   const dragId = useRef<string|null>(null)
 
   useEffect(() => { setOffset(0) }, [vista, mesBase, añoBase])
@@ -148,31 +155,35 @@ function CalendarioCashflow({
     return Math.floor(diffDias / 7)
   }, [vista, mesBase, añoBase])
 
-  const dayList: (number|null)[] = useMemo(() => {
+  const dayList: ({ dia: number; inMonth: boolean } | null)[] = useMemo(() => {
     if (vista === 'semana') {
       const d = new Date(añoBase, mesBase, 1)
       const dow = d.getDay() || 7
       d.setDate(d.getDate() - dow + 1 + offset * 7)
+      // Siempre 7 días reales (lunes a domingo) — los que caen fuera del mes activo
+      // (ej. el 31 de agosto en la primera semana de septiembre) se muestran igual,
+      // solo que apagados y sin datos, para que la semana visualmente arranque en
+      // lunes siempre y no como si "empezara" en martes por tener el lunes en blanco.
       return Array.from({ length: 7 }, (_, i) => {
         const dd = new Date(d); dd.setDate(d.getDate() + i)
-        return (dd.getMonth() === mesBase && dd.getFullYear() === añoBase) ? dd.getDate() : null
+        return { dia: dd.getDate(), inMonth: dd.getMonth() === mesBase && dd.getFullYear() === añoBase }
       })
     }
     if (vista === 'quincena') {
       const start = 1 + offset * 14
       return Array.from({ length: 14 }, (_, i) => {
         const dia = start + i
-        return (dia >= 1 && dia <= diasEnMes) ? dia : null
+        return (dia >= 1 && dia <= diasEnMes) ? { dia, inMonth: true } : null
       })
     }
-    return Array.from({ length: diasEnMes }, (_, i) => i + 1)
+    return Array.from({ length: diasEnMes }, (_, i) => ({ dia: i + 1, inMonth: true }))
   }, [vista, offset, mesBase, añoBase, diasEnMes])
 
   const rangoLabel = useMemo(() => {
-    const dias = dayList.filter((d): d is number => d !== null)
+    const dias = dayList.filter((d): d is { dia: number; inMonth: boolean } => d !== null && d.inMonth)
     if (dias.length === 0) return '—'
     if (vista === 'mes') return `${MESES[mesBase]} ${añoBase}`
-    return `${dias[0]}/${mesBase+1} — ${dias[dias.length-1]}/${mesBase+1}`
+    return `${dias[0].dia}/${mesBase+1} — ${dias[dias.length-1].dia}/${mesBase+1}`
   }, [dayList, vista, mesBase, añoBase])
 
   const puedeNavegar = vista !== 'mes'
@@ -195,9 +206,9 @@ function CalendarioCashflow({
 
   // saldo simulado (real + pendiente + supuestos) al final del rango visible
   const saldoSimuladoFinRango = useMemo(() => {
-    const dias = dayList.filter((d): d is number => d !== null)
+    const dias = dayList.filter((d): d is { dia: number; inMonth: boolean } => d !== null && d.inMonth)
     if (dias.length === 0) return 0
-    const ultimoDia = dias[dias.length - 1]
+    const ultimoDia = dias[dias.length - 1].dia
     const base = flowData[ultimoDia - 1]?.saldo ?? 0
     const supuestosHastaAca = simItems
       .filter(s => s.dia !== null && s.dia <= ultimoDia)
@@ -240,50 +251,54 @@ function CalendarioCashflow({
       <div className="overflow-x-auto -mx-1 px-1 pb-1">
       <div className={vista === 'mes' ? 'min-w-[700px]' : 'min-w-[480px]'}>
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0,1fr))` }}>
-        {dayList.map((dia, i) => {
-          const dFlow = dia !== null ? flowData[dia - 1] : null
-          const isToday = dia !== null && dia === HOY.getDate() && mesBase === HOY.getMonth() && añoBase === HOY.getFullYear()
-          const supuestosDia = dia !== null ? simItems.filter(s => s.dia === dia) : []
+        {dayList.map((cell, i) => {
+          const dia = cell?.dia ?? null
+          const inMonth = cell?.inMonth ?? false
+          const dFlow = (dia !== null && inMonth) ? flowData[dia - 1] : null
+          const isToday = inMonth && dia === HOY.getDate() && mesBase === HOY.getMonth() && añoBase === HOY.getFullYear()
+          const supuestosDia = (dia !== null && inMonth) ? simItems.filter(s => s.dia === dia) : []
           const label = dia !== null ? weekdayShort(añoBase, mesBase, dia) : ''
           const movs = dFlow?.movimientos ?? []
           return (
             <div key={i}
-              className={`min-h-[56px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${isToday ? 'border-blue-400 bg-blue-50' : 'border-dashed border-slate-200'}`}
-              onDragOver={e => { if (dia !== null) { e.preventDefault(); e.currentTarget.style.background = '#EFF6FF' } }}
+              className={`min-h-[56px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${!inMonth ? 'border-slate-100 bg-slate-50/60 opacity-50' : isToday ? 'border-blue-400 bg-blue-50' : 'border-dashed border-slate-200'}`}
+              onDragOver={e => { if (inMonth) { e.preventDefault(); e.currentTarget.style.background = '#EFF6FF' } }}
               onDragLeave={e => { e.currentTarget.style.background = '' }}
-              onDrop={e => { e.currentTarget.style.background = ''; if (dia !== null) handleDrop(dia) }}>
+              onDrop={e => { e.currentTarget.style.background = ''; if (inMonth) handleDrop(dia) }}>
               {dia !== null && (
                 <div className="flex items-center justify-between px-0.5">
                   <span className="text-[9px] text-slate-400 uppercase tracking-wider">{label}{isToday ? ' ·' : ''}</span>
-                  <span className="text-[11px] font-semibold text-slate-700">{dia}</span>
+                  <span className={`text-[11px] font-semibold ${inMonth ? 'text-slate-700' : 'text-slate-300'}`}>{dia}</span>
                 </div>
               )}
-              {dia !== null && (
+              {dia !== null && inMonth && (
                 <div title="Disponible por día desde acá en adelante"
                   className={`text-[9px] font-mono font-bold px-0.5 ${(dFlow?.disponible ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                   {fmtM(dFlow?.disponible ?? 0)}/día
                 </div>
               )}
+              {inMonth && (
               <div className="flex flex-wrap gap-0.5">
                 {movs.map(m => {
                   const key = `${m.origen}-${m.id}`
                   return (
                     <Chip key={key} monto={m.monto} tipo={m.tipo} origen={m.origen} descripcion={m.descripcion}
-                      expanded={expandedKey === key}
-                      onToggleExpand={() => setExpandedKey(k => k === key ? null : key)} />
+                      expanded={expandedKeys.includes(key)}
+                      onToggleExpand={() => toggleExpand(key)} />
                   )
                 })}
                 {supuestosDia.map(s => (
                   <Chip key={s.id} monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
                     checked={s.checked} draggable={!s.checked}
-                    expanded={expandedKey === s.id}
-                    onToggleExpand={() => setExpandedKey(k => k === s.id ? null : s.id)}
+                    expanded={expandedKeys.includes(s.id)}
+                    onToggleExpand={() => toggleExpand(s.id)}
                     onDragStart={() => { dragId.current = s.id }}
                     onToggle={() => onToggleChecked(s.id, !s.checked)}
                     onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
                 ))}
               </div>
-              {supuestosDia.map(s => menuAbierto === s.id && (
+              )}
+              {inMonth && supuestosDia.map(s => menuAbierto === s.id && (
                 <div key={`menu-${s.id}`} className="relative z-10">
                   <div className="absolute left-0 top-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[110px]" onClick={e => e.stopPropagation()}>
                     <button onClick={() => { onDuplicateSupuesto(s); setMenuAbierto(null) }}
@@ -311,8 +326,8 @@ function CalendarioCashflow({
             <div key={s.id} className="relative">
               <Chip monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
                 checked={s.checked} draggable={!s.checked}
-                expanded={expandedKey === s.id}
-                onToggleExpand={() => setExpandedKey(k => k === s.id ? null : s.id)}
+                expanded={expandedKeys.includes(s.id)}
+                onToggleExpand={() => toggleExpand(s.id)}
                 onDragStart={() => { dragId.current = s.id }}
                 onToggle={() => onToggleChecked(s.id, !s.checked)}
                 onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
@@ -632,7 +647,7 @@ export default function CashFlowPage() {
                         <span className="text-slate-500 text-xs truncate max-w-[160px]">
                           {mv.tipo === 'ingreso' ? '↑' : '↓'} {mv.descripcion}{mv.origen === 'pendiente' ? ' (pendiente)' : ''}
                         </span>
-                        <span className={`text-xs font-mono font-bold flex-shrink-0 ${mv.tipo === 'ingreso' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        <span className={`text-xs font-mono flex-shrink-0 ${mv.tipo === 'ingreso' ? 'text-emerald-600 font-medium' : 'text-red-600 font-bold'}`}>
                           {mv.tipo === 'ingreso' ? '+' : '-'}{fmt(mv.monto, m)}
                         </span>
                       </div>
