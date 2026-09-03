@@ -3,8 +3,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAppStore } from '@/store/appStore'
 import {
-  useEventosMes, useIngresosByAño, useEgresosByAño, useSaldoRealHistorico,
-  useCashflowSimItems,
+  useEventosMes, useIngresosByAño, useEgresosByAño, useCashflowSimItems,
 } from '@/hooks'
 import {
   createCashflowSimItem, updateCashflowSimItem, deleteCashflowSimItem, upsertCashflowResumen,
@@ -41,15 +40,25 @@ const weekdayShort = (año: number, mes: number, dia: number) => {
 let tmpIdSeq = 0
 const tmpId = () => `tmp-${Date.now()}-${tmpIdSeq++}`
 
-// ── Chip compacto — solo el monto, descripción completa en el title (hover) ──
+// Normalizado (mayúsculas + default 'ARS') para no perder movimientos por
+// diferencias de casing o campo vacío al comparar monedas.
+const normMoneda = (mo: string | null | undefined) => (mo || 'ARS').trim().toUpperCase()
+
+// ── Chip — colapsado muestra solo el monto; un click lo expande mostrando la
+// descripción completa (usa más espacio, empuja el resto de la fila). El hover
+// sigue mostrando el title nativo incluso expandido, y arrastrar sigue moviendo
+// el supuesto de día — el click de expandir no interfiere con eso porque el
+// navegador ya distingue click de dragstart.
 function Chip({
-  monto, tipo, origen, descripcion, checked, onToggle, onMenu, draggable, onDragStart,
+  monto, tipo, origen, descripcion, checked, expanded, onToggleExpand, onToggle, onMenu, draggable, onDragStart,
 }: {
   monto: number
   tipo: 'ingreso' | 'egreso'
   origen: 'real' | 'pendiente' | 'supuesto'
   descripcion: string
   checked?: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onToggle?: () => void
   onMenu?: () => void
   draggable?: boolean
@@ -68,17 +77,24 @@ function Chip({
       title={title}
       draggable={draggable}
       onDragStart={onDragStart}
-      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none ${draggable ? 'cursor-grab' : ''} ${checked ? 'opacity-50 line-through' : ''}`}
+      onClick={e => { e.stopPropagation(); onToggleExpand() }}
+      className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none cursor-pointer ${draggable ? 'cursor-grab' : ''} ${checked ? 'opacity-50' : ''} ${expanded ? 'w-full' : ''}`}
       style={{ background: styles.bg, border: `1px ${isDashed ? 'dashed' : 'solid'} ${styles.border}`, color: styles.text }}
     >
       {origen === 'supuesto' && (
         <input type="checkbox" checked={!!checked} onChange={onToggle} onClick={e => e.stopPropagation()}
           className="w-[9px] h-[9px] cursor-pointer flex-shrink-0" />
       )}
-      <span>{tipo === 'ingreso' ? '+' : '-'}{fmtM(monto)}</span>
+      {expanded ? (
+        <span className={`whitespace-normal break-words flex-1 ${checked ? 'line-through' : ''}`}>
+          {descripcion} · {tipo === 'ingreso' ? '+' : '-'}{fmt(monto, 'ARS')}
+        </span>
+      ) : (
+        <span className={checked ? 'line-through' : ''}>{tipo === 'ingreso' ? '+' : '-'}{fmtM(monto)}</span>
+      )}
       {origen === 'supuesto' && onMenu && (
         <button onClick={e => { e.stopPropagation(); onMenu() }}
-          className="ml-0.5 border-none bg-transparent cursor-pointer text-[10px] leading-none px-0.5"
+          className="ml-0.5 border-none bg-transparent cursor-pointer text-[10px] leading-none px-0.5 flex-shrink-0"
           style={{ color: styles.text }} aria-label="Más opciones">⋮</button>
       )}
     </div>
@@ -109,6 +125,7 @@ function CalendarioCashflow({
   const [newTipo, setNewTipo]     = useState<'ingreso'|'egreso'>('egreso')
   const [newDia, setNewDia]       = useState('')
   const [menuAbierto, setMenuAbierto] = useState<string | null>(null)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const dragId = useRef<string|null>(null)
 
   useEffect(() => { setOffset(0) }, [vista, mesBase, añoBase])
@@ -193,7 +210,7 @@ function CalendarioCashflow({
       <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <div>
           <div className="text-slate-900 font-semibold text-[15px]">Simulador</div>
-          <div className="text-slate-400 text-xs mt-0.5">Pasá el mouse por un monto para ver la descripción</div>
+          <div className="text-slate-400 text-xs mt-0.5">Click en un monto para ver la descripción completa</div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <ChartToggle options={VISTAS} value={vista} onChange={v => setVista(v as Vista)} />
@@ -242,15 +259,25 @@ function CalendarioCashflow({
                 </div>
               )}
               {dia !== null && (
-                <div className={`text-[9px] font-mono font-bold px-0.5 ${(dFlow?.saldo ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmtM(dFlow?.saldo ?? 0)}</div>
+                <div title="Disponible por día desde acá en adelante"
+                  className={`text-[9px] font-mono font-bold px-0.5 ${(dFlow?.disponible ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {fmtM(dFlow?.disponible ?? 0)}/día
+                </div>
               )}
               <div className="flex flex-wrap gap-0.5">
-                {movs.map(m => (
-                  <Chip key={`${m.origen}-${m.id}`} monto={m.monto} tipo={m.tipo} origen={m.origen} descripcion={m.descripcion} />
-                ))}
+                {movs.map(m => {
+                  const key = `${m.origen}-${m.id}`
+                  return (
+                    <Chip key={key} monto={m.monto} tipo={m.tipo} origen={m.origen} descripcion={m.descripcion}
+                      expanded={expandedKey === key}
+                      onToggleExpand={() => setExpandedKey(k => k === key ? null : key)} />
+                  )
+                })}
                 {supuestosDia.map(s => (
                   <Chip key={s.id} monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
                     checked={s.checked} draggable={!s.checked}
+                    expanded={expandedKey === s.id}
+                    onToggleExpand={() => setExpandedKey(k => k === s.id ? null : s.id)}
                     onDragStart={() => { dragId.current = s.id }}
                     onToggle={() => onToggleChecked(s.id, !s.checked)}
                     onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
@@ -284,6 +311,8 @@ function CalendarioCashflow({
             <div key={s.id} className="relative">
               <Chip monto={s.monto} tipo={s.tipo} origen="supuesto" descripcion={s.descripcion}
                 checked={s.checked} draggable={!s.checked}
+                expanded={expandedKey === s.id}
+                onToggleExpand={() => setExpandedKey(k => k === s.id ? null : s.id)}
                 onDragStart={() => { dragId.current = s.id }}
                 onToggle={() => onToggleChecked(s.id, !s.checked)}
                 onMenu={() => setMenuAbierto(o => o === s.id ? null : s.id)} />
@@ -348,15 +377,12 @@ export default function CashFlowPage() {
   const [año, setAño] = useState(HOY.getFullYear())
   const mesNum = mes + 1
   const diasEnMes = new Date(año, mes + 1, 0).getDate()
-  const primerDiaMes = `${año}-${String(mesNum).padStart(2, '0')}-01`
+  const mNorm = normMoneda(m)
 
   const { data: eventos,  loading: le } = useEventosMes(año, mesNum)
   const { data: ingresosAño, loading: li } = useIngresosByAño(año)
   const { data: egresosAño,  loading: lx } = useEgresosByAño(año)
-  const { data: saldoHist, loading: ls } = useSaldoRealHistorico(m, primerDiaMes)
   const { data: simItemsRaw, loading: lsim } = useCashflowSimItems(año, mesNum)
-
-  const saldoInicioMes = saldoHist?.saldo ?? 0
 
   // Estado local optimista: se sincroniza cuando llega una carga nueva (cambio
   // de mes/año), pero las mutaciones (agregar/mover/tildar/duplicar/borrar) NO
@@ -364,17 +390,25 @@ export default function CashFlowPage() {
   const [items, setItems] = useState<CashflowSimItem[]>([])
   useEffect(() => { if (simItemsRaw) setItems(simItemsRaw) }, [simItemsRaw])
 
-  // Normalizado (mayúsculas + default 'ARS') para no perder movimientos por
-  // diferencias de casing o campo vacío, mismo criterio que getSaldoRealHistorico.
-  const normMoneda = (mo: string | null | undefined) => (mo || 'ARS').trim().toUpperCase()
-  const mNorm = normMoneda(m)
   const ingresosDelMes = useMemo(() => (ingresosAño ?? []).filter(i => i.mes === mesNum && normMoneda(i.moneda) === mNorm), [ingresosAño, mesNum, mNorm])
   const egresosDelMes  = useMemo(() => (egresosAño  ?? []).filter(e => e.mes === mesNum && normMoneda(e.moneda) === mNorm), [egresosAño, mesNum, mNorm])
   const eventosPendientes = useMemo(() => (eventos ?? []).filter(ev => !ev.pagado), [eventos])
 
+  // ── Saldo inicial: 100% mensual, sin arrastrar histórico de meses anteriores.
+  // = Ingresos del mes − Egresos del mes − Deudas del mes (pendientes, todavía sin
+  // pagar — las que ya se pagaron este mes entran como Egreso real y no están acá,
+  // así no se cuentan dos veces). El día a día arranca de este número y va restando/
+  // sumando los movimientos de cada día — como esos MISMOS movimientos ya están
+  // adentro de este número, el flujo día a día no sale de $0 (arranca del neto total
+  // y lo va "desarmando" día por día para mostrar la forma, no un saldo bancario real).
+  const totalIngresosMes = ingresosDelMes.reduce((s, i) => s + i.monto, 0)
+  const totalEgresosMes  = egresosDelMes.reduce((s, e) => s + e.monto, 0)
+  const totalDeudasMes   = eventosPendientes.filter(ev => ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
+  const saldoInicioMes   = 0 // el punto de partida del día a día siempre es 0: el mes "no arrastra" nada.
+
   const flowData = useMemo(() =>
     proyectarCashFlowMes(saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes)
-  , [saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes])
+  , [eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes])
 
   const navMes = (dir: number) => {
     let m2 = mes + dir, a2 = año
@@ -394,17 +428,6 @@ export default function CashFlowPage() {
     .reduce((s, d) => s + d.movimientos.filter(mv => mv.tipo === 'egreso').reduce((s2, mv) => s2 + mv.monto, 0), 0)
   const gastoDiarioDisp = Math.round((saldoHoy - pagosRestantes) / diasRestantes)
 
-  const totalIngresos   = ingresosDelMes.reduce((s, i) => s + i.monto, 0)
-  const totalPendientes = eventosPendientes.filter(ev => ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
-
-  // Mismo cálculo "sin filtrar moneda" que usa el Dashboard (ingresosMes/egresosMes ahí no
-  // filtran por moneda, solo por mes) — lo calculo acá también para poder comparar en
-  // pantalla contra lo que muestra el Dashboard y detectar si la diferencia es de moneda.
-  const ingresosMesSinFiltroMoneda = useMemo(() => (ingresosAño ?? []).filter(i => i.mes === mesNum), [ingresosAño, mesNum])
-  const egresosMesSinFiltroMoneda  = useMemo(() => (egresosAño  ?? []).filter(e => e.mes === mesNum), [egresosAño, mesNum])
-  const totalIngresosSinFiltro = ingresosMesSinFiltroMoneda.reduce((s, i) => s + i.monto, 0)
-  const totalEgresosSinFiltro  = egresosMesSinFiltroMoneda.reduce((s, e) => s + e.monto, 0)
-
   const totalSupuestosNeto = items.reduce((s, i) => s + (i.tipo === 'ingreso' ? i.monto : -i.monto), 0)
   const saldoFinSimulado = saldoFin + totalSupuestosNeto
   const ahorroEstimado = saldoFinSimulado - saldoInicioMes
@@ -412,7 +435,6 @@ export default function CashFlowPage() {
   // Persistir resumen histórico del mes (debounced) — sobrevive aunque se limpien los
   // supuestos de este mes al pasar al siguiente.
   useEffect(() => {
-    if (!saldoHist) return
     const t = setTimeout(() => {
       upsertCashflowResumen({
         año, mes: mesNum, moneda: m,
@@ -423,7 +445,7 @@ export default function CashFlowPage() {
       }).catch(() => {})
     }, 800)
     return () => clearTimeout(t)
-  }, [año, mesNum, m, saldoHist, saldoInicioMes, saldoFinSimulado, gastoDiarioDisp, ahorroEstimado])
+  }, [año, mesNum, m, saldoFinSimulado, gastoDiarioDisp, ahorroEstimado])
 
   // ── Mutaciones optimistas: actualizan el estado local al toque, sin esperar
   // ni refetchear — la llamada a Supabase corre en segundo plano. Si falla, se
@@ -460,7 +482,7 @@ export default function CashFlowPage() {
     updateCashflowSimItem(id, { dia }).catch(() => setItems(prevItems))
   }, [items])
 
-  if ((le && !eventos) || (li && !ingresosAño) || (lx && !egresosAño) || (ls && !saldoHist) || (lsim && !simItemsRaw)) return <LoadingSpinner />
+  if ((le && !eventos) || (li && !ingresosAño) || (lx && !egresosAño) || (lsim && !simItemsRaw)) return <LoadingSpinner />
 
   return (
     <div>
@@ -489,55 +511,42 @@ export default function CashFlowPage() {
         onDuplicateSupuesto={handleDuplicateSupuesto}
       />
 
-      {/* ── Banner saldo calculado ── */}
+      {/* ── Banner resumen del mes ── */}
       <div className="bg-white border border-slate-200 rounded-2xl px-6 py-4 mb-6 shadow-card">
         <div className="flex items-center gap-2 mb-3">
-          <span className="text-slate-500 text-sm font-medium">Saldo real automático para</span>
+          <span className="text-slate-500 text-sm font-medium">Resumen de</span>
           <span className="text-slate-900 font-semibold text-sm">{MESES[mes]} {año}</span>
-          <span className="text-xs text-slate-400 ml-1">— calculado 100% desde Ingresos/Egresos, sin cargar nada a mano</span>
+          <span className="text-xs text-slate-400 ml-1">— 100% de este mes, no arrastra saldo de meses anteriores</span>
         </div>
         <div className="flex items-center gap-6 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
             <span className="text-slate-500 text-xs">Ingresos del mes</span>
-            <span className="text-emerald-700 font-mono font-bold text-sm">+{fmt(totalIngresos, m)}</span>
+            <span className="text-emerald-700 font-mono font-bold text-sm">+{fmt(totalIngresosMes, m)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+            <span className="text-slate-500 text-xs">Egresos del mes</span>
+            <span className="text-blue-700 font-mono font-bold text-sm">-{fmt(totalEgresosMes, m)}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-slate-500 text-xs">Pendientes (sin pagar aún)</span>
-            <span className="text-amber-600 font-mono font-bold text-sm">-{fmt(totalPendientes, m)}</span>
+            <span className="text-slate-500 text-xs">Deudas pendientes del mes</span>
+            <span className="text-amber-600 font-mono font-bold text-sm">-{fmt(totalDeudasMes, m)}</span>
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-slate-400 text-xs">Saldo al 1° del mes =</span>
-            <span className={`text-2xl font-bold font-mono ${saldoInicioMes >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-              {fmt(saldoInicioMes, m)}
+            <span className="text-slate-400 text-xs">Neto del mes =</span>
+            <span className={`text-2xl font-bold font-mono ${saldoFin >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+              {fmt(saldoFin, m)}
             </span>
           </div>
         </div>
-        {saldoHist && (
-          <div className="text-slate-300 text-[11px] mt-2 pt-2 border-t border-slate-50">
-            Desglose histórico (todo lo cargado antes del 1°): Ingresos {fmt(saldoHist.totalIngresos, m)} ({saldoHist.countIngresos} registros) − Egresos {fmt(saldoHist.totalEgresos, m)} ({saldoHist.countEgresos} registros)
-          </div>
-        )}
-        {saldoHist && saldoHist.otrasMonedas.length > 0 && (
-          <div className="text-amber-600 text-[11px] mt-1.5 pt-1.5 border-t border-amber-50 bg-amber-50/50 -mx-6 px-6 py-1.5 rounded-b-2xl">
-            ⚠ Este número es solo en {m} — también tenés movimientos históricos en otra moneda que NO están incluidos acá:{' '}
-            {saldoHist.otrasMonedas.map(o => `${o.moneda}: +${o.ingresos.toLocaleString('es-AR')} / -${o.egresos.toLocaleString('es-AR')}`).join(' · ')}
-          </div>
-        )}
-        {(totalIngresosSinFiltro !== totalIngresos || totalEgresosSinFiltro !== egresosDelMes.reduce((s,e)=>s+e.monto,0)) && (
-          <div className="text-red-500 text-[11px] mt-1.5 pt-1.5 border-t border-red-50 bg-red-50/50 -mx-6 px-6 py-1.5">
-            🔍 Comparación con el Dashboard (que no filtra por moneda): Ingresos del mes sin filtrar = {fmt(totalIngresosSinFiltro, m)} (acá arriba: {fmt(totalIngresos, m)}) ·
-            Egresos del mes sin filtrar = {fmt(totalEgresosSinFiltro, m)}. Si esto no coincide con lo que ves en el Dashboard, avisame los números exactos.
-          </div>
-        )}
       </div>
 
       {/* ── KPIs ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {[
-          { l: 'Saldo al 1° del mes',    v: fmt(saldoInicioMes, m), s: 'Ingresos − Egresos históricos', c: saldoInicioMes >= 0 ? '#1A5E9E' : '#F54927' },
-          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Real + pendientes, sin supuestos', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
+          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Ingresos − Egresos − Deudas pendientes', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
           { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#F54927' },
           { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasRestantes} días restantes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#40B046' : '#F54927' },
         ].map(k => (
@@ -555,7 +564,7 @@ export default function CashFlowPage() {
           <div className="flex-1">
             <CardTitle>Con tus supuestos, ¿cuánto te queda a fin de mes?</CardTitle>
             <p className="text-slate-400 text-xs mt-1 mb-4">
-              Saldo real + pendientes + los supuestos que armaste en el simulador.
+              Neto del mes + los supuestos que armaste en el simulador.
             </p>
             <div className="flex items-end gap-3">
               <div className={`text-4xl font-bold font-mono ${saldoFinSimulado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmt(saldoFinSimulado, m)}</div>
@@ -564,7 +573,7 @@ export default function CashFlowPage() {
           </div>
           <div className="flex flex-col gap-3 text-sm w-full md:w-auto md:min-w-[220px]">
             <div className="flex justify-between">
-              <span className="text-slate-400">Saldo hoy (día {diaHoy})</span>
+              <span className="text-slate-400">Acumulado hoy (día {diaHoy})</span>
               <span className={`font-mono font-semibold ${saldoHoy >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmt(saldoHoy, m)}</span>
             </div>
             <div className="flex justify-between">
@@ -574,10 +583,6 @@ export default function CashFlowPage() {
             <div className="flex justify-between">
               <span className="text-slate-400">Supuestos (neto)</span>
               <span className={`font-mono font-semibold ${totalSupuestosNeto >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalSupuestosNeto >= 0 ? '+' : ''}{fmt(totalSupuestosNeto, m)}</span>
-            </div>
-            <div className="flex justify-between border-t border-slate-100 pt-2">
-              <span className="text-slate-400">Ahorro/variación del mes</span>
-              <span className={`font-mono font-semibold ${ahorroEstimado >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{fmt(ahorroEstimado, m)}</span>
             </div>
           </div>
         </div>
@@ -607,7 +612,7 @@ export default function CashFlowPage() {
             {diasConEvs.map(d => {
               const isHoy = d.dia === HOY.getDate() && mes === HOY.getMonth() && año === HOY.getFullYear()
               const isNeg = d.saldo < 0
-              const saldoC = isNeg ? '#F54927' : d.saldo < saldoInicioMes * 0.3 ? '#E8A020' : '#1A5E9E'
+              const saldoC = isNeg ? '#F54927' : '#1A5E9E'
               const badge = isHoy ? { l: 'hoy', bg: '#1A5E9E', c: '#fff' }
                           : isNeg ? { l: 'déficit', bg: '#FEF2F2', c: '#F54927' }
                           : d.entradas > d.salidas ? { l: 'cobro', bg: '#E9F6EA', c: '#40B046' }

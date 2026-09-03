@@ -104,11 +104,19 @@ export function proyectarCashFlow(
 
 // ─── Cash flow diario — versión con desglose real/pendiente ──────────────────
 // Usada por la página de Cash Flow. A diferencia de `proyectarCashFlow` (que
-// sigue usando el Dashboard sin tocar), acá el saldo de arranque es el saldo real
-// automático (histórico de Ingresos−Egresos) y cada día distingue movimientos
-// "real" (ya cargados en Ingresos/Egresos) de "pendiente" (eventos de calendario
-// con vencimiento conocido pero sin pagar todavía — pasale solo los `!pagado`,
-// los pagados ya están reflejados en los Egresos/Ingresos reales que generaron).
+// sigue usando el Dashboard sin tocar), acá el punto de partida es 100%
+// mensual: `saldoInicioMes` es Ingresos del mes − Egresos del mes − Deudas
+// pendientes del mes (ver `page.tsx`), NO un histórico acumulado de todos los
+// meses — eso ya se descartó. Cada día distingue movimientos "real" (ya
+// cargados en Ingresos/Egresos) de "pendiente" (eventos de calendario con
+// vencimiento conocido pero sin pagar todavía — pasale solo los `!pagado`, los
+// pagados ya están reflejados en los Egresos/Ingresos reales que generaron).
+// `disponible`: cuánto podés gastar por día DESDE ese día en adelante — el
+// saldo de ese día menos las salidas que todavía faltan el resto del mes,
+// dividido los días que quedan. Es la misma cuenta que el KPI "Podés gastar
+// por día" de la página, pero recalculada para cada día — así el número que
+// se ve en cada celda del calendario es el disponible, no el saldo acumulado
+// (que no dice nada por sí solo sin ver el resto del mes).
 export interface MovimientoDia {
   id: string
   descripcion: string
@@ -117,7 +125,7 @@ export interface MovimientoDia {
   origen: 'real' | 'pendiente'
 }
 export interface DiaFlowDetallado {
-  dia: number; entradas: number; salidas: number; neto: number; saldo: number
+  dia: number; entradas: number; salidas: number; neto: number; saldo: number; disponible: number
   movimientos: MovimientoDia[]
 }
 
@@ -129,7 +137,7 @@ export function proyectarCashFlowMes(
   diasEnMes: number
 ): DiaFlowDetallado[] {
   let acum = saldoInicioMes
-  return Array.from({ length: diasEnMes }, (_, i) => {
+  const base = Array.from({ length: diasEnMes }, (_, i) => {
     const dia = i + 1
     const movimientos: MovimientoDia[] = []
     ingresosDelMes.filter(ing => diaDeFecha(ing.fecha) === dia).forEach(ing =>
@@ -145,6 +153,12 @@ export function proyectarCashFlowMes(
     const salidas  = movimientos.filter(m => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0)
     acum += entradas - salidas
     return { dia, entradas, salidas, neto: entradas - salidas, saldo: Math.round(acum), movimientos }
+  })
+  return base.map((d, idx) => {
+    const diasRestantes = diasEnMes - d.dia + 1
+    const salidasFuturas = base.slice(idx + 1).reduce((s, dd) => s + dd.salidas, 0)
+    const disponible = diasRestantes > 0 ? Math.round((d.saldo - salidasFuturas) / diasRestantes) : d.saldo
+    return { ...d, disponible }
   })
 }
 
