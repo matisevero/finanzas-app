@@ -1,7 +1,7 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
 import { useMonedasDisponibles } from '@/store/appStore'
-import { useProyectos, useAllEgresos, useAllIngresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas, useProyectoPresupuestos, useProyectoMovimientosManuales } from '@/hooks'
+import { useProyectos, useAllEgresos, useAllIngresos, useEtiquetas, useEgresoEtiquetas, useIngresoEtiquetas, useProyectoPresupuestos, useProyectoMovimientosManuales, useTarjetaTransacciones, useTarjetaTransaccionEtiquetas, useCategoriasCustom } from '@/hooks'
 import { createProyecto, updateProyecto, deleteProyecto, archivarProyecto, setPresupuestosDeProyecto, createProyectoMovimientoManual, deleteProyectoMovimientoManual } from '@/lib/queries'
 import { fmt, fmtFull, fmtDate } from '@/lib/utils/formatters'
 import { TIPOS_EGRESO, ICONOS_GENERALES, META_COLORS } from '@/lib/utils/constants'
@@ -10,7 +10,7 @@ import { AsociarMovimientoModal, desasociarMovimiento } from '@/components/ui/As
 import { EditarMovimientoRapidoModal, type MovimientoEditable } from '@/components/ui/EditarMovimientoRapidoModal'
 import MontoInput from '@/components/ui/MontoInput'
 import FechaInput from '@/components/ui/FechaInput'
-import type { Moneda, Proyecto, Egreso, Ingreso, EstadoMovimientoManual } from '@/types'
+import type { Moneda, Proyecto, Egreso, Ingreso, EstadoMovimientoManual, CategoriaCustom } from '@/types'
 
 type PresupuestoFila = { moneda: Moneda; monto: string }
 const FORM_INIT = { nombre: '', fecha_inicio: '', fecha_fin: '', icono: '📁', color: '#1A5E9E', presupuestos: [{ moneda: 'ARS' as Moneda, monto: '' }] as PresupuestoFila[] }
@@ -21,11 +21,25 @@ export default function ProyectosPage() {
   const { data: proyectos, loading, refetch } = useProyectos()
   const { data: allEgresos, loading: loadingEgresos } = useAllEgresos()
   const { data: allIngresos, loading: loadingIngresos } = useAllIngresos()
+  const { data: allTxnsTarjeta, loading: loadingTxnsTarjeta } = useTarjetaTransacciones()
+  const { data: txnEtiquetas, refetch: refetchTxnEtiquetas } = useTarjetaTransaccionEtiquetas()
   const { data: etiquetas, loading: loadingEtiquetas, refetch: refetchEtiquetas } = useEtiquetas()
   const { data: egresoEtiquetas, loading: loadingEE, refetch: refetchEgresoEtiquetas } = useEgresoEtiquetas()
   const { data: ingresoEtiquetas, loading: loadingIE, refetch: refetchIngresoEtiquetas } = useIngresoEtiquetas()
   const { data: presupuestos, refetch: refetchPresupuestos } = useProyectoPresupuestos()
   const { data: movManuales, refetch: refetchManuales } = useProyectoMovimientosManuales()
+  // Egresos y transacciones de tarjeta comparten categorías (mismo módulo 'egresos') — hay
+  // que resolver contra las propias además de las base, o una categoría personalizada se ve
+  // como el id crudo en vez de su nombre (mismo bug que ya se arregló en el Comparador).
+  const { data: rawCategoriasEgreso } = useCategoriasCustom('egresos')
+  const allTiposEgreso = useMemo(() => {
+    const base = Object.entries(TIPOS_EGRESO).map(([key, cfg]) => ({ key, label: cfg.label, color: cfg.color }))
+    const flat: { key: string; label: string; color: string }[] = []
+    const traverse = (cats: CategoriaCustom[], prefix = '') => cats.forEach(c => { flat.push({ key: c.id, label: prefix + c.nombre, color: c.color }); if (c.children?.length) traverse(c.children, prefix + '  ') })
+    traverse((rawCategoriasEgreso ?? []) as CategoriaCustom[])
+    return [...base, ...flat]
+  }, [rawCategoriasEgreso])
+  const labelCategoria = (cat: string) => allTiposEgreso.find(t => t.key === cat)?.label ?? cat
   const [showAsociarModal, setShowAsociarModal] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -81,15 +95,19 @@ export default function ProyectosPage() {
     refetchEtiquetas()
   }
 
-  // Total gastado por moneda = egresos etiquetados − ingresos etiquetados (reembolsos/aportes),
-  // separado por moneda para no mezclar pesos con dólares.
+  // Total gastado por moneda = egresos etiquetados + transacciones de tarjeta etiquetadas −
+  // ingresos etiquetados (reembolsos/aportes), separado por moneda para no mezclar pesos con
+  // dólares. Un gasto de tarjeta asociado a un proyecto cuenta como gasto real, igual que un
+  // egreso — antes no se sumaba acá, por eso no impactaba en el total del proyecto.
   const gastadoPorMonedaDe = (p: Proyecto): Record<string, number> => {
     const et = etiquetaDe(p)
     if (!et) return {}
     const egresoIds  = new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id))
     const ingresoIds = new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.ingreso_id))
+    const txnIds     = new Set((txnEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.transaccion_id))
     const map: Record<string, number> = {}
     ;(allEgresos ?? []).filter(e => egresoIds.has(e.id)).forEach(e => { map[e.moneda] = (map[e.moneda] ?? 0) + e.monto })
+    ;(allTxnsTarjeta ?? []).filter(t => txnIds.has(t.id)).forEach(t => { map[t.moneda] = (map[t.moneda] ?? 0) + t.monto })
     ;(allIngresos ?? []).filter(i => ingresoIds.has(i.id)).forEach(i => { map[i.moneda] = (map[i.moneda] ?? 0) - i.monto })
     return map
   }
@@ -102,7 +120,7 @@ export default function ProyectosPage() {
   }
   const presupuestoEnMoneda = (p: Proyecto, moneda: Moneda) => parseFloat(presupuestosDe(p).find(f=>f.moneda===moneda)?.monto || '0') || 0
 
-  type Movimiento = { tipo: 'egreso' | 'ingreso' | 'manual'; id: string; fecha: string; descripcion: string; categoria: string; monto: number; moneda: Moneda; estado?: EstadoMovimientoManual }
+  type Movimiento = { tipo: 'egreso' | 'ingreso' | 'tarjeta' | 'manual'; id: string; fecha: string; descripcion: string; categoria: string; monto: number; moneda: Moneda; estado?: EstadoMovimientoManual }
 
   const manualesDelSeleccionado = useMemo(() => (movManuales ?? []).filter(m => m.proyecto_id === selected?.id), [movManuales, selected])
 
@@ -111,14 +129,17 @@ export default function ProyectosPage() {
     const et = etiquetaDe(selected)
     const egresoIds  = et ? new Set((egresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.egreso_id)) : new Set()
     const ingresoIds = et ? new Set((ingresoEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.ingreso_id)) : new Set()
+    const txnIds      = et ? new Set((txnEtiquetas ?? []).filter(r => r.etiqueta_id === et.id).map(r => r.transaccion_id)) : new Set()
     const egr: Movimiento[] = (allEgresos ?? []).filter(e => egresoIds.has(e.id))
       .map(e => ({ tipo: 'egreso' as const, id: e.id, fecha: e.fecha, descripcion: e.descripcion, categoria: e.categoria, monto: e.monto, moneda: e.moneda as Moneda }))
     const ing: Movimiento[] = (allIngresos ?? []).filter(i => ingresoIds.has(i.id))
       .map(i => ({ tipo: 'ingreso' as const, id: i.id, fecha: i.fecha, descripcion: i.descripcion, categoria: i.tipo, monto: i.monto, moneda: i.moneda as Moneda }))
+    const tar: Movimiento[] = (allTxnsTarjeta ?? []).filter(t => txnIds.has(t.id))
+      .map(t => ({ tipo: 'tarjeta' as const, id: t.id, fecha: t.fecha, descripcion: t.descripcion, categoria: t.categoria, monto: t.monto, moneda: t.moneda as Moneda }))
     const man: Movimiento[] = manualesDelSeleccionado
       .map(m => ({ tipo: 'manual' as const, id: m.id, fecha: m.fecha, descripcion: m.descripcion, categoria: m.categoria, monto: m.monto, moneda: m.moneda as Moneda, estado: m.estado }))
-    return [...egr, ...ing, ...man].sort((a, b) => b.fecha.localeCompare(a.fecha))
-  }, [allEgresos, allIngresos, egresoEtiquetas, ingresoEtiquetas, selected, etiquetas, manualesDelSeleccionado])
+    return [...egr, ...ing, ...tar, ...man].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  }, [allEgresos, allIngresos, allTxnsTarjeta, egresoEtiquetas, ingresoEtiquetas, txnEtiquetas, selected, etiquetas, manualesDelSeleccionado])
 
   // Proyectado por moneda = suma de movimientos manuales (estimado/pendiente), aparte de lo
   // realmente gastado — no se mezclan hasta que el gasto se carga de verdad en Egresos.
@@ -134,10 +155,11 @@ export default function ProyectosPage() {
   const [editando, setEditando] = useState<MovimientoEditable | null>(null)
   const [desasociando, setDesasociando] = useState<string | null>(null)
 
-  const entidadDe = (tipo: 'egreso'|'ingreso'): 'egreso'|'ingreso' => tipo
-  const etiquetasDelMov = (entidad: 'egreso'|'ingreso', id: string): string[] => {
+  const entidadDe = (tipo: 'egreso'|'ingreso'|'tarjeta'): 'egreso'|'ingreso'|'tarjeta_transaccion' => tipo === 'tarjeta' ? 'tarjeta_transaccion' : tipo
+  const etiquetasDelMov = (entidad: 'egreso'|'ingreso'|'tarjeta_transaccion', id: string): string[] => {
     if (entidad === 'egreso') return (egresoEtiquetas ?? []).filter(r => r.egreso_id === id).map(r => r.etiqueta_id)
-    return (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+    if (entidad === 'ingreso') return (ingresoEtiquetas ?? []).filter(r => r.ingreso_id === id).map(r => r.etiqueta_id)
+    return (txnEtiquetas ?? []).filter(r => r.transaccion_id === id).map(r => r.etiqueta_id)
   }
 
   const handleDesasociar = async (mv: Movimiento) => {
@@ -152,7 +174,7 @@ export default function ProyectosPage() {
         etiquetas: etiquetas ?? [], ahorros: [], metas: [],
         tipo: 'proyecto', monto: mv.monto, moneda: mv.moneda, fecha: mv.fecha, descripcion: mv.descripcion,
       })
-      refetchEgresoEtiquetas(); refetchIngresoEtiquetas()
+      refetchEgresoEtiquetas(); refetchIngresoEtiquetas(); refetchTxnEtiquetas()
     } catch (e: any) { console.error(e); alert('No se pudo desasociar: ' + (e.message || e)) } finally { setDesasociando(null) }
   }
 
@@ -178,13 +200,16 @@ export default function ProyectosPage() {
 
   const composicion = useMemo(() => {
     const map: Record<string, number> = {}
-    movimientosDelSeleccionado.filter(m => m.tipo === 'egreso' && m.moneda === selected?.moneda).forEach(m => { map[m.categoria] = (map[m.categoria] ?? 0) + m.monto })
+    movimientosDelSeleccionado.filter(m => (m.tipo === 'egreso' || m.tipo === 'tarjeta') && m.moneda === selected?.moneda).forEach(m => { map[m.categoria] = (map[m.categoria] ?? 0) + m.monto })
     return Object.entries(map)
-      .map(([cat, value], i) => ({ label: TIPOS_EGRESO[cat as keyof typeof TIPOS_EGRESO]?.label ?? cat, value, color: TIPOS_EGRESO[cat as keyof typeof TIPOS_EGRESO]?.color ?? CAT_COLORS[i % CAT_COLORS.length] }))
+      .map(([cat, value], i) => {
+        const t = allTiposEgreso.find(x => x.key === cat)
+        return { label: t?.label ?? cat, value, color: t?.color ?? CAT_COLORS[i % CAT_COLORS.length] }
+      })
       .sort((a, b) => b.value - a.value)
-  }, [movimientosDelSeleccionado, selected])
+  }, [movimientosDelSeleccionado, selected, allTiposEgreso])
 
-  if ((loading && !proyectos) || (loadingEgresos && !allEgresos) || (loadingIngresos && !allIngresos) || (loadingEtiquetas && !etiquetas) || (loadingEE && !egresoEtiquetas) || (loadingIE && !ingresoEtiquetas)) return <LoadingSpinner />
+  if ((loading && !proyectos) || (loadingEgresos && !allEgresos) || (loadingIngresos && !allIngresos) || (loadingTxnsTarjeta && !allTxnsTarjeta) || (loadingEtiquetas && !etiquetas) || (loadingEE && !egresoEtiquetas) || (loadingIE && !ingresoEtiquetas)) return <LoadingSpinner />
 
   // ── Vista detalle ──────────────────────────────────────────────────────────
   if (selected) {
@@ -276,7 +301,7 @@ export default function ProyectosPage() {
                 <div key={`${mv.tipo}-${mv.id}`} className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-slate-400 text-xs font-mono flex-shrink-0">{fmtDate(mv.fecha)}</span>
-                    <span className="text-slate-700 text-sm truncate">{mv.descripcion || (TIPOS_EGRESO[mv.categoria as keyof typeof TIPOS_EGRESO]?.label ?? mv.categoria)}</span>
+                    <span className="text-slate-700 text-sm truncate">{mv.descripcion || labelCategoria(mv.categoria)}</span>
                     {mv.tipo === 'ingreso' && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full flex-shrink-0">reembolso</span>}
                     {mv.tipo === 'manual' && <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full flex-shrink-0">{mv.estado}</span>}
                   </div>
@@ -287,7 +312,7 @@ export default function ProyectosPage() {
                     {mv.tipo === 'manual' && <button onClick={() => handleEliminarManual(mv.id)} className="text-slate-300 hover:text-red-500 cursor-pointer border-none bg-transparent">✕</button>}
                     {mv.tipo !== 'manual' && (
                       <>
-                        <button onClick={()=>{ if (mv.tipo === 'manual') return; setEditando({ entidad: mv.tipo, id: mv.id, descripcion: mv.descripcion, monto: mv.monto, moneda: mv.moneda, fecha: mv.fecha, contribuyeAAhorroOMeta: false }) }}
+                        <button onClick={()=>{ if (mv.tipo === 'manual') return; setEditando({ entidad: entidadDe(mv.tipo), id: mv.id, descripcion: mv.descripcion, monto: mv.monto, moneda: mv.moneda, fecha: mv.fecha, contribuyeAAhorroOMeta: false }) }}
                           className="text-slate-300 hover:text-blue-600 border-none bg-transparent cursor-pointer text-xs" title="Editar">✎</button>
                         <button onClick={() => handleDesasociar(mv)} disabled={desasociando === mv.id}
                           className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-xs disabled:opacity-50" title="Desasociar">✕</button>
@@ -301,7 +326,7 @@ export default function ProyectosPage() {
         </Card>
 
         <EditarMovimientoRapidoModal open={!!editando} onClose={()=>setEditando(null)} movimiento={editando}
-          monedasPalette={monedasPalette} onSaved={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas() }} />
+          monedasPalette={monedasPalette} onSaved={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas(); refetchTxnEtiquetas() }} />
 
         <ProyectoModal open={showModal} onClose={() => setShowModal(false)} editId={editId} form={form} setForm={setForm}
           saving={saving} onSave={handleSave} monedasPalette={monedasPalette} />
@@ -337,9 +362,9 @@ export default function ProyectosPage() {
 
         <AsociarMovimientoModal open={showAsociarModal} onClose={() => setShowAsociarModal(false)}
           tipo="proyecto" etiquetaId={et?.id ?? ''} etiquetas={etiquetas ?? []}
-          ingresos={allIngresos ?? []} egresos={allEgresos ?? []} tarjetaTxns={[]}
-          ingresoEtiquetas={ingresoEtiquetas ?? []} egresoEtiquetas={egresoEtiquetas ?? []} txnEtiquetas={[]}
-          onDone={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas() }} />
+          ingresos={allIngresos ?? []} egresos={allEgresos ?? []} tarjetaTxns={allTxnsTarjeta ?? []}
+          ingresoEtiquetas={ingresoEtiquetas ?? []} egresoEtiquetas={egresoEtiquetas ?? []} txnEtiquetas={txnEtiquetas ?? []}
+          onDone={() => { refetchEgresoEtiquetas(); refetchIngresoEtiquetas(); refetchTxnEtiquetas() }} />
       </div>
     )
   }
