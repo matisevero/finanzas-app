@@ -70,9 +70,7 @@ export function useSaldoRealHistorico(moneda: string, antesDe: string) {
 export function useCashflowSimItems(año: number, mes: number) {
   return useAsync(() => Q.getCashflowSimItems(año, mes), [año, mes])
 }
-export function useCashflowResumen(año: number, mes: number, moneda: string) {
-  return useAsync(() => Q.getCashflowResumen(año, mes, moneda), [año, mes, moneda])
-}
+// (useCashflowResumen se sacó junto con la tabla cashflow_resumen_mensual)
 export function useTarjetaTransacciones(tarjetaId?: string) {
   return useAsync(() => Q.getTarjetaTransacciones(tarjetaId), [tarjetaId])
 }

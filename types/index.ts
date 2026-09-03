@@ -405,18 +405,7 @@ export type CashflowSimItemInsert = Omit<CashflowSimItem, 'id' | 'user_id' | 'cr
 
 // ─── Cash Flow — resumen mensual (histórico, sobrevive aunque se limpien los
 // items del simulador de ese mes al pasar al siguiente) ───────────────────────
-export interface CashflowResumenMensual {
-  id: string
-  user_id: string
-  año: number
-  mes: number
-  moneda: Moneda
-  saldo_inicio_mes: number
-  saldo_fin_proyectado: number
-  gasto_diario_disponible: number
-  ahorro_estimado: number
-  updated_at: string
-}
+// (CashflowResumenMensual se sacó junto con la tabla — ver nota en lib/queries/index.ts)
 
 // ─── App state ───────────────────────────────────────────────────────────────
 export interface AppConfig {

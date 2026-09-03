@@ -122,19 +122,26 @@ export interface MovimientoDia {
   descripcion: string
   monto: number
   tipo: 'ingreso' | 'egreso'
-  origen: 'real' | 'pendiente'
+  origen: 'real' | 'pendiente' | 'supuesto'
 }
 export interface DiaFlowDetallado {
   dia: number; entradas: number; salidas: number; neto: number; saldo: number; disponible: number
   movimientos: MovimientoDia[]
 }
 
+// Item del simulador ya ubicado en un día (los "sin fecha" no entran acá — mismo
+// criterio que ya usaba el badge "Con supuestos" del calendario). Tipado mínimo
+// a propósito (no importa CashflowSimItem de @/types) para no acoplar este
+// archivo al modelo de datos completo — cualquier objeto con esta forma sirve.
+export interface SupuestoFlow { id: string; dia: number | null; monto: number; tipo: 'ingreso' | 'egreso'; descripcion: string }
+
 export function proyectarCashFlowMes(
   saldoInicioMes: number,
   eventosPendientes: EventoCalendario[],
   ingresosDelMes: Ingreso[],
   egresosDelMes: Egreso[],
-  diasEnMes: number
+  diasEnMes: number,
+  supuestos: SupuestoFlow[] = []
 ): DiaFlowDetallado[] {
   let acum = saldoInicioMes
   const base = Array.from({ length: diasEnMes }, (_, i) => {
@@ -149,6 +156,8 @@ export function proyectarCashFlowMes(
         id: ev.id, descripcion: ev.descripcion, monto: ev.monto ?? 0,
         tipo: ev.tipo === 'ingreso' ? 'ingreso' : 'egreso', origen: 'pendiente',
       }))
+    supuestos.filter(s => s.dia === dia).forEach(s =>
+      movimientos.push({ id: s.id, descripcion: s.descripcion, monto: s.monto, tipo: s.tipo, origen: 'supuesto' }))
     const entradas = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
     const salidas  = movimientos.filter(m => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0)
     acum += entradas - salidas

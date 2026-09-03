@@ -16,7 +16,7 @@ import type {
   Persona, PersonaInsert,
   CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
   MovimientoUnificado, TarjetaTransaccionVista,
-  CashflowSimItem, CashflowSimItemInsert, CashflowResumenMensual,
+  CashflowSimItem, CashflowSimItemInsert,
 } from '@/types'
 
 const sb = () => createClient()
@@ -685,26 +685,8 @@ export async function deleteCashflowSimItem(id: string): Promise<void> {
   if (error) throw error
 }
 
-// ─── CASH FLOW — RESUMEN MENSUAL (histórico) ──────────────────────────────────
-// Se pisa (upsert) cada vez que cambia algo relevante en la pantalla — así, aunque
-// los items del simulador de ese mes se limpien al pasar al siguiente, el resumen
-// de "cuánto ibas a poder ahorrar" queda guardado para siempre.
-export async function upsertCashflowResumen(r: {
-  año: number; mes: number; moneda: string
-  saldo_inicio_mes: number; saldo_fin_proyectado: number
-  gasto_diario_disponible: number; ahorro_estimado: number
-}): Promise<void> {
-  const userId = await uid()
-  const { error } = await sb().from('cashflow_resumen_mensual')
-    .upsert({ ...r, user_id: userId, updated_at: new Date().toISOString() }, { onConflict: 'user_id,año,mes,moneda' })
-  if (error) throw error
-}
-
-export async function getCashflowResumen(año: number, mes: number, moneda: string): Promise<CashflowResumenMensual | null> {
-  const { data } = await sb().from('cashflow_resumen_mensual')
-    .select('*').eq('año', año).eq('mes', mes).eq('moneda', moneda).maybeSingle()
-  return data
-}
+// (Se sacó CASH FLOW — RESUMEN MENSUAL: el Cash Flow ya no navega a meses pasados,
+// así que no tiene sentido persistir un histórico. Tabla dada de baja — ver SQL aparte.)
 
 // ─── METAS ───────────────────────────────────────────────────────────────────
 export async function getMetas(): Promise<Meta[]> {

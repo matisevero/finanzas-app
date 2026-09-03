@@ -6,7 +6,7 @@ import {
   useEventosMes, useIngresosByAño, useEgresosByAño, useCashflowSimItems,
 } from '@/hooks'
 import {
-  createCashflowSimItem, updateCashflowSimItem, deleteCashflowSimItem, upsertCashflowResumen,
+  createCashflowSimItem, updateCashflowSimItem, deleteCashflowSimItem,
 } from '@/lib/queries'
 import { fmt } from '@/lib/utils/formatters'
 import { MESES } from '@/lib/utils/constants'
@@ -258,7 +258,7 @@ function CalendarioCashflow({
           const isToday = inMonth && dia === HOY.getDate() && mesBase === HOY.getMonth() && añoBase === HOY.getFullYear()
           const supuestosDia = (dia !== null && inMonth) ? simItems.filter(s => s.dia === dia) : []
           const label = dia !== null ? weekdayShort(añoBase, mesBase, dia) : ''
-          const movs = dFlow?.movimientos ?? []
+          const movs = (dFlow?.movimientos ?? []).filter(m => m.origen !== 'supuesto') // los supuestos se renderizan aparte (con drag/checkbox/menú), no como chip de flowData
           return (
             <div key={i}
               className={`min-h-[56px] rounded-lg border p-1 flex flex-col gap-0.5 transition-colors ${!inMonth ? 'border-slate-100 bg-slate-50/60 opacity-50' : isToday ? 'border-blue-400 bg-blue-50' : 'border-dashed border-slate-200'}`}
@@ -421,11 +421,26 @@ export default function CashFlowPage() {
   const totalDeudasMes   = eventosPendientes.filter(ev => ev.tipo !== 'ingreso' && ev.monto).reduce((s, ev) => s + (ev.monto ?? 0), 0)
   const saldoInicioMes   = 0 // el punto de partida del día a día siempre es 0: el mes "no arrastra" nada.
 
-  const flowData = useMemo(() =>
-    proyectarCashFlowMes(saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes)
-  , [eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes])
+  // Toggle Real / Con supuestos: decide qué entra en flowData (y por lo tanto en
+  // los KPIs, el disponible/día de cada celda, el gráfico y "Días con movimientos").
+  // La card "Con tus supuestos, ¿cuánto te queda a fin de mes?" más abajo SIEMPRE
+  // muestra el número con supuestos, sea cual sea este toggle — es la referencia fija.
+  const [incluirSupuestos, setIncluirSupuestos] = useState(false)
+  const supuestosParaFlow = useMemo(() =>
+    incluirSupuestos ? items.filter(i => i.dia !== null).map(i => ({ id: i.id, dia: i.dia, monto: i.monto, tipo: i.tipo, descripcion: i.descripcion })) : []
+  , [incluirSupuestos, items])
 
+  const flowData = useMemo(() =>
+    proyectarCashFlowMes(saldoInicioMes, eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes, supuestosParaFlow)
+  , [eventosPendientes, ingresosDelMes, egresosDelMes, diasEnMes, supuestosParaFlow])
+
+  // Cash Flow es para el mes que se está cursando (o para planear hacia adelante) —
+  // no tiene sentido navegar a meses pasados: los supuestos del simulador se limpian
+  // mes a mes por diseño, así que no hay nada útil que ver ahí atrás. Piso: nunca se
+  // puede ir antes del mes real actual; hacia adelante no hay límite.
+  const esMesPiso = mes === HOY.getMonth() && año === HOY.getFullYear()
   const navMes = (dir: number) => {
+    if (dir < 0 && esMesPiso) return
     let m2 = mes + dir, a2 = año
     if (m2 < 0) { m2 = 11; a2-- } else if (m2 > 11) { m2 = 0; a2++ }
     setMes(m2); setAño(a2)
@@ -447,20 +462,8 @@ export default function CashFlowPage() {
   const saldoFinSimulado = saldoFin + totalSupuestosNeto
   const ahorroEstimado = saldoFinSimulado - saldoInicioMes
 
-  // Persistir resumen histórico del mes (debounced) — sobrevive aunque se limpien los
-  // supuestos de este mes al pasar al siguiente.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      upsertCashflowResumen({
-        año, mes: mesNum, moneda: m,
-        saldo_inicio_mes: saldoInicioMes,
-        saldo_fin_proyectado: saldoFinSimulado,
-        gasto_diario_disponible: gastoDiarioDisp,
-        ahorro_estimado: ahorroEstimado,
-      }).catch(() => {})
-    }, 800)
-    return () => clearTimeout(t)
-  }, [año, mesNum, m, saldoFinSimulado, gastoDiarioDisp, ahorroEstimado])
+  // (Se sacó la persistencia de "resumen histórico mensual": no tiene sentido si el
+  // Cash Flow ya no permite navegar a meses pasados — ver navMes() más abajo.)
 
   // ── Mutaciones optimistas: actualizan el estado local al toque, sin esperar
   // ni refetchear — la llamada a Supabase corre en segundo plano. Si falla, se
@@ -506,7 +509,9 @@ export default function CashFlowPage() {
         subtitle="Tu disponibilidad día a día — cuándo conviene gastar"
         action={
           <div className="flex items-center gap-2">
-            <button onClick={() => navMes(-1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer">‹</button>
+            <button onClick={() => navMes(-1)} disabled={esMesPiso}
+              title={esMesPiso ? 'Cash Flow no mira meses pasados' : 'Mes anterior'}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-500">‹</button>
             <span className="font-semibold text-slate-900 min-w-[140px] text-center">{MESES[mes]} {año}</span>
             <button onClick={() => navMes(1)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 bg-white cursor-pointer">›</button>
           </div>
@@ -558,10 +563,21 @@ export default function CashFlowPage() {
         </div>
       </div>
 
+      {/* ── Toggle Real / Con supuestos ── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+        <span className="text-slate-500 text-xs">Los números de acá abajo (KPIs, disponible por día, gráfico) se calculan con:</span>
+        <div className="flex gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-1">
+          <button onClick={() => setIncluirSupuestos(false)}
+            className={`px-3 h-7 rounded-lg text-xs font-medium border-none cursor-pointer transition-all ${!incluirSupuestos ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>Real + pendientes</button>
+          <button onClick={() => setIncluirSupuestos(true)}
+            className={`px-3 h-7 rounded-lg text-xs font-medium border-none cursor-pointer transition-all ${incluirSupuestos ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'}`}>Con supuestos</button>
+        </div>
+      </div>
+
       {/* ── KPIs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {[
-          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: 'Ingresos − Egresos − Deudas pendientes', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
+          { l: 'Saldo estimado fin mes', v: fmt(saldoFin, m),     s: incluirSupuestos ? 'Ingresos − Egresos − Deudas pendientes − Supuestos' : 'Ingresos − Egresos − Deudas pendientes', c: saldoFin >= 0 ? '#1A5E9E' : '#F54927' },
           { l: 'Punto más bajo',         v: fmt(minDia?.saldo ?? 0, m), s: `Día ${minDia?.dia ?? '-'} — tené cuidado`, c: (minDia?.saldo ?? 0) >= 0 ? '#E8A020' : '#F54927' },
           { l: 'Podés gastar por día',   v: gastoDiarioDisp >= 0 ? fmt(gastoDiarioDisp, m) : '⚠ Déficit', s: gastoDiarioDisp >= 0 ? `Balance libre ÷ ${diasRestantes} días restantes` : 'El mes está en déficit', c: gastoDiarioDisp >= 0 ? '#40B046' : '#F54927' },
         ].map(k => (
@@ -645,7 +661,7 @@ export default function CashFlowPage() {
                     {d.movimientos.map(mv => (
                       <div key={`${mv.origen}-${mv.id}`} className="flex justify-between items-center">
                         <span className="text-slate-500 text-xs truncate max-w-[160px]">
-                          {mv.tipo === 'ingreso' ? '↑' : '↓'} {mv.descripcion}{mv.origen === 'pendiente' ? ' (pendiente)' : ''}
+                          {mv.tipo === 'ingreso' ? '↑' : '↓'} {mv.descripcion}{mv.origen === 'pendiente' ? ' (pendiente)' : mv.origen === 'supuesto' ? ' (supuesto)' : ''}
                         </span>
                         <span className={`text-xs font-mono flex-shrink-0 ${mv.tipo === 'ingreso' ? 'text-emerald-600 font-medium' : 'text-red-600 font-bold'}`}>
                           {mv.tipo === 'ingreso' ? '+' : '-'}{fmt(mv.monto, m)}
