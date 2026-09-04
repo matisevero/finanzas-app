@@ -1,13 +1,14 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import {
-  useSaludCategorias, useSaludOverridesMes, useFrecuenciaCategorias, useAhorros, useMetas,
+  useSaludCategorias, useSaludOverridesMes, useCategoriasCustom, useFrecuenciaCategorias, useAhorros, useMetas,
 } from '@/hooks'
 import {
   createSaludCategoria, updateSaludCategoria, deleteSaludCategoria,
   upsertSaludOverrideMes, deleteSaludOverrideMes,
 } from '@/lib/queries'
 import { Modal, ChartToggle, FieldLabel, LoadingSpinner } from '@/components/ui'
+import { normCat } from '@/lib/utils/calculations'
 import type { SaludCategoriaConfig, SaludFuenteTipo, SaludOverrideMes } from '@/types'
 
 const FUENTES: { value: SaludFuenteTipo; label: string; unidad: '%' | 'meses' }[] = [
@@ -51,8 +52,8 @@ type CatDraft = Omit<SaludCategoriaConfig, 'user_id' | 'created_at'> & { _tmp?: 
 // panel con checkboxes que se abre/cierra), en vez del muro de chips de antes.
 // Incluye buscador porque la lista de categorías de Egresos puede ser larga.
 function DropdownMultiSelect({
-  opciones, seleccionadas, onToggle, placeholder,
-}: { opciones: { value: string; label: string }[]; seleccionadas: string[]; onToggle: (v: string) => void; placeholder: string }) {
+  opciones, seleccionadas, onToggle, placeholder, allowCustom,
+}: { opciones: { value: string; label: string }[]; seleccionadas: string[]; onToggle: (v: string) => void; placeholder: string; allowCustom?: boolean }) {
   const [open, setOpen] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   useEffect(() => {
@@ -62,6 +63,9 @@ function DropdownMultiSelect({
     return () => document.removeEventListener('click', cerrar)
   }, [open])
   const filtradas = opciones.filter(o => o.label.toLowerCase().includes(busqueda.toLowerCase()))
+  const busquedaTrim = busqueda.trim()
+  const yaExiste = opciones.some(o => o.label.toLowerCase() === busquedaTrim.toLowerCase())
+  const puedeAgregar = allowCustom && busquedaTrim.length > 0 && !yaExiste
   return (
     <div className="relative" onClick={e => e.stopPropagation()}>
       <button onClick={() => setOpen(o => !o)}
@@ -73,12 +77,19 @@ function DropdownMultiSelect({
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 w-64 max-h-72 overflow-hidden flex flex-col">
-          {opciones.length > 8 && (
-            <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…"
+          {(opciones.length > 8 || allowCustom) && (
+            <input value={busqueda} onChange={e => setBusqueda(e.target.value)}
+              placeholder={allowCustom ? 'Buscar o escribir una nueva…' : 'Buscar…'}
               className="input-field !py-1.5 !rounded-none !border-0 !border-b !border-slate-100 text-xs" autoFocus />
           )}
           <div className="overflow-y-auto py-1">
-            {filtradas.length === 0 && <div className="text-[11px] text-slate-300 px-3 py-2">Nada con ese nombre.</div>}
+            {puedeAgregar && (
+              <button onClick={() => { onToggle(busquedaTrim); setBusqueda('') }}
+                className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 border-none bg-transparent cursor-pointer font-medium">
+                + Agregar "{busquedaTrim}"
+              </button>
+            )}
+            {filtradas.length === 0 && !puedeAgregar && <div className="text-[11px] text-slate-300 px-3 py-2">Nada con ese nombre.</div>}
             {filtradas.map(op => (
               <label key={op.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">
                 <input type="checkbox" checked={seleccionadas.includes(op.value)} onChange={() => onToggle(op.value)} />
@@ -97,9 +108,36 @@ export default function SaludConfigModal({
 }: { open: boolean; onClose: () => void; año: number; mes: number; onSaved: () => void }) {
   const { data: categoriasDb, loading: lc } = useSaludCategorias()
   const { data: overridesDb,  loading: lo } = useSaludOverridesMes(año, mes)
-  const { data: catsEgreso }  = useFrecuenciaCategorias('egresos')
+  const { data: catsCustom }  = useCategoriasCustom('egresos')
+  const { data: catsUso }     = useFrecuenciaCategorias('egresos')
   const { data: ahorros }     = useAhorros()
   const { data: metas }       = useMetas()
+
+  // Lista de categorías del picker: arranca con las "oficiales" de tu app
+  // (categorias_custom — nombre y acentos correctos, existen aunque todavía no
+  // las hayas usado en ningún Egreso, ej. "Suscripciones" recién creada). Después
+  // suma cualquier categoría que SÍ aparece en Egresos reales pero no está
+  // registrada formalmente — sin repetir la misma categoría por una diferencia de
+  // mayúscula/acento (normCat), y sin mostrar ids sueltos con forma de UUID (un
+  // dato viejo mal cargado, no una categoría real).
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const categoriasEgreso = useMemo(() => {
+    const oficiales = (catsCustom ?? []).map(c => c.nombre)
+    const yaCubiertas = new Set(oficiales.map(normCat))
+    const adHoc = Object.keys(catsUso ?? {})
+      .filter(nombre => !UUID_RE.test(nombre.trim()))
+      .filter(nombre => !yaCubiertas.has(normCat(nombre)))
+    // de-duplicar el ad-hoc entre sí también (dos variantes de la misma que no está oficializada)
+    const adHocDedup: string[] = []
+    const vistos = new Set<string>()
+    for (const n of adHoc.sort((a, b) => (catsUso?.[b] ?? 0) - (catsUso?.[a] ?? 0))) {
+      const key = normCat(n)
+      if (vistos.has(key)) continue
+      vistos.add(key)
+      adHocDedup.push(n)
+    }
+    return [...oficiales, ...adHocDedup]
+  }, [catsCustom, catsUso])
 
   const [modoMes, setModoMes] = useState(false)
   const [draft, setDraft] = useState<CatDraft[]>([])
@@ -260,10 +298,11 @@ export default function SaludConfigModal({
 
                   {!modoMes && c.fuente_tipo === 'egreso_categoria' && (
                     <DropdownMultiSelect
-                      opciones={Object.entries(catsEgreso ?? {}).sort((a, b) => b[1] - a[1]).map(([nombre]) => ({ value: nombre, label: nombre }))}
+                      opciones={categoriasEgreso.map(nombre => ({ value: nombre, label: nombre }))}
                       seleccionadas={c.fuente_config.categorias ?? []}
                       onToggle={nombre => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
                       placeholder="Elegir categorías de Egresos"
+                      allowCustom
                     />
                   )}
 

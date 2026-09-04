@@ -114,8 +114,8 @@ function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigura
       return { valor: (sum / ing) * 100, unidad: '%', montoAbsoluto: sum }
     }
     case 'egreso_categoria': {
-      const cats = cat.fuente_config.categorias ?? []
-      const sum = inp.egresosDelPeriodo.filter(e => cats.includes(e.categoria)).reduce((s, e) => s + e.monto, 0)
+      const cats = (cat.fuente_config.categorias ?? []).map(normCat)
+      const sum = inp.egresosDelPeriodo.filter(e => cats.includes(normCat(e.categoria))).reduce((s, e) => s + e.monto, 0)
       return { valor: (sum / ing) * 100, unidad: '%', montoAbsoluto: sum }
     }
     case 'ahorro_metas': {
@@ -127,6 +127,15 @@ function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigura
       return { valor: inp.egresoMensual > 0 ? total / inp.egresoMensual : 0, unidad: 'meses', montoAbsoluto: total }
     }
   }
+}
+
+// Normaliza para comparar categorías sin que importe mayúsculas/acentos —
+// "Educación" y "educacion" son la misma categoría para cualquier humano, pero
+// como texto son strings distintos. Sin esto, seleccionar una no capturaba los
+// Egresos cargados con la otra variante. Exportada porque el modal de
+// configuración también la necesita para armar la lista sin repetir variantes.
+export function normCat(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
 
 const DESCRIPCION_FUENTE: Record<SaludCategoriaConfig['fuente_tipo'], string> = {
