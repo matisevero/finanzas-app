@@ -1,9 +1,9 @@
 'use client'
 import { useMemo, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
+import { useIngresos, useEgresos, useIngresosByAño, useEgresosByAño, useDeudas, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
-import { calcularSaludConfigurable, type SaludCategoriaResuelta } from '@/lib/utils/calculations'
+import { calcularSaludConfigurable, calcularInsights, type SaludCategoriaResuelta, type SaludInputsConfigurable, type SaludInsight } from '@/lib/utils/calculations'
 import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
 import SaludConfigModal from '@/components/dashboard/SaludConfigModal'
 
@@ -19,6 +19,11 @@ export default function SaludPage() {
   const { data: periodoTotales, loading: lpt } = useTarjetaPeriodoTotalesTodos()
   const { data: categorias, loading: lc } = useSaludCategorias()
   const { data: overrides, loading: lov } = useSaludOverridesMes(añoActivo, mesActivo)
+  // Para el mes anterior a Enero, hace falta Diciembre del año anterior — `ingresos`/`egresos`
+  // ya vienen escopeados a añoActivo por los hooks de arriba, así que para ese único caso
+  // borde se pide aparte (costo chico, siempre se pide, así no se rompen las reglas de hooks).
+  const { data: ingresosAñoAnt } = useIngresosByAño(añoActivo - 1)
+  const { data: egresosAñoAnt }  = useEgresosByAño(añoActivo - 1)
   const [showConfig, setShowConfig] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -80,6 +85,36 @@ export default function SaludPage() {
       : null
   , [ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, categoriasResueltas, egresosDelPeriodo, ahorros, metas])
 
+  // ── Insights mes contra mes anterior (solo tiene sentido en vista Mes) ──────
+  const mesAnteriorNum = mesActivo === 1 ? 12 : mesActivo - 1
+  const añoAnteriorNum = mesActivo === 1 ? añoActivo - 1 : añoActivo
+  const ingresosFuenteAnterior = añoAnteriorNum === añoActivo ? ingresos : ingresosAñoAnt
+  const egresosFuenteAnterior  = añoAnteriorNum === añoActivo ? egresos  : egresosAñoAnt
+
+  const ingresoMensualAnterior = useMemo(()=>
+    (ingresosFuenteAnterior??[]).filter(i=>i.mes===mesAnteriorNum).reduce((s,i)=>s+i.monto,0)
+  , [ingresosFuenteAnterior, mesAnteriorNum])
+  const egresoMensualAnterior = useMemo(()=>
+    (egresosFuenteAnterior??[]).filter(e=>e.mes===mesAnteriorNum).reduce((s,e)=>s+e.monto,0)
+  , [egresosFuenteAnterior, mesAnteriorNum])
+  const egresosDelPeriodoAnterior = useMemo(()=>
+    (egresosFuenteAnterior??[]).filter(e=>e.mes===mesAnteriorNum)
+  , [egresosFuenteAnterior, mesAnteriorNum])
+  const tarjetaUsadoAnterior = useMemo(()=>
+    (periodoTotales??[]).filter(p=>p.año===añoAnteriorNum && p.mes===mesAnteriorNum).reduce((s,p)=>s+p.total_declarado,0)
+  , [periodoTotales, añoAnteriorNum, mesAnteriorNum])
+
+  // cuotaTotal y tarjetaLimite son un snapshot de HOY (Deudas/Tarjetas activas) — no hay
+  // forma de reconstruir con qué deudas/límites contabas exactamente el mes pasado sin
+  // guardar historial de eso, así que se reutiliza el mismo valor para ambos meses. Es
+  // una aproximación razonable (esos números no suelen cambiar mes a mes de golpe).
+  const insights: SaludInsight[] = useMemo(()=>{
+    if (!esMensual || categoriasResueltas.length===0 || ingresoMensual===0) return []
+    const inpActual: SaludInputsConfigurable = { ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, egresosDelPeriodo, ahorros: ahorros??[], metas: metas??[] }
+    const inpAnterior: SaludInputsConfigurable = { ingresoMensual: ingresoMensualAnterior, egresoMensual: egresoMensualAnterior, cuotaTotal, tarjetaUsado: tarjetaUsadoAnterior, tarjetaLimite, egresosDelPeriodo: egresosDelPeriodoAnterior, ahorros: ahorros??[], metas: metas??[] }
+    return calcularInsights(categoriasResueltas, inpActual, inpAnterior)
+  }, [esMensual, categoriasResueltas, ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, egresosDelPeriodo, ahorros, metas, ingresoMensualAnterior, egresoMensualAnterior, tarjetaUsadoAnterior, egresosDelPeriodoAnterior])
+
   // Dibujar gauge semicircular
   useEffect(()=>{
     if (!canvasRef.current || !salud) return
@@ -136,6 +171,29 @@ export default function SaludPage() {
           </button>
         } />
       <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
+
+      {/* Insights en texto plano — mes contra mes anterior */}
+      {esMensual && insights.length > 0 && (
+        <Card className="mb-6">
+          <div className="text-slate-900 font-semibold text-[15px] mb-0.5">Lo que juntamos este mes</div>
+          <div className="text-slate-400 text-xs mb-4">Ordenado por dónde más podés ahorrar</div>
+          <div className="flex flex-col gap-2">
+            {insights.map(ins => {
+              const bg = ins.tipo === 'oportunidad' ? '#FEF2F2' : ins.tipo === 'positivo' ? '#F7FCF7' : '#F8FAFC'
+              const border = ins.tipo === 'oportunidad' ? '#FECACA' : ins.tipo === 'positivo' ? '#E9F6EA' : '#E2E8F0'
+              return (
+                <div key={ins.id} className="rounded-xl px-4 py-3 flex items-start gap-3" style={{ background: bg, border: `1px solid ${border}` }}>
+                  <span className="text-lg flex-shrink-0">{ins.icono}</span>
+                  <span className="text-sm text-slate-700 leading-relaxed">{ins.texto}</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+      {!esMensual && (
+        <div className="text-slate-400 text-xs mb-6">Los insights mes contra mes solo se ven en vista Mes — estás mirando el promedio del año.</div>
+      )}
 
       {/* Hero */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">

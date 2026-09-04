@@ -96,25 +96,27 @@ export interface SaludInputsConfigurable {
 // override específico para el mes activo — eso se resuelve antes de llamar acá).
 export type SaludCategoriaResuelta = Pick<SaludCategoriaConfig, 'id'|'nombre'|'icono'|'color'|'peso'|'umbral'|'comparacion'|'fuente_tipo'|'fuente_config'>
 
-function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigurable): { valor: number; unidad: '%' | 'meses' } {
+function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigurable): { valor: number; unidad: '%' | 'meses'; montoAbsoluto: number } {
   const ing = inp.ingresoMensual || 1
   switch (cat.fuente_tipo) {
     case 'deuda_cuotas':
-      return { valor: (inp.cuotaTotal / ing) * 100, unidad: '%' }
-    case 'ratio_ahorro_libre':
-      return { valor: (Math.max(0, inp.ingresoMensual - inp.egresoMensual - inp.cuotaTotal) / ing) * 100, unidad: '%' }
+      return { valor: (inp.cuotaTotal / ing) * 100, unidad: '%', montoAbsoluto: inp.cuotaTotal }
+    case 'ratio_ahorro_libre': {
+      const libre = Math.max(0, inp.ingresoMensual - inp.egresoMensual - inp.cuotaTotal)
+      return { valor: (libre / ing) * 100, unidad: '%', montoAbsoluto: libre }
+    }
     case 'tarjeta_uso':
-      return { valor: inp.tarjetaLimite > 0 ? (inp.tarjetaUsado / inp.tarjetaLimite) * 100 : 0, unidad: '%' }
+      return { valor: inp.tarjetaLimite > 0 ? (inp.tarjetaUsado / inp.tarjetaLimite) * 100 : 0, unidad: '%', montoAbsoluto: inp.tarjetaUsado }
     case 'ratio_gasto':
-      return { valor: (inp.egresoMensual / ing) * 100, unidad: '%' }
+      return { valor: (inp.egresoMensual / ing) * 100, unidad: '%', montoAbsoluto: inp.egresoMensual }
     case 'egreso_recurrente': {
       const sum = inp.egresosDelPeriodo.filter(e => e.recurrente).reduce((s, e) => s + e.monto, 0)
-      return { valor: (sum / ing) * 100, unidad: '%' }
+      return { valor: (sum / ing) * 100, unidad: '%', montoAbsoluto: sum }
     }
     case 'egreso_categoria': {
       const cats = cat.fuente_config.categorias ?? []
       const sum = inp.egresosDelPeriodo.filter(e => cats.includes(e.categoria)).reduce((s, e) => s + e.monto, 0)
-      return { valor: (sum / ing) * 100, unidad: '%' }
+      return { valor: (sum / ing) * 100, unidad: '%', montoAbsoluto: sum }
     }
     case 'ahorro_metas': {
       const aIds = new Set(cat.fuente_config.ahorro_ids ?? [])
@@ -122,7 +124,7 @@ function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigura
       const sumAhorros = inp.ahorros.filter(a => aIds.has(a.id)).reduce((s, a) => s + a.ajuste_manual, 0)
       const sumMetas = inp.metas.filter(m => mIds.has(m.id)).reduce((s, m) => s + m.monto_actual, 0)
       const total = sumAhorros + sumMetas
-      return { valor: inp.egresoMensual > 0 ? total / inp.egresoMensual : 0, unidad: 'meses' }
+      return { valor: inp.egresoMensual > 0 ? total / inp.egresoMensual : 0, unidad: 'meses', montoAbsoluto: total }
     }
   }
 }
@@ -140,13 +142,13 @@ const DESCRIPCION_FUENTE: Record<SaludCategoriaConfig['fuente_tipo'], string> = 
 export interface SaludCategoriaResultado {
   id: string; nombre: string; icono: string; color: string; peso: number
   score: number; ok: boolean; tip: string; descripcion: string
-  valorActual: string; valorIdeal: string
+  valorActual: string; valorIdeal: string; montoActual: number
 }
 
 export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], inp: SaludInputsConfigurable) {
   const pesoTotal = categorias.reduce((s, c) => s + c.peso, 0) || 100
   const resultados: SaludCategoriaResultado[] = categorias.map(cat => {
-    const { valor, unidad } = valorDeCategoria(cat, inp)
+    const { valor, unidad, montoAbsoluto } = valorDeCategoria(cat, inp)
     const umbral = cat.umbral || 1
     const score = Math.max(0, Math.min(100, Math.round(
       cat.comparacion === 'mayor_que' ? (valor / umbral) * 100 : (1 - valor / umbral) * 100
@@ -164,7 +166,7 @@ export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], 
         : cat.comparacion === 'menor_que'
           ? `Está por encima del ideal (${fmtIdeal}). Convendría bajarlo.`
           : `Está por debajo del ideal (${fmtIdeal}). Convendría subirlo.`,
-      valorActual: fmtValor(valor), valorIdeal: fmtIdeal,
+      valorActual: fmtValor(valor), valorIdeal: fmtIdeal, montoActual: montoAbsoluto,
     }
   })
   const total = Math.round(resultados.reduce((s, c) => s + c.score * c.peso, 0) / pesoTotal)
@@ -174,6 +176,55 @@ export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], 
     color: total >= 75 ? '#40B046' : total >= 50 ? '#E8A020' : '#F54927',
     categorias: resultados,
   }
+}
+
+// ─── Insights en texto plano — "esto es lo que juntamos, esto podrías hacer" ──
+// Compara el mes activo contra el mes anterior (mismas categorías, mismos
+// fuente_tipo) para poder decir "subió/bajó X% vs el mes pasado". Los tipos
+// 'ratio_ahorro_libre' y 'ahorro_metas' no tienen una comparación mes a mes
+// confiable con los datos que hay hoy (uno es derivado, el otro es una foto del
+// saldo actual, no un historial) — para esos se muestra el estado sin variación.
+export interface SaludInsight {
+  id: string; icono: string; texto: string; tipo: 'oportunidad' | 'cambio' | 'positivo'
+}
+
+export function calcularInsights(
+  categorias: SaludCategoriaResuelta[],
+  inpActual: SaludInputsConfigurable,
+  inpAnterior: SaludInputsConfigurable
+): SaludInsight[] {
+  const insights: SaludInsight[] = []
+  for (const cat of categorias) {
+    const { valor, montoAbsoluto } = valorDeCategoria(cat, inpActual)
+    const ok = cat.comparacion === 'mayor_que' ? valor >= cat.umbral : valor < cat.umbral
+
+    if (cat.fuente_tipo === 'ahorro_metas') {
+      insights.push({
+        id: cat.id, icono: cat.icono, tipo: ok ? 'positivo' : 'cambio',
+        texto: `Tu ${cat.nombre} está en ${Math.round(montoAbsoluto).toLocaleString('es-AR')} — cubre ${valor.toFixed(1)} meses de gastos.`,
+      })
+      continue
+    }
+
+    const { montoAbsoluto: montoAnterior } = valorDeCategoria(cat, inpAnterior)
+    const cambioPct = montoAnterior > 0 ? ((montoAbsoluto - montoAnterior) / montoAnterior) * 100 : 0
+
+    if (!ok && montoAbsoluto > 0) {
+      insights.push({
+        id: cat.id, icono: cat.icono, tipo: 'oportunidad',
+        texto: `Gastás ${Math.round(montoAbsoluto).toLocaleString('es-AR')} en ${cat.nombre} — ${valor.toFixed(1)}% de tu ingreso. Bajarlo a la mitad te dejaría +${Math.round(montoAbsoluto/2).toLocaleString('es-AR')}/mes libres.`,
+      })
+    } else if (Math.abs(cambioPct) >= 10 && montoAnterior > 0) {
+      insights.push({
+        id: cat.id, icono: cat.icono, tipo: 'cambio',
+        texto: `${cat.nombre} vino un ${Math.abs(Math.round(cambioPct))}% ${cambioPct > 0 ? 'arriba' : 'abajo'} del mes pasado — pasó de ${Math.round(montoAnterior).toLocaleString('es-AR')} a ${Math.round(montoAbsoluto).toLocaleString('es-AR')}.`,
+      })
+    } else if (ok) {
+      insights.push({ id: cat.id, icono: cat.icono, tipo: 'positivo', texto: `${cat.nombre} está bien — ${valor.toFixed(1)}%, dentro de lo que definiste.` })
+    }
+  }
+  const orden = { oportunidad: 0, cambio: 1, positivo: 2 }
+  return insights.sort((a, b) => orden[a.tipo] - orden[b.tipo])
 }
 
 
