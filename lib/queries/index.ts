@@ -12,7 +12,7 @@ import type {
   Etiqueta, EtiquetaInsert,
   PrecioItem, PrecioHistorial,
   SaldoInicial,
-  CategoriaCustom, CategoriaCustomInsert,
+  CategoriaCustom, CategoriaCustomInsert, CategoriaOculta,
   Persona, PersonaInsert,
   CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
   MovimientoUnificado, TarjetaTransaccionVista,
@@ -69,6 +69,48 @@ export async function updateCategoriaCustom(id: string, form: Partial<CategoriaC
   const { data, error } = await sb().from('categorias_custom').update(form).eq('id', id).select().single()
   if (error) throw error
   return data
+}
+
+// ─── Categorías — renombrar/reasignar en cascada, y "borrar" las de base ──────
+// El campo que guarda la categoría en cada tabla se llama distinto según el
+// módulo (Ingresos usa `tipo`, Egresos usa `categoria`) — ninguno de los dos
+// acepta NULL, así que reasignar (por rename o por borrado) siempre apunta a un
+// valor real, nunca lo deja vacío.
+export async function renombrarCategoriaDatos(modulo: 'ingresos' | 'egresos', vieja: string, nueva: string) {
+  const userId = await uid()
+  const campo = modulo === 'ingresos' ? 'tipo' : 'categoria'
+  const { error } = await sb().from(modulo).update({ [campo]: nueva }).eq('user_id', userId).eq(campo, vieja)
+  if (error) throw error
+}
+
+export async function getCategoriasOcultas(modulo: 'ingresos' | 'egresos'): Promise<CategoriaOculta[]> {
+  const userId = await uid()
+  const { data, error } = await sb().from('categorias_ocultas').select('*').eq('user_id', userId).eq('modulo', modulo)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function ocultarCategoriaBase(modulo: 'ingresos' | 'egresos', clave: string) {
+  const userId = await uid()
+  const { error } = await sb().from('categorias_ocultas').insert({ user_id: userId, modulo, clave })
+  if (error) throw error
+}
+
+// Renombra una categoría de base (ej. la 'educacion' de TIPOS_EGRESO, con label
+// "Educación"): la convierte en una fila real de categorias_custom con el nombre
+// nuevo, mueve todos los Egresos/Ingresos que usaban la clave vieja, y oculta la
+// de base para no verla duplicada.
+export async function convertirCategoriaBaseYRenombrar(modulo: 'ingresos' | 'egresos', claveVieja: string, nombreNuevo: string, icono: string, color: string): Promise<CategoriaCustom> {
+  const nueva = await createCategoriaCustom({ modulo, nombre: nombreNuevo, icono, color, parent_id: null })
+  await renombrarCategoriaDatos(modulo, claveVieja, nombreNuevo)
+  await ocultarCategoriaBase(modulo, claveVieja)
+  return nueva
+}
+
+// Borra una categoría de base: manda todo lo que la usaba a 'otro' y la oculta.
+export async function borrarCategoriaBase(modulo: 'ingresos' | 'egresos', clave: string) {
+  await renombrarCategoriaDatos(modulo, clave, 'otro')
+  await ocultarCategoriaBase(modulo, clave)
 }
 
 // ─── PERSONAS ("quién") ────────────────────────────────────────────────────────

@@ -2,13 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore, useMonedasDisponibles } from '@/store/appStore'
 import { createClient } from '@/lib/supabase/client'
-import { useCategoriasCustom, usePersonas, useAllIngresos, useAllEgresos } from '@/hooks'
-import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
+import { useCategoriasCustom, useCategoriasOcultas, useCategoriasCompletas, usePersonas, useAllIngresos, useAllEgresos } from '@/hooks'
+import { createCategoriaCustom, updateCategoriaCustom, deleteCategoriaCustom, renombrarCategoriaDatos, convertirCategoriaBaseYRenombrar, borrarCategoriaBase, getEtiquetasDistintas, renombrarEtiqueta, borrarEtiqueta, createPersona, renombrarPersona, reactivarPersona, eliminarOArchivarPersona } from '@/lib/queries'
 import { PageHeader, Card, FieldLabel } from '@/components/ui'
 import SaludDeDatosSection from '@/components/dashboard/SaludDeDatosSection'
 import PasswordInput from '@/components/ui/PasswordInput'
 import type { Moneda, CategoriaCustom, Persona } from '@/types'
-import { TIPOS_INGRESO, TIPOS_EGRESO } from '@/lib/utils/constants'
 import { fmtDate } from '@/lib/utils/formatters'
 import { useRouter } from 'next/navigation'
 
@@ -110,16 +109,20 @@ export default function ConfiguracionPage() {
   const [showAddMoneda, setShowAddMoneda] = useState(false)
   const [nuevaMonedaTexto, setNuevaMonedaTexto] = useState('')
 
-  // Categorías
+  // Categorías — categoriasCompletas es la MISMA fuente que usa cualquier otro
+  // lugar de la app que necesite elegir una categoría (ej. el picker de Salud),
+  // para que nunca puedan mostrar listas distintas entre sí.
   const [catModulo, setCatModulo] = useState<'ingresos'|'egresos'>('ingresos')
   const { data: categoriasCustom, refetch: refetchCategorias } = useCategoriasCustom(catModulo)
-  const tiposBase = catModulo === 'ingresos'
-    ? Object.entries(TIPOS_INGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
-    : Object.entries(TIPOS_EGRESO).map(([key, cfg]) => ({ key, label: cfg.label, icon: cfg.icon, color: cfg.color }))
+  const { data: categoriasOcultas, refetch: refetchOcultas } = useCategoriasOcultas(catModulo)
+  const { data: categoriasCompletas } = useCategoriasCompletas(catModulo)
   const [nuevaCatNombre, setNuevaCatNombre] = useState('')
   const [savingCat, setSavingCat] = useState(false)
   const [editCatId, setEditCatId] = useState<string|null>(null)
   const [editCatNombre, setEditCatNombre] = useState('')
+  // Edición inline de una categoría "de base" (key en vez de id, no existen como fila)
+  const [editBaseKey, setEditBaseKey] = useState<string|null>(null)
+  const [editBaseNombre, setEditBaseNombre] = useState('')
 
   // Personas (Quién)
   const { data: personas, refetch: refetchPersonas } = usePersonas()
@@ -221,17 +224,34 @@ export default function ConfiguracionPage() {
     } finally { setSavingCat(false) }
   }
 
-  const guardarEdicionCategoria = async (id: string) => {
-    if (!editCatNombre.trim()) return
-    await updateCategoriaCustom(id, { nombre: editCatNombre.trim() })
+  const guardarEdicionCategoria = async (id: string, nombreViejo: string) => {
+    const nuevoNombre = editCatNombre.trim()
+    if (!nuevoNombre || nuevoNombre === nombreViejo) { setEditCatId(null); return }
+    await updateCategoriaCustom(id, { nombre: nuevoNombre })
+    await renombrarCategoriaDatos(catModulo, nombreViejo, nuevoNombre) // mueve los Ingresos/Egresos que ya usaban el nombre viejo
     setEditCatId(null)
     refetchCategorias()
   }
 
-  const borrarCategoria = async (id: string) => {
-    if (!confirm('¿Borrar esta categoría? Los ítems que la usan van a quedar con esa referencia vacía.')) return
+  const borrarCategoria = async (id: string, nombre: string) => {
+    if (!confirm(`¿Borrar "${nombre}"? Los Ingresos/Egresos que la usan van a quedar como "Otro".`)) return
+    await renombrarCategoriaDatos(catModulo, nombre, 'otro')
     await deleteCategoriaCustom(id)
     refetchCategorias()
+  }
+
+  const guardarEdicionBase = async (claveVieja: string, icon: string, color: string) => {
+    const nuevoNombre = editBaseNombre.trim()
+    if (!nuevoNombre) { setEditBaseKey(null); return }
+    await convertirCategoriaBaseYRenombrar(catModulo, claveVieja, nuevoNombre, icon, color)
+    setEditBaseKey(null)
+    refetchCategorias(); refetchOcultas()
+  }
+
+  const borrarCategoriaBaseHandler = async (clave: string, label: string) => {
+    if (!confirm(`¿Sacar "${label}" de la lista? Los Ingresos/Egresos que la usan van a quedar como "Otro".`)) return
+    await borrarCategoriaBase(catModulo, clave)
+    refetchOcultas()
   }
 
   const guardarEdicionEtiqueta = async (vieja: string) => {
@@ -661,26 +681,33 @@ export default function ConfiguracionPage() {
             </button>
           </div>
           <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto mb-3">
-            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-300 px-1 pt-1">De base (fijas)</div>
-            {tiposBase.map(t => (
-              <div key={t.key} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50/60">
-                <span className="text-sm text-slate-500">{t.icon} {t.label}</span>
-                <span className="text-[10px] text-slate-300">predefinida</span>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-300 px-1 pt-1">De base</div>
+            {(categoriasCompletas ?? []).filter(c => c.origen === 'base').map(t => (
+              <div key={t.value} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50/60">
+                {editBaseKey === t.value ? (
+                  <input autoFocus value={editBaseNombre} onChange={e=>setEditBaseNombre(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionBase(t.value, t.icono, t.color); if(e.key==='Escape') setEditBaseKey(null) }}
+                    onBlur={() => guardarEdicionBase(t.value, t.icono, t.color)}
+                    className="input-field py-1 text-base flex-1" />
+                ) : (
+                  <span onClick={() => { setEditBaseKey(t.value); setEditBaseNombre(t.label) }} className="text-sm text-slate-500 cursor-pointer hover:underline flex-1">{t.icono} {t.label}</span>
+                )}
+                <button onClick={() => borrarCategoriaBaseHandler(t.value, t.label)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
               </div>
             ))}
             <div className="text-[10px] font-bold uppercase tracking-wide text-slate-300 px-1 pt-2">Personalizadas</div>
-            {(categoriasCustom ?? []).length === 0 && <p className="text-slate-400 text-xs italic px-1">Sin categorías propias todavía.</p>}
+            {(categoriasCompletas ?? []).filter(c => c.origen === 'personalizada').length === 0 && <p className="text-slate-400 text-xs italic px-1">Sin categorías propias todavía.</p>}
             {(categoriasCustom as CategoriaCustom[] ?? []).map(cat => (
               <div key={cat.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50">
                 {editCatId === cat.id ? (
                   <input autoFocus value={editCatNombre} onChange={e=>setEditCatNombre(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionCategoria(cat.id); if(e.key==='Escape') setEditCatId(null) }}
-                    onBlur={() => guardarEdicionCategoria(cat.id)}
+                    onKeyDown={e=>{ if(e.key==='Enter') guardarEdicionCategoria(cat.id, cat.nombre); if(e.key==='Escape') setEditCatId(null) }}
+                    onBlur={() => guardarEdicionCategoria(cat.id, cat.nombre)}
                     className="input-field py-1 text-base flex-1" />
                 ) : (
                   <span onClick={() => { setEditCatId(cat.id); setEditCatNombre(cat.nombre) }} className="text-sm text-slate-700 cursor-pointer hover:underline flex-1">{cat.icono} {cat.nombre}</span>
                 )}
-                <button onClick={() => borrarCategoria(cat.id)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
+                <button onClick={() => borrarCategoria(cat.id, cat.nombre)} className="text-slate-300 hover:text-red-500 border-none bg-transparent cursor-pointer text-sm px-1">✕</button>
               </div>
             ))}
           </div>

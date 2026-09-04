@@ -37,6 +37,18 @@ export interface CategoriaCustom {
   created_at: string
   children?: CategoriaCustom[]
 }
+
+// Categorías "de base" (TIPOS_INGRESO/TIPOS_EGRESO) que el usuario sacó de la
+// lista en Configuración — esas constantes son fijas en el código, así que no
+// se pueden borrar de verdad; esto es lo que permite que sí se sientan borradas.
+export interface CategoriaOculta {
+  id: string
+  user_id: string
+  modulo: 'ingresos' | 'egresos'
+  clave: string
+  created_at: string
+}
+
 export type CategoriaCustomInsert = Omit<CategoriaCustom, 'id' | 'user_id' | 'created_at' | 'children'>
 
 // ─── Usuario ─────────────────────────────────────────────────────────────────

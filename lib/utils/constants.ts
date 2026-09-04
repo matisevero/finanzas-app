@@ -1,4 +1,4 @@
-import type { TipoIngreso, TipoEgreso, Moneda } from '@/types'
+import type { TipoIngreso, TipoEgreso, Moneda, CategoriaCustom, CategoriaOculta } from '@/types'
 
 // ─── Nav ─────────────────────────────────────────────────────────────────────
 export const NAV_ITEMS = [
@@ -98,3 +98,27 @@ export const TIPOS_PRECIO: Record<string, { label: string; color: string; icon: 
 }
 export const CATS_PRECIO = Object.keys(TIPOS_PRECIO)
 export const COLORES_PRECIO: Record<string, string> = Object.fromEntries(Object.entries(TIPOS_PRECIO).map(([k,v])=>[k,v.color]))
+
+// ─── Categorías activas de un módulo — fuente única para Configuración y para
+// cualquier picker de categorías (ej. Salud) ───────────────────────────────────
+// "Activas" = de base (TIPOS_INGRESO/TIPOS_EGRESO) que no se ocultaron, más las
+// personalizadas de categorias_custom. Es la MISMA cuenta en los dos lugares a
+// propósito — si un día hay que cambiar qué cuenta como "categoría", se cambia
+// acá una sola vez y automáticamente queda igual en todos lados que la usen.
+export interface CategoriaActiva { value: string; label: string; icono: string; color: string; origen: 'base' | 'personalizada'; id?: string }
+export function categoriasActivas(
+  modulo: 'ingresos' | 'egresos',
+  custom: CategoriaCustom[],
+  ocultas: CategoriaOculta[]
+): CategoriaActiva[] {
+  const base = modulo === 'ingresos' ? TIPOS_INGRESO : TIPOS_EGRESO
+  const clavesOcultas = new Set(ocultas.filter(o => o.modulo === modulo).map(o => o.clave))
+  const baseList: CategoriaActiva[] = Object.entries(base)
+    .filter(([key]) => !clavesOcultas.has(key))
+    .map(([key, cfg]) => ({ value: key, label: cfg.label, icono: cfg.icon, color: cfg.color, origen: 'base' }))
+  const customList: CategoriaActiva[] = custom
+    .filter(c => c.modulo === modulo)
+    .map(c => ({ value: c.nombre, label: c.nombre, icono: c.icono, color: c.color, origen: 'personalizada', id: c.id }))
+  return [...baseList, ...customList]
+}
+

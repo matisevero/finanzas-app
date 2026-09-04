@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '@/store/appStore'
 import * as Q from '@/lib/queries'
+import { categoriasActivas } from '@/lib/utils/constants'
 
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData]       = useState<T | null>(null)
@@ -49,6 +50,19 @@ export function useEgresosPorEtiqueta(id: string | null)  { return useAsync(() =
 export function useIngresosPorEtiqueta(id: string | null) { return useAsync(() => id ? Q.getIngresosPorEtiqueta(id) : Promise.resolve([]), [id]) }
 export function usePrecioItems() { return useAsync(() => Q.getPrecioItems(), []) }
 export function useCategoriasCustom(modulo: string) { return useAsync(() => Q.getCategoriasCustom(modulo), [modulo]) }
+export function useCategoriasOcultas(modulo: 'ingresos' | 'egresos') { return useAsync(() => Q.getCategoriasOcultas(modulo), [modulo]) }
+
+// Wrapper hook de `categoriasActivas` (constants.ts) — esa función tiene la
+// lógica real (de base sin ocultar + personalizadas); este hook solo la conecta
+// con los datos ya cargados, para no repetir la llamada a los dos hooks de abajo
+// en cada lugar que necesite elegir una categoría.
+export function useCategoriasCompletas(modulo: 'ingresos' | 'egresos'): { data: ReturnType<typeof categoriasActivas> | null; loading: boolean } {
+  const { data: custom, loading: l1 } = useCategoriasCustom(modulo)
+  const { data: ocultas, loading: l2 } = useCategoriasOcultas(modulo)
+  const loading = l1 || l2
+  if (!custom || !ocultas) return { data: null, loading }
+  return { data: categoriasActivas(modulo, custom, ocultas), loading: false }
+}
 export function usePersonas() { return useAsync(() => Q.getPersonas(), []) }
 export function useFrecuenciaCategorias(modulo: 'ingresos' | 'egresos') { return useAsync(() => Q.getFrecuenciaCategorias(modulo), [modulo]) }
 export function useDescripcionesDistintas(modulo: 'ingresos' | 'egresos' | 'eventos_calendario') { return useAsync(() => Q.getDescripcionesDistintas(modulo), [modulo]) }

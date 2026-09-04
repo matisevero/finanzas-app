@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import {
-  useSaludCategorias, useSaludOverridesMes, useCategoriasCustom, useAhorros, useMetas,
+  useSaludCategorias, useSaludOverridesMes, useCategoriasCompletas, useAhorros, useMetas,
 } from '@/hooks'
 import {
   createSaludCategoria, updateSaludCategoria, deleteSaludCategoria,
@@ -108,7 +108,7 @@ export default function SaludConfigModal({
 }: { open: boolean; onClose: () => void; año: number; mes: number; onSaved: () => void }) {
   const { data: categoriasDb, loading: lc } = useSaludCategorias()
   const { data: overridesDb,  loading: lo } = useSaludOverridesMes(año, mes)
-  const { data: catsCustom }  = useCategoriasCustom('egresos')
+  const { data: categoriasEgreso } = useCategoriasCompletas('egresos')
   const { data: ahorros }     = useAhorros()
   const { data: metas }       = useMetas()
 
@@ -271,7 +271,7 @@ export default function SaludConfigModal({
 
                   {!modoMes && c.fuente_tipo === 'egreso_categoria' && (
                     <DropdownMultiSelect
-                      opciones={(catsCustom ?? []).map(c => ({ value: c.nombre, label: c.nombre }))}
+                      opciones={(categoriasEgreso ?? []).map(c => ({ value: c.value, label: c.label }))}
                       seleccionadas={c.fuente_config.categorias ?? []}
                       onToggle={nombre => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
                       placeholder="Elegir categorías de Egresos"
