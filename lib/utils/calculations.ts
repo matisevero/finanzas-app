@@ -152,6 +152,9 @@ export interface SaludCategoriaResultado {
   id: string; nombre: string; icono: string; color: string; peso: number
   score: number; ok: boolean; tip: string; descripcion: string
   valorActual: string; valorIdeal: string; montoActual: number
+  // Para la pestaña Presupuesto: unidad/umbral crudos (sin formatear) y de qué
+  // fuente sale, para poder convertir el umbral a $ y dibujar el slider.
+  umbral: number; unidad: '%' | 'meses'; fuenteTipo: SaludCategoriaConfig['fuente_tipo']
 }
 
 export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], inp: SaludInputsConfigurable) {
@@ -176,6 +179,7 @@ export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], 
           ? `Está por encima del ideal (${fmtIdeal}). Convendría bajarlo.`
           : `Está por debajo del ideal (${fmtIdeal}). Convendría subirlo.`,
       valorActual: fmtValor(valor), valorIdeal: fmtIdeal, montoActual: montoAbsoluto,
+      umbral: cat.umbral, unidad, fuenteTipo: cat.fuente_tipo,
     }
   })
   const total = Math.round(resultados.reduce((s, c) => s + c.score * c.peso, 0) / pesoTotal)

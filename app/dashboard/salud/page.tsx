@@ -4,8 +4,10 @@ import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useIngresosByAño, useEgresosByAño, useDeudas, useEventosMes, useEventosAño, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
 import { fmt, añoMesDeFecha } from '@/lib/utils/formatters'
 import { calcularSaludConfigurable, calcularInsights, type SaludCategoriaResuelta, type SaludInputsConfigurable, type SaludInsight } from '@/lib/utils/calculations'
-import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
+import { PageHeader, Card, LoadingSpinner, ProgressBar, ChartToggle } from '@/components/ui'
 import SaludConfigModal from '@/components/dashboard/SaludConfigModal'
+import PresupuestoView from '@/components/dashboard/PresupuestoView'
+import { updateSaludCategoria } from '@/lib/queries'
 
 export default function SaludPage() {
   const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
@@ -19,7 +21,7 @@ export default function SaludPage() {
   const { data: ahorros,  loading: la } = useAhorros()
   const { data: tarjetas, loading: lt } = useTarjetas()
   const { data: periodoTotales, loading: lpt } = useTarjetaPeriodoTotalesTodos()
-  const { data: categorias, loading: lc } = useSaludCategorias()
+  const { data: categorias, loading: lc, refetch: refetchCategorias } = useSaludCategorias()
   const { data: overrides, loading: lov } = useSaludOverridesMes(añoActivo, mesActivo)
   // Para el mes anterior a Enero, hace falta Diciembre del año anterior — `ingresos`/`egresos`
   // ya vienen escopeados a añoActivo por los hooks de arriba, así que para ese único caso
@@ -27,6 +29,7 @@ export default function SaludPage() {
   const { data: ingresosAñoAnt } = useIngresosByAño(añoActivo - 1)
   const { data: egresosAñoAnt }  = useEgresosByAño(añoActivo - 1)
   const [showConfig, setShowConfig] = useState(false)
+  const [vista, setVista] = useState<'score' | 'presupuesto'>('score')
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const mesesConDatos = useMemo(()=>
@@ -177,6 +180,15 @@ export default function SaludPage() {
   const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const periodoLabel = esMensual ? `${MESES_N[mesActivo-1]} ${añoActivo}` : `Promedio mensual ${añoActivo}`
 
+  // Presupuesto: mover el slider ajusta el umbral de esa categoría — el mismo
+  // campo que usa el Score para decidir si estás "bien" o no. No hay un modelo de
+  // datos nuevo, es otra forma de tocar lo mismo, así que Score y Presupuesto
+  // nunca pueden desincronizarse entre sí.
+  const handleUmbralChange = async (categoriaId: string, nuevoUmbral: number) => {
+    await updateSaludCategoria(categoriaId, { umbral: nuevoUmbral })
+    refetchCategorias()
+  }
+
   if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lev&&!eventosDelMes)||(lm&&!metas)||(la&&!ahorros)||(lt&&!tarjetas)||(lpt&&!periodoTotales)||(lc&&!categorias)||(lov&&!overrides)) return <LoadingSpinner />
 
   if (!salud || ingresoMensual===0) return (
@@ -210,6 +222,15 @@ export default function SaludPage() {
         } />
       <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
 
+      <div className="mb-5">
+        <ChartToggle options={[{ value: 'score', label: 'Score' }, { value: 'presupuesto', label: 'Presupuesto' }]} value={vista} onChange={v => setVista(v as 'score'|'presupuesto')} />
+      </div>
+
+      {vista === 'presupuesto' && (
+        <PresupuestoView categorias={salud?.categorias ?? []} ingresoMensual={ingresoMensual} moneda={m} onUmbralChange={handleUmbralChange} />
+      )}
+
+      {vista === 'score' && <>
       {/* Hero */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
         {/* Score gauge */}
@@ -344,6 +365,7 @@ export default function SaludPage() {
       {!esMensual && (
         <div className="text-slate-400 text-xs mt-6">Los insights mes contra mes solo se ven en vista Mes — estás mirando el promedio del año.</div>
       )}
+      </>}
     </div>
   )
 }
