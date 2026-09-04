@@ -76,6 +76,12 @@ export default function SaludPage() {
     esMensual ? (egresos??[]).filter(e=>e.mes===mesActivo) : (egresos??[])
   , [egresos, esMensual, mesActivo])
 
+  // "Ratio deuda/ingreso" y "Ratio gasto/ingreso" de la grilla de abajo usan el umbral
+  // que vos configuraste (si armaste una categoría con esa fuente) — antes tenían 36%/70%
+  // fijos sin importar lo que hubiera en el modal, y podían contradecir el desglose de arriba.
+  const umbralDeuda = categoriasResueltas.find(c=>c.fuente_tipo==='deuda_cuotas')?.umbral ?? 36
+  const umbralGasto = categoriasResueltas.find(c=>c.fuente_tipo==='ratio_gasto')?.umbral ?? 70
+
   const salud = useMemo(()=>
     ingresoMensual>0 && categoriasResueltas.length>0
       ? calcularSaludConfigurable(categoriasResueltas, {
@@ -294,8 +300,8 @@ export default function SaludPage() {
             {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#F54927'},
             {l:'Cuotas fijas',        v:fmt(cuotaTotal,m),         s:'Comprometido/mes',             c:'#5B3FA6'},
             {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#F54927'},
-            {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<0.36?'✓ Saludable (<36%)':'✗ Alto (>36%)', c:cuotaTotal/ingresoMensual<0.36?'#40B046':'#F54927'},
-            {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<0.70?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<0.70?'#40B046':'#F54927'},
+            {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<umbralDeuda/100?`✓ Saludable (<${umbralDeuda}%)`:`✗ Alto (>${umbralDeuda}%)`, c:cuotaTotal/ingresoMensual<umbralDeuda/100?'#40B046':'#F54927'},
+            {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<umbralGasto/100?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<umbralGasto/100?'#40B046':'#F54927'},
             {l:'Deuda pendiente',     v:fmt((deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.pendiente,0),m), s:'Total a pagar (todas las cuotas)', c:'#5B3FA6'},
             {l:'Pagos TC este mes',   v:fmt(tarjetaUsado,m),       s:'Resumen tarjetas',             c:'#1A5E9E'},
           ].map(k=>(

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import {
-  useSaludCategorias, useSaludOverridesMes, useCategoriasCustom, useAhorros, useMetas,
+  useSaludCategorias, useSaludOverridesMes, useFrecuenciaCategorias, useAhorros, useMetas,
 } from '@/hooks'
 import {
   createSaludCategoria, updateSaludCategoria, deleteSaludCategoria,
@@ -52,7 +52,7 @@ export default function SaludConfigModal({
 }: { open: boolean; onClose: () => void; año: number; mes: number; onSaved: () => void }) {
   const { data: categoriasDb, loading: lc } = useSaludCategorias()
   const { data: overridesDb,  loading: lo } = useSaludOverridesMes(año, mes)
-  const { data: catsEgreso }  = useCategoriasCustom('egresos')
+  const { data: catsEgreso }  = useFrecuenciaCategorias('egresos')
   const { data: ahorros }     = useAhorros()
   const { data: metas }       = useMetas()
 
@@ -159,18 +159,6 @@ export default function SaludConfigModal({
             </button>
           </div>
 
-          {!modoMes && (
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-[11px] text-slate-400">Sugeridas:</span>
-              {SUGERENCIAS.filter(s => !activos.some(c => c.nombre === s.nombre)).map(s => (
-                <button key={s.nombre} onClick={() => addCategoria(s)}
-                  className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border-none cursor-pointer font-medium hover:bg-slate-200">
-                  + {s.icono} {s.nombre}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className={`text-xs rounded-lg px-3 py-2 border ${Math.round(pesoTotal) === 100 ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-red-50 border-red-200 text-red-600'}`}>
             Suma de pesos{modoMes ? ' (con overrides de este mes)' : ''}: <span className="font-mono font-bold">{Math.round(pesoTotal * 10) / 10}%</span>
             {Math.round(pesoTotal) !== 100 && ' — bajá alguna para que sume 100 (no se reparte solo)'}
@@ -227,16 +215,16 @@ export default function SaludConfigModal({
 
                   {!modoMes && c.fuente_tipo === 'egreso_categoria' && (
                     <div className="flex flex-wrap gap-1.5">
-                      {(catsEgreso ?? []).map(cat => {
-                        const activo = (c.fuente_config.categorias ?? []).includes(cat.nombre)
+                      {Object.entries(catsEgreso ?? {}).sort((a, b) => b[1] - a[1]).map(([nombre]) => {
+                        const activo = (c.fuente_config.categorias ?? []).includes(nombre)
                         return (
-                          <button key={cat.id} onClick={() => toggleCategoriaEnConfig(c.id, 'categorias', cat.nombre)}
+                          <button key={nombre} onClick={() => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
                             className={`text-[10px] px-2 py-1 rounded-full border-none cursor-pointer font-medium ${activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                            {activo ? '✓ ' : '+ '}{cat.nombre}
+                            {activo ? '✓ ' : '+ '}{nombre}
                           </button>
                         )
                       })}
-                      {(catsEgreso ?? []).length === 0 && <span className="text-[11px] text-slate-300">No tenés categorías de Egresos cargadas todavía.</span>}
+                      {Object.keys(catsEgreso ?? {}).length === 0 && <span className="text-[11px] text-slate-300">No tenés categorías de Egresos cargadas todavía.</span>}
                     </div>
                   )}
 
@@ -269,6 +257,20 @@ export default function SaludConfigModal({
               )
             })}
           </div>
+
+          {!modoMes && SUGERENCIAS.some(s => !activos.some(c => c.nombre === s.nombre)) && (
+            <div className="border-t border-slate-100 pt-3">
+              <div className="text-[11px] text-slate-400 mb-1.5">¿Te sirve alguna de estas? Un click y la agregás para configurar:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {SUGERENCIAS.filter(s => !activos.some(c => c.nombre === s.nombre)).map(s => (
+                  <button key={s.nombre} onClick={() => addCategoria(s)}
+                    className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border-none cursor-pointer font-medium hover:bg-slate-200">
+                    + {s.icono} {s.nombre}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2 border-t border-slate-100">
             <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
