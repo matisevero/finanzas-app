@@ -73,7 +73,110 @@ export function calcularSalud(
   }
 }
 
-// ─── Cash flow diario ─────────────────────────────────────────────────────────
+// ─── Salud financiera — configurable ──────────────────────────────────────────
+// Reemplaza los pesos/umbrales/categorías hardcodeados de calcularSalud() (que
+// queda sin usar más abajo, no se borra por las dudas) por una lista de
+// categorías que el usuario arma y edita desde el modal "Configurar". Cada
+// categoría define de dónde sale su número (`fuente_tipo`) — ver el comentario
+// en el schema SQL (11-salud-config-schema.sql) para el detalle de cada fuente.
+import type { SaludCategoriaConfig, Ahorro, Meta } from '@/types'
+
+export interface SaludInputsConfigurable {
+  ingresoMensual: number
+  egresoMensual: number
+  cuotaTotal: number
+  tarjetaUsado: number
+  tarjetaLimite: number
+  egresosDelPeriodo: Egreso[]
+  ahorros: Ahorro[]
+  metas: Meta[]
+}
+
+// Categoría ya con peso/umbral resueltos (general del usuario, salvo que haya
+// override específico para el mes activo — eso se resuelve antes de llamar acá).
+export type SaludCategoriaResuelta = Pick<SaludCategoriaConfig, 'id'|'nombre'|'icono'|'color'|'peso'|'umbral'|'comparacion'|'fuente_tipo'|'fuente_config'>
+
+function valorDeCategoria(cat: SaludCategoriaResuelta, inp: SaludInputsConfigurable): { valor: number; unidad: '%' | 'meses' } {
+  const ing = inp.ingresoMensual || 1
+  switch (cat.fuente_tipo) {
+    case 'deuda_cuotas':
+      return { valor: (inp.cuotaTotal / ing) * 100, unidad: '%' }
+    case 'ratio_ahorro_libre':
+      return { valor: (Math.max(0, inp.ingresoMensual - inp.egresoMensual - inp.cuotaTotal) / ing) * 100, unidad: '%' }
+    case 'tarjeta_uso':
+      return { valor: inp.tarjetaLimite > 0 ? (inp.tarjetaUsado / inp.tarjetaLimite) * 100 : 0, unidad: '%' }
+    case 'ratio_gasto':
+      return { valor: (inp.egresoMensual / ing) * 100, unidad: '%' }
+    case 'egreso_recurrente': {
+      const sum = inp.egresosDelPeriodo.filter(e => e.recurrente).reduce((s, e) => s + e.monto, 0)
+      return { valor: (sum / ing) * 100, unidad: '%' }
+    }
+    case 'egreso_categoria': {
+      const cats = cat.fuente_config.categorias ?? []
+      const sum = inp.egresosDelPeriodo.filter(e => cats.includes(e.categoria)).reduce((s, e) => s + e.monto, 0)
+      return { valor: (sum / ing) * 100, unidad: '%' }
+    }
+    case 'ahorro_metas': {
+      const aIds = new Set(cat.fuente_config.ahorro_ids ?? [])
+      const mIds = new Set(cat.fuente_config.meta_ids ?? [])
+      const sumAhorros = inp.ahorros.filter(a => aIds.has(a.id)).reduce((s, a) => s + a.ajuste_manual, 0)
+      const sumMetas = inp.metas.filter(m => mIds.has(m.id)).reduce((s, m) => s + m.monto_actual, 0)
+      const total = sumAhorros + sumMetas
+      return { valor: inp.egresoMensual > 0 ? total / inp.egresoMensual : 0, unidad: 'meses' }
+    }
+  }
+}
+
+const DESCRIPCION_FUENTE: Record<SaludCategoriaConfig['fuente_tipo'], string> = {
+  deuda_cuotas: 'Cuotas mensuales de deudas vs ingreso',
+  ratio_ahorro_libre: 'Dinero libre después de todo',
+  tarjeta_uso: 'Crédito usado vs límite total',
+  ratio_gasto: 'Gastos corrientes vs ingreso',
+  egreso_recurrente: 'Egresos recurrentes vs ingreso',
+  egreso_categoria: 'Egresos de la categoría elegida vs ingreso',
+  ahorro_metas: 'Ahorros/metas elegidos vs egreso mensual',
+}
+
+export interface SaludCategoriaResultado {
+  id: string; nombre: string; icono: string; color: string; peso: number
+  score: number; ok: boolean; tip: string; descripcion: string
+  valorActual: string; valorIdeal: string
+}
+
+export function calcularSaludConfigurable(categorias: SaludCategoriaResuelta[], inp: SaludInputsConfigurable) {
+  const pesoTotal = categorias.reduce((s, c) => s + c.peso, 0) || 100
+  const resultados: SaludCategoriaResultado[] = categorias.map(cat => {
+    const { valor, unidad } = valorDeCategoria(cat, inp)
+    const umbral = cat.umbral || 1
+    const score = Math.max(0, Math.min(100, Math.round(
+      cat.comparacion === 'mayor_que' ? (valor / umbral) * 100 : (1 - valor / umbral) * 100
+    )))
+    const ok = cat.comparacion === 'mayor_que' ? valor >= cat.umbral : valor < cat.umbral
+    const fmtValor = (v: number) => unidad === '%' ? `${v.toFixed(1)}%` : `${v.toFixed(1)} meses`
+    const fmtIdeal = unidad === '%'
+      ? `${cat.comparacion === 'menor_que' ? '<' : '>'} ${cat.umbral}%`
+      : `${cat.comparacion === 'menor_que' ? '<' : '≥'} ${cat.umbral} meses`
+    return {
+      id: cat.id, nombre: cat.nombre, icono: cat.icono, color: cat.color, peso: cat.peso,
+      score, ok, descripcion: DESCRIPCION_FUENTE[cat.fuente_tipo],
+      tip: ok
+        ? 'Está dentro del rango que definiste.'
+        : cat.comparacion === 'menor_que'
+          ? `Está por encima del ideal (${fmtIdeal}). Convendría bajarlo.`
+          : `Está por debajo del ideal (${fmtIdeal}). Convendría subirlo.`,
+      valorActual: fmtValor(valor), valorIdeal: fmtIdeal,
+    }
+  })
+  const total = Math.round(resultados.reduce((s, c) => s + c.score * c.peso, 0) / pesoTotal)
+  return {
+    total,
+    label: total >= 75 ? 'Saludable' : total >= 50 ? 'Moderado' : 'Atención',
+    color: total >= 75 ? '#40B046' : total >= 50 ? '#E8A020' : '#F54927',
+    categorias: resultados,
+  }
+}
+
+
 export interface DiaFlow {
   dia: number; entradas: number; salidas: number; neto: number; saldo: number
   eventos: EventoCalendario[]

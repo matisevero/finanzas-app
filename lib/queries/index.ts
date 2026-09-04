@@ -17,6 +17,7 @@ import type {
   CalidadHallazgo, TipoHallazgo, EntidadHallazgo,
   MovimientoUnificado, TarjetaTransaccionVista,
   CashflowSimItem, CashflowSimItemInsert,
+  SaludCategoriaConfig, SaludCategoriaConfigInsert, SaludOverrideMes, SaludOverrideMesInsert,
 } from '@/types'
 
 const sb = () => createClient()
@@ -1279,3 +1280,68 @@ export async function getTarjetaTransaccionesVistaPorIds(ids: string[]): Promise
   if (error) throw error
   return data ?? []
 }
+
+// ─── SALUD FINANCIERA — categorías configurables ──────────────────────────────
+// Las 5 categorías originales (hardcodeadas antes en calcularSalud), usadas para
+// sembrar la tabla la primera vez que un usuario entra — así nadie pierde su score
+// de un día para el otro por migrar a un sistema configurable.
+const SALUD_CATEGORIAS_DEFAULT: SaludCategoriaConfigInsert[] = [
+  { nombre: 'Endeudamiento',    icono: '📋', color: '#5B3FA6', peso: 25, umbral: 36, comparacion: 'menor_que', fuente_tipo: 'deuda_cuotas',       fuente_config: {}, orden: 0, activa: true },
+  { nombre: 'Tasa de ahorro',   icono: '💰', color: '#40B046', peso: 25, umbral: 20, comparacion: 'mayor_que', fuente_tipo: 'ratio_ahorro_libre', fuente_config: {}, orden: 1, activa: true },
+  { nombre: 'Uso de tarjetas',  icono: '💳', color: '#1A5E9E', peso: 20, umbral: 30, comparacion: 'menor_que', fuente_tipo: 'tarjeta_uso',        fuente_config: {}, orden: 2, activa: true },
+  { nombre: 'Fondo emergencia', icono: '🛡️', color: '#1D9E75', peso: 20, umbral: 6,  comparacion: 'mayor_que', fuente_tipo: 'ahorro_metas',       fuente_config: {}, orden: 3, activa: true },
+  { nombre: 'Control de gastos',icono: '📊', color: '#E8A020', peso: 10, umbral: 70, comparacion: 'menor_que', fuente_tipo: 'ratio_gasto',        fuente_config: {}, orden: 4, activa: true },
+]
+
+export async function getSaludCategorias(): Promise<SaludCategoriaConfig[]> {
+  const userId = await uid()
+  const { data, error } = await sb().from('salud_categorias').select('*').eq('user_id', userId).order('orden')
+  if (error) throw error
+  if ((data ?? []).length > 0) return data as SaludCategoriaConfig[]
+  // Primera vez: sembrar las categorías default y devolverlas ya creadas.
+  const { data: seeded, error: e2 } = await sb().from('salud_categorias')
+    .insert(SALUD_CATEGORIAS_DEFAULT.map(c => ({ ...c, user_id: userId })))
+    .select().order('orden')
+  if (e2) throw e2
+  return (seeded ?? []) as SaludCategoriaConfig[]
+}
+
+export async function createSaludCategoria(form: SaludCategoriaConfigInsert): Promise<SaludCategoriaConfig> {
+  const userId = await uid()
+  const { data, error } = await sb().from('salud_categorias').insert({ ...form, user_id: userId }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateSaludCategoria(id: string, updates: Partial<SaludCategoriaConfigInsert>): Promise<SaludCategoriaConfig> {
+  const { data, error } = await sb().from('salud_categorias').update(updates).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteSaludCategoria(id: string) {
+  const { error } = await sb().from('salud_categorias').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getSaludOverridesMes(año: number, mes: number): Promise<SaludOverrideMes[]> {
+  const userId = await uid()
+  const { data, error } = await sb().from('salud_overrides_mes').select('*').eq('user_id', userId).eq('año', año).eq('mes', mes)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function upsertSaludOverrideMes(form: SaludOverrideMesInsert): Promise<SaludOverrideMes> {
+  const userId = await uid()
+  const { data, error } = await sb().from('salud_overrides_mes')
+    .upsert({ ...form, user_id: userId }, { onConflict: 'categoria_id,año,mes' }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteSaludOverrideMes(categoriaId: string, año: number, mes: number) {
+  const { error } = await sb().from('salud_overrides_mes').delete()
+    .eq('categoria_id', categoriaId).eq('año', año).eq('mes', mes)
+  if (error) throw error
+}
+

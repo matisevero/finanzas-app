@@ -80,3 +80,13 @@ export function useTarjetaTransaccionEtiquetas() {
 export function usePagosTarjeta(tarjetaId?: string) {
   return useAsync(() => Q.getPagosTarjeta(tarjetaId), [tarjetaId])
 }
+
+export function useSaludCategorias() {
+  return useAsync(() => Q.getSaludCategorias(), [])
+}
+export function useSaludOverridesMes(año: number, mes: number) {
+  return useAsync(() => Q.getSaludOverridesMes(año, mes), [año, mes])
+}
+export function useTarjetaPeriodoTotalesTodos() {
+  return useAsync(() => Q.getTarjetaPeriodoTotalesTodos(), [])
+}

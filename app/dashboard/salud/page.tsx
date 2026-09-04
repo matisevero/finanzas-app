@@ -1,10 +1,11 @@
 'use client'
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useDeudas, usePagosTarjeta, useMetas } from '@/hooks'
+import { useIngresos, useEgresos, useDeudas, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
 import { fmt } from '@/lib/utils/formatters'
-import { calcularSalud } from '@/lib/utils/calculations'
+import { calcularSaludConfigurable, type SaludCategoriaResuelta } from '@/lib/utils/calculations'
 import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
+import SaludConfigModal from '@/components/dashboard/SaludConfigModal'
 
 export default function SaludPage() {
   const { añoActivo, vistaTipo, mesActivo, monedaPrincipal: m } = useAppStore()
@@ -12,8 +13,13 @@ export default function SaludPage() {
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
-  const { data: pagos,    loading: lp } = usePagosTarjeta()
   const { data: metas,    loading: lm } = useMetas()
+  const { data: ahorros,  loading: la } = useAhorros()
+  const { data: tarjetas, loading: lt } = useTarjetas()
+  const { data: periodoTotales, loading: lpt } = useTarjetaPeriodoTotalesTodos()
+  const { data: categorias, loading: lc } = useSaludCategorias()
+  const { data: overrides, loading: lov } = useSaludOverridesMes(añoActivo, mesActivo)
+  const [showConfig, setShowConfig] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const mesesConDatos = useMemo(()=>
@@ -36,24 +42,43 @@ export default function SaludPage() {
     (deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.cuota_mensual,0)
   , [deudas])
 
+  // "Uso de tarjetas" real: total_declarado de tarjeta_periodo_totales (reemplaza a
+  // pagos_tarjeta, que quedó muerta desde que se sacó el sistema de conciliación
+  // contra PDF — nada en la app le escribe más) + el límite REAL de cada Tarjeta
+  // activa (antes era un heurístico inventado, usado × 2.5).
   const tarjetaUsado = useMemo(()=>{
-    if (esMensual) return (pagos??[]).filter(p=>p.mes===mesActivo).reduce((s,p)=>s+p.monto,0)
-    const total = (pagos??[]).reduce((s,p)=>s+p.monto,0)
-    const mesesConPago = new Set((pagos??[]).map(p=>p.mes)).size
-    return mesesConPago>0 ? Math.round(total/mesesConPago) : 0
-  }, [pagos, esMensual, mesActivo])
+    if (esMensual) return (periodoTotales??[]).filter(p=>p.año===añoActivo && p.mes===mesActivo).reduce((s,p)=>s+p.total_declarado,0)
+    const delAño = (periodoTotales??[]).filter(p=>p.año===añoActivo)
+    const mesesConDato = new Set(delAño.map(p=>p.mes)).size
+    return mesesConDato>0 ? Math.round(delAño.reduce((s,p)=>s+p.total_declarado,0)/mesesConDato) : 0
+  }, [periodoTotales, esMensual, añoActivo, mesActivo])
 
-  const tarjetaLimite = tarjetaUsado * 2.5
+  const tarjetaLimite = useMemo(()=>
+    (tarjetas??[]).filter(t=>t.activa).reduce((s,t)=>s+t.limite,0)
+  , [tarjetas])
 
-  const fondoEmergencia = useMemo(()=>
-    (metas??[]).find(m=>m.nombre.toLowerCase().includes('emergencia'))?.monto_actual ?? 0
-  , [metas])
+  // Resuelve peso/umbral por categoría: general salvo que haya override para este
+  // mes puntual (ver modal "Configurar").
+  const categoriasResueltas: SaludCategoriaResuelta[] = useMemo(() => {
+    const ovMap = new Map((overrides??[]).map(o=>[o.categoria_id,o]))
+    return (categorias??[]).filter(c=>c.activa).map(c => {
+      const ov = ovMap.get(c.id)
+      return { ...c, peso: ov?.peso ?? c.peso, umbral: ov?.umbral ?? c.umbral }
+    })
+  }, [categorias, overrides])
+
+  const egresosDelPeriodo = useMemo(()=>
+    esMensual ? (egresos??[]).filter(e=>e.mes===mesActivo) : (egresos??[])
+  , [egresos, esMensual, mesActivo])
 
   const salud = useMemo(()=>
-    ingresoMensual>0
-      ? calcularSalud(ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, fondoEmergencia)
+    ingresoMensual>0 && categoriasResueltas.length>0
+      ? calcularSaludConfigurable(categoriasResueltas, {
+          ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite,
+          egresosDelPeriodo, ahorros: ahorros??[], metas: metas??[],
+        })
       : null
-  , [ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, fondoEmergencia])
+  , [ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, categoriasResueltas, egresosDelPeriodo, ahorros, metas])
 
   // Dibujar gauge semicircular
   useEffect(()=>{
@@ -79,11 +104,18 @@ export default function SaludPage() {
   const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const periodoLabel = esMensual ? `${MESES_N[mesActivo-1]} ${añoActivo}` : `Promedio mensual ${añoActivo}`
 
-  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lp&&!pagos)||(lm&&!metas)) return <LoadingSpinner />
+  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lm&&!metas)||(la&&!ahorros)||(lt&&!tarjetas)||(lpt&&!periodoTotales)||(lc&&!categorias)||(lov&&!overrides)) return <LoadingSpinner />
 
   if (!salud || ingresoMensual===0) return (
     <div>
-      <PageHeader title="Salud Financiera" subtitle="Diagnóstico integral de tu situación económica" />
+      <PageHeader title="Salud Financiera" subtitle="Diagnóstico integral de tu situación económica"
+        action={
+          <button onClick={()=>setShowConfig(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 text-xs font-medium cursor-pointer">
+            ⚙ Configurar
+          </button>
+        } />
+      <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
       <Card>
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📊</div>
@@ -96,7 +128,14 @@ export default function SaludPage() {
 
   return (
     <div>
-      <PageHeader title="Salud Financiera" subtitle={`Diagnóstico integral — ${periodoLabel}`} />
+      <PageHeader title="Salud Financiera" subtitle={`Diagnóstico integral — ${periodoLabel}`}
+        action={
+          <button onClick={()=>setShowConfig(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 text-xs font-medium cursor-pointer">
+            ⚙ Configurar
+          </button>
+        } />
+      <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
 
       {/* Hero */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
@@ -199,7 +238,7 @@ export default function SaludPage() {
             {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#F54927'},
             {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<0.36?'✓ Saludable (<36%)':'✗ Alto (>36%)', c:cuotaTotal/ingresoMensual<0.36?'#40B046':'#F54927'},
             {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<0.70?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<0.70?'#40B046':'#F54927'},
-            {l:'Fondo emergencia',    v:fmt(fondoEmergencia,m),    s:((fondoEmergencia/egresoMensual)||0).toFixed(1)+' meses cubiertos', c:fondoEmergencia/egresoMensual>=6?'#40B046':'#E8A020'},
+            {l:'Deuda pendiente',     v:fmt((deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.pendiente,0),m), s:'Total a pagar (todas las cuotas)', c:'#5B3FA6'},
             {l:'Pagos TC este mes',   v:fmt(tarjetaUsado,m),       s:'Resumen tarjetas',             c:'#1A5E9E'},
           ].map(k=>(
             <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">

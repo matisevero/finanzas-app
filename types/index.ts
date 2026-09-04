@@ -407,6 +407,42 @@ export type CashflowSimItemInsert = Omit<CashflowSimItem, 'id' | 'user_id' | 'cr
 // items del simulador de ese mes al pasar al siguiente) ───────────────────────
 // (CashflowResumenMensual se sacó junto con la tabla — ver nota en lib/queries/index.ts)
 
+// ─── Salud Financiera — categorías configurables ──────────────────────────────
+export type SaludFuenteTipo = 'deuda_cuotas' | 'ratio_ahorro_libre' | 'tarjeta_uso' | 'ratio_gasto' | 'egreso_recurrente' | 'egreso_categoria' | 'ahorro_metas'
+export interface SaludFuenteConfig {
+  categorias?: string[]   // para 'egreso_categoria'
+  ahorro_ids?: string[]   // para 'ahorro_metas'
+  meta_ids?: string[]     // para 'ahorro_metas'
+}
+export interface SaludCategoriaConfig {
+  id: string
+  user_id: string
+  nombre: string
+  icono: string
+  color: string
+  peso: number
+  umbral: number
+  comparacion: 'menor_que' | 'mayor_que'
+  fuente_tipo: SaludFuenteTipo
+  fuente_config: SaludFuenteConfig
+  orden: number
+  activa: boolean
+  created_at: string
+}
+export type SaludCategoriaConfigInsert = Omit<SaludCategoriaConfig, 'id' | 'user_id' | 'created_at'>
+
+export interface SaludOverrideMes {
+  id: string
+  user_id: string
+  categoria_id: string
+  año: number
+  mes: number
+  peso: number | null
+  umbral: number | null
+  created_at: string
+}
+export type SaludOverrideMesInsert = Omit<SaludOverrideMes, 'id' | 'user_id' | 'created_at'>
+
 // ─── App state ───────────────────────────────────────────────────────────────
 export interface AppConfig {
   añoActivo: number
