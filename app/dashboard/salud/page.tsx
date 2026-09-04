@@ -1,8 +1,8 @@
 'use client'
 import { useMemo, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
-import { useIngresos, useEgresos, useIngresosByAño, useEgresosByAño, useDeudas, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
-import { fmt } from '@/lib/utils/formatters'
+import { useIngresos, useEgresos, useIngresosByAño, useEgresosByAño, useDeudas, useEventosMes, useEventosAño, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
+import { fmt, añoMesDeFecha } from '@/lib/utils/formatters'
 import { calcularSaludConfigurable, calcularInsights, type SaludCategoriaResuelta, type SaludInputsConfigurable, type SaludInsight } from '@/lib/utils/calculations'
 import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
 import SaludConfigModal from '@/components/dashboard/SaludConfigModal'
@@ -13,6 +13,8 @@ export default function SaludPage() {
   const { data: ingresos, loading: li } = useIngresos()
   const { data: egresos,  loading: le } = useEgresos()
   const { data: deudas,   loading: ld } = useDeudas()
+  const { data: eventosDelMes,  loading: lev } = useEventosMes(añoActivo, mesActivo)
+  const { data: eventosAño } = useEventosAño(añoActivo)
   const { data: metas,    loading: lm } = useMetas()
   const { data: ahorros,  loading: la } = useAhorros()
   const { data: tarjetas, loading: lt } = useTarjetas()
@@ -43,18 +45,38 @@ export default function SaludPage() {
     return mesesConDatos.length>0 ? Math.round(total/mesesConDatos.length) : 0
   }, [egresos, esMensual, mesActivo, mesesConDatos])
 
-  const cuotaTotal = useMemo(()=>
-    (deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.cuota_mensual,0)
-  , [deudas])
+  // Antes esto sumaba `cuota_mensual` de Deudas activas — pero eso NO es lo mismo que
+  // "Cuota mensual comprometida" te muestra en la página de Deudas ("% sobre ingresos"),
+  // que suma los eventos del calendario del mes (`eventos_calendario`, tipo != ingreso/
+  // devolución, pagados o no). Esa es la fuente real de "cuánto debo este mes" — ahora
+  // Salud usa exactamente la misma cuenta para que los dos lados coincidan siempre.
+  const esComprometido = (e: { tipo: string; monto?: number }) => e.tipo !== 'ingreso' && e.tipo !== 'devolucion' && !!e.monto
+  const cuotaTotal = useMemo(()=>{
+    if (esMensual) return (eventosDelMes??[]).filter(esComprometido).reduce((s,e)=>s+(e.monto??0),0)
+    const delAño = (eventosAño??[]).filter(esComprometido)
+    const mesesConDato = new Set(delAño.map(e=>e.mes)).size
+    return mesesConDato>0 ? Math.round(delAño.reduce((s,e)=>s+(e.monto??0),0)/mesesConDato) : 0
+  }, [eventosDelMes, eventosAño, esMensual])
 
   // "Uso de tarjetas" real: total_declarado de tarjeta_periodo_totales (reemplaza a
   // pagos_tarjeta, que quedó muerta desde que se sacó el sistema de conciliación
   // contra PDF — nada en la app le escribe más) + el límite REAL de cada Tarjeta
   // activa (antes era un heurístico inventado, usado × 2.5).
+  // Filtra por mes de VENCIMIENTO (cuándo se paga), no por el mes del período que
+  // cubre el resumen — un resumen de agosto vence en septiembre, así que "esto es
+  // lo que pagás en septiembre" tiene que mirar fecha_vencimiento, no `mes`/`año`
+  // del período (que antes hacía que este número diera $0 la mayoría de los meses:
+  // el período de este mes calendario todavía ni cerró).
   const tarjetaUsado = useMemo(()=>{
-    if (esMensual) return (periodoTotales??[]).filter(p=>p.año===añoActivo && p.mes===mesActivo).reduce((s,p)=>s+p.total_declarado,0)
-    const delAño = (periodoTotales??[]).filter(p=>p.año===añoActivo)
-    const mesesConDato = new Set(delAño.map(p=>p.mes)).size
+    const conVencimiento = (periodoTotales??[]).filter(p=>p.fecha_vencimiento)
+    if (esMensual) {
+      return conVencimiento.filter(p=>{
+        const { año, mes } = añoMesDeFecha(p.fecha_vencimiento!)
+        return año===añoActivo && mes===mesActivo
+      }).reduce((s,p)=>s+p.total_declarado,0)
+    }
+    const delAño = conVencimiento.filter(p=>añoMesDeFecha(p.fecha_vencimiento!).año===añoActivo)
+    const mesesConDato = new Set(delAño.map(p=>añoMesDeFecha(p.fecha_vencimiento!).mes)).size
     return mesesConDato>0 ? Math.round(delAño.reduce((s,p)=>s+p.total_declarado,0)/mesesConDato) : 0
   }, [periodoTotales, esMensual, añoActivo, mesActivo])
 
@@ -97,6 +119,16 @@ export default function SaludPage() {
   const ingresosFuenteAnterior = añoAnteriorNum === añoActivo ? ingresos : ingresosAñoAnt
   const egresosFuenteAnterior  = añoAnteriorNum === añoActivo ? egresos  : egresosAñoAnt
 
+  // cuotaTotal ahora sale de eventos_calendario (real por mes) — a diferencia de antes
+  // (snapshot de Deudas activas de HOY), el mes anterior se puede calcular exacto, no
+  // aproximado. `eventosAño` ya está limitado a añoActivo, así que el caso borde de
+  // Enero (mes anterior = Diciembre del año pasado) sigue usando el valor actual como
+  // aproximación — no vale la pena traer otro año entero de eventos por ese único caso.
+  const cuotaTotalAnterior = useMemo(()=>{
+    if (añoAnteriorNum !== añoActivo) return cuotaTotal
+    return (eventosAño??[]).filter(e=>e.mes===mesAnteriorNum).filter(esComprometido).reduce((s,e)=>s+(e.monto??0),0)
+  }, [eventosAño, añoAnteriorNum, añoActivo, mesAnteriorNum, cuotaTotal])
+
   const ingresoMensualAnterior = useMemo(()=>
     (ingresosFuenteAnterior??[]).filter(i=>i.mes===mesAnteriorNum).reduce((s,i)=>s+i.monto,0)
   , [ingresosFuenteAnterior, mesAnteriorNum])
@@ -110,16 +142,16 @@ export default function SaludPage() {
     (periodoTotales??[]).filter(p=>p.año===añoAnteriorNum && p.mes===mesAnteriorNum).reduce((s,p)=>s+p.total_declarado,0)
   , [periodoTotales, añoAnteriorNum, mesAnteriorNum])
 
-  // cuotaTotal y tarjetaLimite son un snapshot de HOY (Deudas/Tarjetas activas) — no hay
-  // forma de reconstruir con qué deudas/límites contabas exactamente el mes pasado sin
-  // guardar historial de eso, así que se reutiliza el mismo valor para ambos meses. Es
-  // una aproximación razonable (esos números no suelen cambiar mes a mes de golpe).
+  // tarjetaLimite es un snapshot de HOY (Tarjetas activas) — no hay forma de reconstruir
+  // con qué límite contabas exactamente el mes pasado sin guardar historial de eso, así
+  // que se reutiliza el mismo valor para ambos meses (los límites no suelen cambiar mes
+  // a mes de golpe). cuotaTotal y tarjetaUsado sí tienen su versión exacta del mes anterior.
   const insights: SaludInsight[] = useMemo(()=>{
     if (!esMensual || categoriasResueltas.length===0 || ingresoMensual===0) return []
     const inpActual: SaludInputsConfigurable = { ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, egresosDelPeriodo, ahorros: ahorros??[], metas: metas??[] }
-    const inpAnterior: SaludInputsConfigurable = { ingresoMensual: ingresoMensualAnterior, egresoMensual: egresoMensualAnterior, cuotaTotal, tarjetaUsado: tarjetaUsadoAnterior, tarjetaLimite, egresosDelPeriodo: egresosDelPeriodoAnterior, ahorros: ahorros??[], metas: metas??[] }
+    const inpAnterior: SaludInputsConfigurable = { ingresoMensual: ingresoMensualAnterior, egresoMensual: egresoMensualAnterior, cuotaTotal: cuotaTotalAnterior, tarjetaUsado: tarjetaUsadoAnterior, tarjetaLimite, egresosDelPeriodo: egresosDelPeriodoAnterior, ahorros: ahorros??[], metas: metas??[] }
     return calcularInsights(categoriasResueltas, inpActual, inpAnterior)
-  }, [esMensual, categoriasResueltas, ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, egresosDelPeriodo, ahorros, metas, ingresoMensualAnterior, egresoMensualAnterior, tarjetaUsadoAnterior, egresosDelPeriodoAnterior])
+  }, [esMensual, categoriasResueltas, ingresoMensual, egresoMensual, cuotaTotal, tarjetaUsado, tarjetaLimite, egresosDelPeriodo, ahorros, metas, ingresoMensualAnterior, egresoMensualAnterior, cuotaTotalAnterior, tarjetaUsadoAnterior, egresosDelPeriodoAnterior])
 
   // Dibujar gauge semicircular
   useEffect(()=>{
@@ -145,7 +177,7 @@ export default function SaludPage() {
   const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const periodoLabel = esMensual ? `${MESES_N[mesActivo-1]} ${añoActivo}` : `Promedio mensual ${añoActivo}`
 
-  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lm&&!metas)||(la&&!ahorros)||(lt&&!tarjetas)||(lpt&&!periodoTotales)||(lc&&!categorias)||(lov&&!overrides)) return <LoadingSpinner />
+  if ((li&&!ingresos)||(le&&!egresos)||(ld&&!deudas)||(lev&&!eventosDelMes)||(lm&&!metas)||(la&&!ahorros)||(lt&&!tarjetas)||(lpt&&!periodoTotales)||(lc&&!categorias)||(lov&&!overrides)) return <LoadingSpinner />
 
   if (!salud || ingresoMensual===0) return (
     <div>
@@ -177,29 +209,6 @@ export default function SaludPage() {
           </button>
         } />
       <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
-
-      {/* Insights en texto plano — mes contra mes anterior */}
-      {esMensual && insights.length > 0 && (
-        <Card className="mb-6">
-          <div className="text-slate-900 font-semibold text-[15px] mb-0.5">Lo que juntamos este mes</div>
-          <div className="text-slate-400 text-xs mb-4">Ordenado por dónde más podés ahorrar</div>
-          <div className="flex flex-col gap-2">
-            {insights.map(ins => {
-              const bg = ins.tipo === 'oportunidad' ? '#FEF2F2' : ins.tipo === 'positivo' ? '#F7FCF7' : '#F8FAFC'
-              const border = ins.tipo === 'oportunidad' ? '#FECACA' : ins.tipo === 'positivo' ? '#E9F6EA' : '#E2E8F0'
-              return (
-                <div key={ins.id} className="rounded-xl px-4 py-3 flex items-start gap-3" style={{ background: bg, border: `1px solid ${border}` }}>
-                  <span className="text-lg flex-shrink-0">{ins.icono}</span>
-                  <span className="text-sm text-slate-700 leading-relaxed">{ins.texto}</span>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      )}
-      {!esMensual && (
-        <div className="text-slate-400 text-xs mb-6">Los insights mes contra mes solo se ven en vista Mes — estás mirando el promedio del año.</div>
-      )}
 
       {/* Hero */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
@@ -298,12 +307,11 @@ export default function SaludPage() {
           {[
             {l:'Ingreso mensual',     v:fmt(ingresoMensual,m),     s:periodoLabel,           c:'#40B046'},
             {l:'Egreso mensual',      v:fmt(egresoMensual,m),      s:'Incl. inversiones',            c:'#F54927'},
-            {l:'Cuotas fijas',        v:fmt(cuotaTotal,m),         s:'Comprometido/mes',             c:'#5B3FA6'},
+            {l:'Comprometido del mes', v:fmt(cuotaTotal,m),        s:'Deudas/tarjetas del calendario', c:'#5B3FA6'},
             {l:'Ahorro libre',        v:fmt(Math.max(0,ingresoMensual-egresoMensual-cuotaTotal),m), s:'Ingreso - todo', c:ingresoMensual>egresoMensual+cuotaTotal?'#1D9E75':'#F54927'},
             {l:'Ratio deuda/ingreso', v:((cuotaTotal/ingresoMensual)*100).toFixed(1)+'%', s:cuotaTotal/ingresoMensual<umbralDeuda/100?`✓ Saludable (<${umbralDeuda}%)`:`✗ Alto (>${umbralDeuda}%)`, c:cuotaTotal/ingresoMensual<umbralDeuda/100?'#40B046':'#F54927'},
             {l:'Ratio gasto/ingreso', v:((egresoMensual/ingresoMensual)*100).toFixed(1)+'%', s:egresoMensual/ingresoMensual<umbralGasto/100?'✓ Controlado':'✗ Elevado', c:egresoMensual/ingresoMensual<umbralGasto/100?'#40B046':'#F54927'},
-            {l:'Deuda pendiente',     v:fmt((deudas??[]).filter(d=>d.activa).reduce((s,d)=>s+d.pendiente,0),m), s:'Total a pagar (todas las cuotas)', c:'#5B3FA6'},
-            {l:'Pagos TC este mes',   v:fmt(tarjetaUsado,m),       s:'Resumen tarjetas',             c:'#1A5E9E'},
+            {l:'Pagos TC este mes',   v:fmt(tarjetaUsado,m),       s:'Por fecha de vencimiento',      c:'#1A5E9E'},
           ].map(k=>(
             <div key={k.l} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
               <div className="label mb-1">{k.l}</div>
@@ -313,6 +321,29 @@ export default function SaludPage() {
           ))}
         </div>
       </div>
+
+      {/* Insights en texto plano — mes contra mes anterior, al fondo de la página */}
+      {esMensual && insights.length > 0 && (
+        <Card className="mt-6">
+          <div className="text-slate-900 font-semibold text-[15px] mb-0.5">Lo que juntamos este mes</div>
+          <div className="text-slate-400 text-xs mb-4">Ordenado por dónde más podés ahorrar</div>
+          <div className="flex flex-col gap-2">
+            {insights.map(ins => {
+              const bg = ins.tipo === 'oportunidad' ? '#FEF2F2' : ins.tipo === 'positivo' ? '#F7FCF7' : '#F8FAFC'
+              const border = ins.tipo === 'oportunidad' ? '#FECACA' : ins.tipo === 'positivo' ? '#E9F6EA' : '#E2E8F0'
+              return (
+                <div key={ins.id} className="rounded-xl px-4 py-3 flex items-start gap-3" style={{ background: bg, border: `1px solid ${border}` }}>
+                  <span className="text-lg flex-shrink-0">{ins.icono}</span>
+                  <span className="text-sm text-slate-700 leading-relaxed">{ins.texto}</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+      {!esMensual && (
+        <div className="text-slate-400 text-xs mt-6">Los insights mes contra mes solo se ven en vista Mes — estás mirando el promedio del año.</div>
+      )}
     </div>
   )
 }

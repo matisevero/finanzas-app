@@ -47,6 +47,51 @@ const tmpId = () => `tmp-${Date.now()}-${tmpSeq++}`
 
 type CatDraft = Omit<SaludCategoriaConfig, 'user_id' | 'created_at'> & { _tmp?: boolean; _eliminar?: boolean }
 
+// ── Dropdown multiselect — mismo patrón visual que el resto de la app (botón +
+// panel con checkboxes que se abre/cierra), en vez del muro de chips de antes.
+// Incluye buscador porque la lista de categorías de Egresos puede ser larga.
+function DropdownMultiSelect({
+  opciones, seleccionadas, onToggle, placeholder,
+}: { opciones: { value: string; label: string }[]; seleccionadas: string[]; onToggle: (v: string) => void; placeholder: string }) {
+  const [open, setOpen] = useState(false)
+  const [busqueda, setBusqueda] = useState('')
+  useEffect(() => {
+    if (!open) return
+    const cerrar = () => setOpen(false)
+    document.addEventListener('click', cerrar)
+    return () => document.removeEventListener('click', cerrar)
+  }, [open])
+  const filtradas = opciones.filter(o => o.label.toLowerCase().includes(busqueda.toLowerCase()))
+  return (
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <button onClick={() => setOpen(o => !o)}
+        className="input-field !py-1.5 text-xs flex items-center justify-between gap-2 w-full text-left">
+        <span className="text-slate-600 truncate">
+          {seleccionadas.length === 0 ? placeholder : `${seleccionadas.length} elegida${seleccionadas.length === 1 ? '' : 's'}`}
+        </span>
+        <span className="text-slate-400 flex-shrink-0">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 w-64 max-h-72 overflow-hidden flex flex-col">
+          {opciones.length > 8 && (
+            <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…"
+              className="input-field !py-1.5 !rounded-none !border-0 !border-b !border-slate-100 text-xs" autoFocus />
+          )}
+          <div className="overflow-y-auto py-1">
+            {filtradas.length === 0 && <div className="text-[11px] text-slate-300 px-3 py-2">Nada con ese nombre.</div>}
+            {filtradas.map(op => (
+              <label key={op.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={seleccionadas.includes(op.value)} onChange={() => onToggle(op.value)} />
+                <span className="truncate">{op.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SaludConfigModal({
   open, onClose, año, mes, onSaved,
 }: { open: boolean; onClose: () => void; año: number; mes: number; onSaved: () => void }) {
@@ -214,44 +259,30 @@ export default function SaludConfigModal({
                   </div>
 
                   {!modoMes && c.fuente_tipo === 'egreso_categoria' && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(catsEgreso ?? {}).sort((a, b) => b[1] - a[1]).map(([nombre]) => {
-                        const activo = (c.fuente_config.categorias ?? []).includes(nombre)
-                        return (
-                          <button key={nombre} onClick={() => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
-                            className={`text-[10px] px-2 py-1 rounded-full border-none cursor-pointer font-medium ${activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                            {activo ? '✓ ' : '+ '}{nombre}
-                          </button>
-                        )
-                      })}
-                      {Object.keys(catsEgreso ?? {}).length === 0 && <span className="text-[11px] text-slate-300">No tenés categorías de Egresos cargadas todavía.</span>}
-                    </div>
+                    <DropdownMultiSelect
+                      opciones={Object.entries(catsEgreso ?? {}).sort((a, b) => b[1] - a[1]).map(([nombre]) => ({ value: nombre, label: nombre }))}
+                      seleccionadas={c.fuente_config.categorias ?? []}
+                      onToggle={nombre => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
+                      placeholder="Elegir categorías de Egresos"
+                    />
                   )}
 
                   {!modoMes && c.fuente_tipo === 'ahorro_metas' && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(ahorros ?? []).map(a => {
-                        const activo = (c.fuente_config.ahorro_ids ?? []).includes(a.id)
-                        return (
-                          <button key={a.id} onClick={() => toggleCategoriaEnConfig(c.id, 'ahorro_ids', a.id)}
-                            className={`text-[10px] px-2 py-1 rounded-full border-none cursor-pointer font-medium ${activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                            {activo ? '✓ ' : '+ '}{a.nombre}
-                          </button>
-                        )
-                      })}
-                      {(metas ?? []).map(mt => {
-                        const activo = (c.fuente_config.meta_ids ?? []).includes(mt.id)
-                        return (
-                          <button key={mt.id} onClick={() => toggleCategoriaEnConfig(c.id, 'meta_ids', mt.id)}
-                            className={`text-[10px] px-2 py-1 rounded-full border-none cursor-pointer font-medium ${activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                            {activo ? '✓ ' : '+ '}{mt.nombre}
-                          </button>
-                        )
-                      })}
-                      {(ahorros ?? []).length === 0 && (metas ?? []).length === 0 && (
-                        <span className="text-[11px] text-slate-300">No tenés Ahorros ni Metas cargados todavía.</span>
-                      )}
-                    </div>
+                    <DropdownMultiSelect
+                      opciones={[
+                        ...(ahorros ?? []).map(a => ({ value: `ahorro:${a.id}`, label: `💰 ${a.nombre}` })),
+                        ...(metas ?? []).map(mt => ({ value: `meta:${mt.id}`, label: `🎯 ${mt.nombre}` })),
+                      ]}
+                      seleccionadas={[
+                        ...(c.fuente_config.ahorro_ids ?? []).map(id => `ahorro:${id}`),
+                        ...(c.fuente_config.meta_ids ?? []).map(id => `meta:${id}`),
+                      ]}
+                      onToggle={key => {
+                        const [tipo, id] = key.split(':')
+                        toggleCategoriaEnConfig(c.id, tipo === 'ahorro' ? 'ahorro_ids' : 'meta_ids', id)
+                      }}
+                      placeholder="Elegir Ahorros/Metas"
+                    />
                   )}
                 </div>
               )
