@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/appStore'
 import { useIngresos, useEgresos, useIngresosByAño, useEgresosByAño, useDeudas, useEventosMes, useEventosAño, useMetas, useAhorros, useTarjetas, useSaludCategorias, useSaludOverridesMes, useTarjetaPeriodoTotalesTodos } from '@/hooks'
 import { fmt, añoMesDeFecha } from '@/lib/utils/formatters'
 import { calcularSaludConfigurable, calcularInsights, type SaludCategoriaResuelta, type SaludInputsConfigurable, type SaludInsight } from '@/lib/utils/calculations'
-import { PageHeader, Card, LoadingSpinner, ProgressBar, ChartToggle } from '@/components/ui'
+import { PageHeader, Card, LoadingSpinner, ProgressBar } from '@/components/ui'
 import SaludConfigModal from '@/components/dashboard/SaludConfigModal'
 import PresupuestoView from '@/components/dashboard/PresupuestoView'
 import { updateSaludCategoria } from '@/lib/queries'
@@ -222,8 +222,13 @@ export default function SaludPage() {
         } />
       <SaludConfigModal open={showConfig} onClose={()=>setShowConfig(false)} año={añoActivo} mes={mesActivo} onSaved={()=>{}} />
 
-      <div className="mb-5">
-        <ChartToggle options={[{ value: 'score', label: 'Score' }, { value: 'presupuesto', label: 'Presupuesto' }]} value={vista} onChange={v => setVista(v as 'score'|'presupuesto')} />
+      <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl mb-5 max-w-[300px]">
+        {(['score','presupuesto'] as const).map(v => (
+          <button key={v} onClick={()=>setVista(v)}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all border-none cursor-pointer ${vista===v?'bg-white text-slate-900 shadow-sm':'bg-transparent text-slate-500'}`}>
+            {v==='score'?'Score':'Presupuesto'}
+          </button>
+        ))}
       </div>
 
       {vista === 'presupuesto' && (
