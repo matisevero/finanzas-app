@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import {
-  useSaludCategorias, useSaludOverridesMes, useCategoriasCustom, useFrecuenciaCategorias, useAhorros, useMetas,
+  useSaludCategorias, useSaludOverridesMes, useCategoriasCustom, useAhorros, useMetas,
 } from '@/hooks'
 import {
   createSaludCategoria, updateSaludCategoria, deleteSaludCategoria,
@@ -109,35 +109,8 @@ export default function SaludConfigModal({
   const { data: categoriasDb, loading: lc } = useSaludCategorias()
   const { data: overridesDb,  loading: lo } = useSaludOverridesMes(año, mes)
   const { data: catsCustom }  = useCategoriasCustom('egresos')
-  const { data: catsUso }     = useFrecuenciaCategorias('egresos')
   const { data: ahorros }     = useAhorros()
   const { data: metas }       = useMetas()
-
-  // Lista de categorías del picker: arranca con las "oficiales" de tu app
-  // (categorias_custom — nombre y acentos correctos, existen aunque todavía no
-  // las hayas usado en ningún Egreso, ej. "Suscripciones" recién creada). Después
-  // suma cualquier categoría que SÍ aparece en Egresos reales pero no está
-  // registrada formalmente — sin repetir la misma categoría por una diferencia de
-  // mayúscula/acento (normCat), y sin mostrar ids sueltos con forma de UUID (un
-  // dato viejo mal cargado, no una categoría real).
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  const categoriasEgreso = useMemo(() => {
-    const oficiales = (catsCustom ?? []).map(c => c.nombre)
-    const yaCubiertas = new Set(oficiales.map(normCat))
-    const adHoc = Object.keys(catsUso ?? {})
-      .filter(nombre => !UUID_RE.test(nombre.trim()))
-      .filter(nombre => !yaCubiertas.has(normCat(nombre)))
-    // de-duplicar el ad-hoc entre sí también (dos variantes de la misma que no está oficializada)
-    const adHocDedup: string[] = []
-    const vistos = new Set<string>()
-    for (const n of adHoc.sort((a, b) => (catsUso?.[b] ?? 0) - (catsUso?.[a] ?? 0))) {
-      const key = normCat(n)
-      if (vistos.has(key)) continue
-      vistos.add(key)
-      adHocDedup.push(n)
-    }
-    return [...oficiales, ...adHocDedup]
-  }, [catsCustom, catsUso])
 
   const [modoMes, setModoMes] = useState(false)
   const [draft, setDraft] = useState<CatDraft[]>([])
@@ -298,11 +271,10 @@ export default function SaludConfigModal({
 
                   {!modoMes && c.fuente_tipo === 'egreso_categoria' && (
                     <DropdownMultiSelect
-                      opciones={categoriasEgreso.map(nombre => ({ value: nombre, label: nombre }))}
+                      opciones={(catsCustom ?? []).map(c => ({ value: c.nombre, label: c.nombre }))}
                       seleccionadas={c.fuente_config.categorias ?? []}
                       onToggle={nombre => toggleCategoriaEnConfig(c.id, 'categorias', nombre)}
                       placeholder="Elegir categorías de Egresos"
-                      allowCustom
                     />
                   )}
 
